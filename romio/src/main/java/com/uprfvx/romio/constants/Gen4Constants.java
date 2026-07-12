@@ -1862,6 +1862,50 @@ public class Gen4Constants {
 
     }
 
+    // Reward TM (by TM number) given by each Gym Leader, keyed by gym group tag. Used by the
+    // "Gym Leader TMs Match Type" option. Note Diamond/Pearl and Platinum give the same TM per
+    // leader, but Platinum reorders the gyms (Fantina is 3rd), so the tag→TM tables differ.
+    public static final Map<String, Integer> gymLeaderRewardTMsDP = Map.ofEntries(
+            Map.entry("GYM1", 76), // Roark (Rock)
+            Map.entry("GYM2", 80), // Gardenia (Grass)
+            Map.entry("GYM3", 60), // Maylene (Fighting)
+            Map.entry("GYM4", 55), // Crasher Wake (Water)
+            Map.entry("GYM5", 65), // Fantina (Ghost)
+            Map.entry("GYM6", 91), // Byron (Steel)
+            Map.entry("GYM7", 72), // Candice (Ice)
+            Map.entry("GYM8", 57)  // Volkner (Electric)
+    );
+
+    public static final Map<String, Integer> gymLeaderRewardTMsPt = Map.ofEntries(
+            Map.entry("GYM1", 76), // Roark (Rock)
+            Map.entry("GYM2", 80), // Gardenia (Grass)
+            Map.entry("GYM3", 65), // Fantina (Ghost) - 3rd gym in Platinum
+            Map.entry("GYM4", 60), // Maylene (Fighting)
+            Map.entry("GYM5", 55), // Crasher Wake (Water)
+            Map.entry("GYM6", 91), // Byron (Steel)
+            Map.entry("GYM7", 72), // Candice (Ice)
+            Map.entry("GYM8", 57)  // Volkner (Electric)
+    );
+
+    public static final Map<String, Integer> gymLeaderRewardTMsHGSS = Map.ofEntries(
+            Map.entry("GYM1", 51),  // Falkner (Flying)
+            Map.entry("GYM2", 89),  // Bugsy (Bug)
+            Map.entry("GYM3", 45),  // Whitney (Normal)
+            Map.entry("GYM4", 30),  // Morty (Ghost)
+            Map.entry("GYM5", 1),   // Chuck (Fighting)
+            Map.entry("GYM6", 23),  // Jasmine (Steel)
+            Map.entry("GYM7", 7),   // Pryce (Ice)
+            Map.entry("GYM8", 59),  // Clair (Dragon)
+            Map.entry("GYM9", 80),  // Brock (Rock) - Kanto
+            Map.entry("GYM10", 3),  // Misty (Water) - Kanto
+            Map.entry("GYM11", 34), // Lt. Surge (Electric) - Kanto
+            Map.entry("GYM12", 19), // Erika (Grass) - Kanto
+            Map.entry("GYM13", 84), // Janine (Poison) - Kanto
+            Map.entry("GYM14", 48), // Sabrina (Psychic) - Kanto
+            Map.entry("GYM15", 50), // Blaine (Fire) - Kanto
+            Map.entry("GYM16", 92)  // Blue (no canonical theme; only locks if random type-theming assigns GYM16 a type)
+    );
+
     public static final HashMap<String, Type> gymAndEliteThemesDP = setupGymAndEliteThemesDP();
 
     private static HashMap<String, Type> setupGymAndEliteThemesDP() {

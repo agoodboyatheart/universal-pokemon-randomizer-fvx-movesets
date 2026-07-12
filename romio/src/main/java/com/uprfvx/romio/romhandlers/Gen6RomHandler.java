@@ -1969,6 +1969,15 @@ public class Gen6RomHandler extends Abstract3DSRomHandler {
     }
 
     @Override
+    public Map<String, Integer> getGymLeaderTMs() {
+        if (romEntry.getRomType() == Gen6Constants.Type_XY) {
+            return Gen6Constants.gymLeaderRewardTMsXY;
+        } else {
+            return Gen6Constants.gymLeaderRewardTMsORAS;
+        }
+    }
+
+    @Override
     public Set<Item> getEvolutionItems() {
         return itemIdsToSet(Gen6Constants.evolutionItems);
     }

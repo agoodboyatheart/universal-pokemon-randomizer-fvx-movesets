@@ -2794,6 +2794,16 @@ public class Gen4RomHandler extends AbstractDSRomHandler {
     }
 
     @Override
+    public Map<String, Integer> getGymLeaderTMs() {
+        return switch (romEntry.getRomType()) {
+            case Gen4Constants.Type_DP -> Gen4Constants.gymLeaderRewardTMsDP;
+            case Gen4Constants.Type_Plat -> Gen4Constants.gymLeaderRewardTMsPt;
+            case Gen4Constants.Type_HGSS -> Gen4Constants.gymLeaderRewardTMsHGSS;
+            default -> Map.of();
+        };
+    }
+
+    @Override
 	public Set<Item> getEvolutionItems() {
 		return itemIdsToSet(Gen4Constants.evolutionItems);
 	}

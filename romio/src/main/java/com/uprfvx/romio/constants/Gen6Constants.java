@@ -1036,6 +1036,30 @@ public class Gen6Constants {
         }
     }
 
+    // Reward TM (by TM number) given by each Gym Leader, keyed by gym group tag. Used by the
+    // "Gym Leader TMs Match Type" option.
+    public static final Map<String, Integer> gymLeaderRewardTMsXY = Map.ofEntries(
+            Map.entry("GYM1", 83), // Viola (Bug)
+            Map.entry("GYM2", 39), // Grant (Rock)
+            Map.entry("GYM3", 98), // Korrina (Fighting)
+            Map.entry("GYM4", 86), // Ramos (Grass)
+            Map.entry("GYM5", 24), // Clemont (Electric)
+            Map.entry("GYM6", 99), // Valerie (Fairy)
+            Map.entry("GYM7", 4),  // Olympia (Psychic)
+            Map.entry("GYM8", 13)  // Wulfric (Ice)
+    );
+
+    public static final Map<String, Integer> gymLeaderRewardTMsORAS = Map.ofEntries(
+            Map.entry("GYM1", 39), // Roxanne (Rock)
+            Map.entry("GYM2", 8),  // Brawly (Fighting)
+            Map.entry("GYM3", 72), // Wattson (Electric)
+            Map.entry("GYM4", 50), // Flannery (Fire)
+            Map.entry("GYM5", 67), // Norman (Normal)
+            Map.entry("GYM6", 19), // Winona (Flying)
+            Map.entry("GYM7", 4),  // Tate & Liza (Psychic)
+            Map.entry("GYM8", 55)  // Wallace (Water)
+    );
+
     public static final HashMap<String, Type> gymAndEliteThemesXY = setupGymAndEliteThemesXY();
 
     private static HashMap<String, Type> setupGymAndEliteThemesXY() {

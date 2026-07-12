@@ -864,6 +864,31 @@ public class Gen3Constants {
         }
     }
 
+    // Reward TM (by TM number) given by each Gym Leader, keyed by gym group tag. Used by the
+    // "Gym Leader TMs Match Type" option. Ruby/Sapphire/Emerald share a Hoenn table (Emerald's
+    // 8th leader Juan replaces Wallace but gives the same TM).
+    public static final Map<String, Integer> gymLeaderRewardTMsRSE = Map.ofEntries(
+            Map.entry("GYM1", 39), // Roxanne (Rock)
+            Map.entry("GYM2", 8),  // Brawly (Fighting)
+            Map.entry("GYM3", 34), // Wattson (Electric)
+            Map.entry("GYM4", 50), // Flannery (Fire)
+            Map.entry("GYM5", 42), // Norman (Normal)
+            Map.entry("GYM6", 40), // Winona (Flying)
+            Map.entry("GYM7", 4),  // Tate & Liza (Psychic)
+            Map.entry("GYM8", 3)   // Wallace / Juan (Water)
+    );
+
+    public static final Map<String, Integer> gymLeaderRewardTMsFRLG = Map.ofEntries(
+            Map.entry("GYM1", 39), // Brock (Rock)
+            Map.entry("GYM2", 3),  // Misty (Water)
+            Map.entry("GYM3", 34), // Lt. Surge (Electric)
+            Map.entry("GYM4", 19), // Erika (Grass)
+            Map.entry("GYM5", 6),  // Koga (Poison)
+            Map.entry("GYM6", 4),  // Sabrina (Psychic)
+            Map.entry("GYM7", 38), // Blaine (Fire)
+            Map.entry("GYM8", 26)  // Giovanni (Ground)
+    );
+
     public static final HashMap<String, Type> gymAndEliteThemesRS = setupGymAndEliteThemesRS();
 
     private static HashMap<String, Type> setupGymAndEliteThemesRS() {

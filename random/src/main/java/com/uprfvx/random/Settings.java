@@ -295,6 +295,7 @@ public class Settings {
     private int tmsGoodDamagingPercent = 0; // 0 ~ 100
     private boolean blockBrokenTMMoves;
     private boolean tmsFollowEvolutions;
+    private boolean gymLeaderTMsFollowTheme;
 
     public enum TMsHMsCompatibilityMod {
         UNCHANGED, RANDOM_PREFER_TYPE, COMPLETELY_RANDOM, FULL
@@ -537,7 +538,8 @@ public class Settings {
                 tmsHmsCompatibilityMod == TMsHMsCompatibilityMod.FULL));
 
         // 21 tms part 2
-        out.write(makeByteSelected(fullHMCompat, tmsFollowEvolutions, tutorFollowEvolutions));
+        out.write(makeByteSelected(fullHMCompat, tmsFollowEvolutions, tutorFollowEvolutions,
+                gymLeaderTMsFollowTheme));
 
         // 22 tms good damaging
         out.write((tmsForceGoodDamaging ? 0x80 : 0) | tmsGoodDamagingPercent);
@@ -889,6 +891,7 @@ public class Settings {
         settings.setFullHMCompat(restoreState(data[21], 0));
         settings.setTmsFollowEvolutions(restoreState(data[21], 1));
         settings.setTutorFollowEvolutions(restoreState(data[21], 2));
+        settings.setGymLeaderTMsFollowTheme(restoreState(data[21], 3));
 
         settings.setTmsForceGoodDamaging(restoreState(data[22], 7));
         settings.setTmsGoodDamagingPercent(data[22] & 0x7F);
@@ -2562,6 +2565,14 @@ public class Settings {
 
     public void setTmsFollowEvolutions(boolean tmsFollowEvolutions) {
         this.tmsFollowEvolutions = tmsFollowEvolutions;
+    }
+
+    public boolean isGymLeaderTMsFollowTheme() {
+        return gymLeaderTMsFollowTheme;
+    }
+
+    public void setGymLeaderTMsFollowTheme(boolean gymLeaderTMsFollowTheme) {
+        this.gymLeaderTMsFollowTheme = gymLeaderTMsFollowTheme;
     }
 
     public MoveTutorMovesMod getMoveTutorMovesMod() {

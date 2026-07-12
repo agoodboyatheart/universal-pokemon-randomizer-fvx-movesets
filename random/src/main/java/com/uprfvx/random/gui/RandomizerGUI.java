@@ -181,6 +181,7 @@ public class RandomizerGUI {
     private JCheckBox tmKeepFieldMoveTMsCheckBox;
     private JCheckBox tmForceGoodDamagingCheckBox;
     private SpinSlider tmForceGoodDamagingSpinSlider;
+    private JCheckBox tmGymLeaderTypeThemeCheckBox;
     private JRadioButton thcUnchangedRadioButton;
     private JRadioButton thcRandomPreferSameTypeRadioButton;
     private JRadioButton thcRandomCompletelyRadioButton;
@@ -1959,6 +1960,7 @@ public class RandomizerGUI {
         tmForceGoodDamagingSpinSlider.setValue(settings.getTmsGoodDamagingPercent());
         tmNoGameBreakingMovesCheckBox.setSelected(settings.isBlockBrokenTMMoves());
         tmFollowEvolutionsCheckBox.setSelected(settings.isTmsFollowEvolutions());
+        tmGymLeaderTypeThemeCheckBox.setSelected(settings.isGymLeaderTMsFollowTheme());
 
         mtcRandomCompletelyRadioButton
                 .setSelected(settings.getMoveTutorsCompatibilityMod() == Settings.MoveTutorsCompatibilityMod.COMPLETELY_RANDOM);
@@ -2220,6 +2222,7 @@ public class RandomizerGUI {
         settings.setTmsGoodDamagingPercent(tmForceGoodDamagingSpinSlider.getValue());
         settings.setBlockBrokenTMMoves(tmNoGameBreakingMovesCheckBox.isSelected());
         settings.setTmsFollowEvolutions(tmFollowEvolutionsCheckBox.isSelected());
+        settings.setGymLeaderTMsFollowTheme(tmGymLeaderTypeThemeCheckBox.isSelected());
 
         settings.setMoveTutorMovesMod(mtUnchangedRadioButton.isSelected(), mtRandomRadioButton.isSelected());
         settings.setMoveTutorsCompatibilityMod(mtcUnchangedRadioButton.isSelected(), mtcRandomPreferSameTypeRadioButton.isSelected(),
@@ -2529,7 +2532,7 @@ public class RandomizerGUI {
 
         setInitialButtonState(tmUnchangedRadioButton, tmRandomRadioButton, tmNoGameBreakingMovesCheckBox,
 				tmFullHMCompatibilityCheckBox, tmLevelupMoveSanityCheckBox, tmKeepFieldMoveTMsCheckBox,
-				tmForceGoodDamagingCheckBox, tmFollowEvolutionsCheckBox, thcUnchangedRadioButton,
+				tmForceGoodDamagingCheckBox, tmFollowEvolutionsCheckBox, tmGymLeaderTypeThemeCheckBox, thcUnchangedRadioButton,
 				thcRandomPreferSameTypeRadioButton, thcRandomCompletelyRadioButton, thcFullCompatibilityRadioButton,
 				mtUnchangedRadioButton, mtRandomRadioButton, mtNoGameBreakingMovesCheckBox, mtLevelupMoveSanityCheckBox,
 				mtLevelupMoveSanityCheckBox, mtKeepFieldMoveTutorsCheckBox, mtForceGoodDamagingCheckBox,
@@ -3662,7 +3665,8 @@ public class RandomizerGUI {
             disableButtonsWithDefault(tmUnchangedRadioButton,
                     tmUnchangedRadioButton, tmRandomRadioButton);
             disableAndDeselectButtons(tmLevelupMoveSanityCheckBox, tmKeepFieldMoveTMsCheckBox,
-                    tmForceGoodDamagingCheckBox, tmNoGameBreakingMovesCheckBox, tmFollowEvolutionsCheckBox);
+                    tmForceGoodDamagingCheckBox, tmNoGameBreakingMovesCheckBox, tmFollowEvolutionsCheckBox,
+                    tmGymLeaderTypeThemeCheckBox);
 
             disableButtonsWithDefault(mtUnchangedRadioButton,
                     mtUnchangedRadioButton, mtRandomRadioButton);
@@ -3687,10 +3691,11 @@ public class RandomizerGUI {
             }
 
             if (!(tmUnchangedRadioButton.isSelected())) {
-                enableButtons(tmKeepFieldMoveTMsCheckBox, tmForceGoodDamagingCheckBox, tmNoGameBreakingMovesCheckBox);
+                enableButtons(tmKeepFieldMoveTMsCheckBox, tmForceGoodDamagingCheckBox, tmNoGameBreakingMovesCheckBox,
+                        tmGymLeaderTypeThemeCheckBox);
             } else {
                 disableAndDeselectButtons(tmKeepFieldMoveTMsCheckBox, tmForceGoodDamagingCheckBox,
-                        tmNoGameBreakingMovesCheckBox);
+                        tmNoGameBreakingMovesCheckBox, tmGymLeaderTypeThemeCheckBox);
             }
 
             if (romHandler.hasMoveTutors()

@@ -24,6 +24,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
 
     private final Set<Type> usedUberTypes = EnumSet.noneOf(Type.class);
     private final Map<Trainer, Type> trainerTypes = new HashMap<>();
+    private Map<String, Type> gymAndEliteThemesUsed = new HashMap<>();
 
     public TrainerPokemonRandomizer(RomHandler romHandler, Settings settings, Random random) {
         super(romHandler, settings, random);
@@ -120,6 +121,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
             Map<String, List<Trainer>> groups = getTrainerGroups(currentTrainers, isTypeThemedEliteFourGymOnly);
             Map<String, Type> themes = pickGroupTypeThemes(keepTypeThemes || keepThemeOrPrimaryTypes, groups.keySet());
             assignTypesToGroups(groups, themes);
+            gymAndEliteThemesUsed = themes;
         }
 
         // Randomize the order trainers are randomized in.
@@ -340,6 +342,16 @@ public class TrainerPokemonRandomizer extends Randomizer {
             typeForTrainer = trainerPokemonSpecies.getSharedType(true);
         }
         return typeForTrainer;
+    }
+
+    /**
+     * Returns the gym/elite group-to-type themes that were actually assigned during the most recent
+     * {@link #randomizeTrainerPokes()} run (keyed by group tag, e.g. {@code "GYM1"}). For type-theme
+     * modes this reflects the assigned types (random or kept); otherwise it is empty. Used by the
+     * "Gym Leader TMs Match Type" option to lock gym TMs to the gym's assigned type.
+     */
+    public Map<String, Type> getGymAndEliteThemesUsed() {
+        return gymAndEliteThemesUsed;
     }
 
     /**

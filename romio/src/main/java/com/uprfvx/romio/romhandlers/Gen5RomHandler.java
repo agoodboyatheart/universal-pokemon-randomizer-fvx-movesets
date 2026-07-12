@@ -1324,6 +1324,15 @@ public class Gen5RomHandler extends AbstractDSRomHandler {
     }
 
     @Override
+    public Map<String, Integer> getGymLeaderTMs() {
+        if (romEntry.getRomType() == Gen5Constants.Type_BW) {
+            return Gen5Constants.gymLeaderRewardTMsBW;
+        } else {
+            return Gen5Constants.gymLeaderRewardTMsBW2;
+        }
+    }
+
+    @Override
     public Set<Item> getEvolutionItems() {
         return itemIdsToSet(Gen5Constants.evolutionItems);
     }

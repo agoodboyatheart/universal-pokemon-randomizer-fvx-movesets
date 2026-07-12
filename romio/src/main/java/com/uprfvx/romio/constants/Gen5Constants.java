@@ -1662,6 +1662,32 @@ public class Gen5Constants {
         }
     }
 
+    // Reward TM (by TM number) given by each Gym Leader, keyed by gym group tag. Used by the
+    // "Gym Leader TMs Match Type" option. GYM1 (the Striaton trio Cilan/Chili/Cress, TM83) is
+    // deliberately omitted: which of the three is fought - and thus the gym's type - is decided
+    // in-game by the player's starter, post-randomization, so it cannot be captured here. Its TM
+    // is left to standard randomization instead.
+    public static final Map<String, Integer> gymLeaderRewardTMsBW = Map.ofEntries(
+            Map.entry("GYM2", 67), // Lenora (Normal)
+            Map.entry("GYM3", 76), // Burgh (Bug)
+            Map.entry("GYM4", 72), // Elesa (Electric)
+            Map.entry("GYM5", 78), // Clay (Ground)
+            Map.entry("GYM6", 62), // Skyla (Flying)
+            Map.entry("GYM7", 79), // Brycen (Ice)
+            Map.entry("GYM8", 82)  // Drayden / Iris (Dragon)
+    );
+
+    public static final Map<String, Integer> gymLeaderRewardTMsBW2 = Map.ofEntries(
+            Map.entry("GYM1", 83), // Cheren (Normal)
+            Map.entry("GYM2", 9),  // Roxie (Poison)
+            Map.entry("GYM3", 76), // Burgh (Bug)
+            Map.entry("GYM4", 72), // Elesa (Electric)
+            Map.entry("GYM5", 78), // Clay (Ground)
+            Map.entry("GYM6", 62), // Skyla (Flying)
+            Map.entry("GYM7", 82), // Drayden (Dragon)
+            Map.entry("GYM8", 55)  // Marlon (Water)
+    );
+
     public static final HashMap<String, Type> gymAndEliteThemesBW = setupGymAndEliteThemesBW();
 
     private static HashMap<String, Type> setupGymAndEliteThemesBW() {

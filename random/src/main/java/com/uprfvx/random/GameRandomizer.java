@@ -31,6 +31,7 @@ import com.uprfvx.random.updaters.SpeciesBaseStatUpdater;
 import com.uprfvx.random.updaters.TypeEffectivenessUpdater;
 import com.uprfvx.random.updaters.Updater;
 import com.uprfvx.romio.MiscTweak;
+import com.uprfvx.romio.gamedata.Type;
 import com.uprfvx.romio.graphics.packs.CustomPlayerGraphics;
 import com.uprfvx.romio.romhandlers.Gen1RomHandler;
 import com.uprfvx.romio.romhandlers.RomHandler;
@@ -38,6 +39,7 @@ import com.uprfvx.romio.romhandlers.RomHandler;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.util.Map;
 import java.util.ResourceBundle;
 
 /**
@@ -295,6 +297,8 @@ public class GameRandomizer {
         maybeRandomizeWildPokemon();
 
         maybeRandomizeTrainerPokemon();
+        // Applied after trainer randomization so gym TMs can follow the gyms' assigned type themes.
+        maybeTypeLockGymLeaderTMs();
         maybeRandomizeTrainerMovesets();
         maybeFixTrainerZCrystals();
 
@@ -463,6 +467,33 @@ public class GameRandomizer {
                 && settings.getTmsMod() == Settings.TMsMod.RANDOM) {
             tmtMoveRandomizer.randomizeTMMoves();
         }
+    }
+
+    private void maybeTypeLockGymLeaderTMs() {
+        // Only meaningful when TM moves were actually randomized and a foe-Pokémon type-theme
+        // setting is in use (so gyms have an assigned type). No-op otherwise.
+        if (!settings.isGymLeaderTMsFollowTheme()
+                || settings.getMovesetsMod() == Settings.MovesetsMod.METRONOME_ONLY
+                || settings.getTmsMod() != Settings.TMsMod.RANDOM) {
+            return;
+        }
+
+        Map<String, Type> gymThemes;
+        switch (settings.getTrainersMod()) {
+            case TYPE_THEMED, TYPE_THEMED_ELITE4_GYMS, KEEP_THEMED, KEEP_THEME_OR_PRIMARY ->
+                    // Types actually assigned to the gyms during trainer randomization.
+                    gymThemes = trainerPokeRandomizer.getGymAndEliteThemesUsed();
+            case UNCHANGED ->
+                    // Foe Pokémon left alone: gyms keep their original canonical types.
+                    gymThemes = romHandler.getGymAndEliteTypeThemes();
+            default ->
+                    // Fully random foe modes (RANDOM/DISTRIBUTED/MAINPLAYTHROUGH): no type theme.
+                    gymThemes = null;
+        }
+        if (gymThemes == null || gymThemes.isEmpty()) {
+            return;
+        }
+        tmtMoveRandomizer.typeLockGymLeaderTMs(gymThemes);
     }
 
     private void maybeRandomizeTMHMCompatibility() {

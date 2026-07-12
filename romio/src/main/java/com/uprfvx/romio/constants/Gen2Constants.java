@@ -741,6 +741,23 @@ public class Gen2Constants {
             {ItemIDs.Gen2.gorgeousBox, 1000}
     }).collect(Collectors.toMap(kv -> kv[0], kv -> kv[1]));
 
+    // Reward TM (by TM number) given by each Gym Leader, keyed by gym group tag (see gymAndEliteThemes
+    // for the Kanto gym numbering). Used by the "Gym Leader TMs Match Type" option. In GSC only the
+    // Johto leaders plus Kanto Erika (GYM12) and Janine (GYM13) give a TM; the other Kanto leaders
+    // (Brock/Misty/Lt. Surge/Sabrina/Blaine) give none, so they are omitted.
+    public static final Map<String, Integer> gymLeaderRewardTMs = Map.ofEntries(
+            Map.entry("GYM1", 31),  // Falkner (Flying)
+            Map.entry("GYM2", 49),  // Bugsy (Bug)
+            Map.entry("GYM3", 45),  // Whitney (Normal)
+            Map.entry("GYM4", 30),  // Morty (Ghost)
+            Map.entry("GYM5", 1),   // Chuck (Fighting)
+            Map.entry("GYM6", 23),  // Jasmine (Steel)
+            Map.entry("GYM7", 16),  // Pryce (Ice)
+            Map.entry("GYM8", 24),  // Clair (Dragon)
+            Map.entry("GYM12", 19), // Erika (Grass) - Kanto
+            Map.entry("GYM13", 6)   // Janine (Poison) - Kanto
+    );
+
     public static final HashMap<String, Type> gymAndEliteThemes = setupGymAndEliteThemes();
 
     private static HashMap<String, Type> setupGymAndEliteThemes() {

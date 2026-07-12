@@ -3,6 +3,7 @@ package com.uprfvx.random.randomizers;
 import com.uprfvx.random.Settings;
 import com.uprfvx.romio.constants.GlobalConstants;
 import com.uprfvx.romio.gamedata.Move;
+import com.uprfvx.romio.gamedata.Type;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
 import java.util.*;
@@ -116,6 +117,88 @@ public class TMTutorMoveRandomizer extends Randomizer {
 
         romHandler.setTMMoves(newTMs);
         tmChangesMade = true;
+    }
+
+    /**
+     * Locks each Gym Leader's reward TM (as defined by {@link RomHandler#getGymLeaderTMs()}) to a
+     * random move of that gym's assigned type theme. Status moves of the type are valid picks;
+     * damaging bias, if wanted, is handled separately by the "Force % Good Damaging Moves" option.
+     * <p>
+     * Intended to run <b>after</b> both TM-move randomization and trainer-Pokémon randomization, so
+     * that {@code gymThemes} reflects the types actually assigned to the gyms. Does nothing if there
+     * is no gym-TM data for the game or no assigned themes.
+     *
+     * @param gymThemes Map of gym group tag (e.g. {@code "GYM1"}) to the type it was assigned.
+     */
+    public void typeLockGymLeaderTMs(Map<String, Type> gymThemes) {
+        Map<String, Integer> gymLeaderTMs = romHandler.getGymLeaderTMs();
+        if (gymLeaderTMs.isEmpty() || gymThemes == null || gymThemes.isEmpty()) {
+            return;
+        }
+
+        boolean noBroken = settings.isBlockBrokenTMMoves();
+        boolean preserveField = settings.isKeepFieldMoveTMs();
+
+        List<Move> allMoves = romHandler.getMoves();
+        List<Integer> hms = romHandler.getHMMoves();
+        List<Integer> currentTMs = new ArrayList<>(romHandler.getTMMoves());
+        List<Integer> fieldMoves = romHandler.getFieldMoves();
+        int tmCount = romHandler.getTMCount();
+
+        @SuppressWarnings("unchecked")
+        List<Integer> banned = new ArrayList<Integer>(noBroken ? romHandler.getGameBreakingMoves() : Collections.EMPTY_LIST);
+        banned.addAll(romHandler.getMovesBannedFromLevelup());
+        banned.addAll(romHandler.getIllegalMoves());
+
+        boolean changed = false;
+
+        for (Map.Entry<String, Integer> entry : gymLeaderTMs.entrySet()) {
+            Type type = gymThemes.get(entry.getKey());
+            int tmNumber = entry.getValue();
+            if (type == null || tmNumber < 1 || tmNumber > tmCount) {
+                // No assigned theme for this gym, or the TM doesn't exist in this game.
+                continue;
+            }
+            int tmIndex = tmNumber - 1;
+            int oldMove = currentTMs.get(tmIndex);
+
+            // Don't override a preserved field-move TM.
+            if (preserveField && fieldMoves.contains(oldMove)) {
+                continue;
+            }
+
+            // Pool of usable moves of the gym's type, excluding moves already taught by another TM
+            // (to keep TM moves unique). The move currently on this TM stays eligible.
+            List<Move> pool = new ArrayList<>();
+            for (Move mv : allMoves) {
+                if (mv == null || mv.number == 0 || mv.type != type) {
+                    continue;
+                }
+                if (GlobalConstants.bannedRandomMoves[mv.number] || GlobalConstants.zMoves.contains(mv.number)
+                        || hms.contains(mv.number) || banned.contains(mv.number)) {
+                    continue;
+                }
+                if (mv.number != oldMove && currentTMs.contains(mv.number)) {
+                    continue;
+                }
+                pool.add(mv);
+            }
+            if (pool.isEmpty()) {
+                // No suitable same-type move available; leave the TM as it is.
+                continue;
+            }
+
+            Move chosen = pool.get(random.nextInt(pool.size()));
+            if (chosen.number != oldMove) {
+                currentTMs.set(tmIndex, chosen.number);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            romHandler.setTMMoves(currentTMs);
+            tmChangesMade = true;
+        }
     }
 
     public void randomizeMoveTutorMoves() {

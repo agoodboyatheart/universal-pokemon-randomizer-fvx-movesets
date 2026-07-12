@@ -11,6 +11,7 @@
      For people from all other forums, their forum username should be used alongside the forum's name. E.g. "Jane Doe from Spriter's Resource". -->
 Thanks to
 @AxelElric8 for your code contributions,
+@agoodboyatheart for the Gym Leader TM type-lock feature,
 [Every person who submitted a solved issue] for reporting Issues,
 [Any person on e.g. Reddit who reported solved bugs or suggested implemented features] for [whatever they did],
 [Every person who made a new CPG] for the CPG sprites, and
@@ -35,6 +36,14 @@ Download the Randomizer below by clicking on `UPR_FVX-[VERSION]-[OS].zip`. If yo
 
 ### Pokemon Base Stats
 - [The description of a new feature here.] (Issue #[issue num])
+
+### TMs & HMs
+- Added a "Gym Leader TMs Match Type" option. When TM moves are randomized and a Foe Pokémon
+  type-theme setting is in use (Unchanged, Type Themed, Type Themed (Elite 4/Gyms), Keep Themed,
+  or Keep Theme or Primary), each Gym Leader's reward TM is locked to a random move of that gym's
+  assigned type — including status moves — so gym TMs stay thematic. Follows the gym's actually
+  assigned type, even when Type Themed reassigns it randomly. (Only affects games with authored
+  gym-leader TM data.)
 
 ### Static Pokemon
 - (Gen 3) [The description of a changed feature here.]

@@ -417,6 +417,19 @@ public class Gen1Constants {
         tbc(trs, 31, 9, "GYM8");
     }
 
+    // Reward TM (by TM number) given by each Gym Leader, keyed by gym group tag. Used by the
+    // "Gym Leader TMs Match Type" option. Keys match the gym tags used by gymAndEliteThemes.
+    public static final Map<String, Integer> gymLeaderRewardTMs = Map.ofEntries(
+            Map.entry("GYM1", 34), // Brock (Rock)
+            Map.entry("GYM2", 11), // Misty (Water)
+            Map.entry("GYM3", 24), // Lt. Surge (Electric)
+            Map.entry("GYM4", 21), // Erika (Grass)
+            Map.entry("GYM5", 6),  // Koga (Poison)
+            Map.entry("GYM6", 46), // Sabrina (Psychic)
+            Map.entry("GYM7", 38), // Blaine (Fire)
+            Map.entry("GYM8", 27)  // Giovanni (Ground)
+    );
+
     public static final HashMap<String, Type> gymAndEliteThemes = setupGymAndEliteThemes();
 
     private static HashMap<String, Type> setupGymAndEliteThemes() {

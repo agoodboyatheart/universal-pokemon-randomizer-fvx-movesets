@@ -336,6 +336,17 @@ public interface RomHandler {
     Map<String, Type> getGymAndEliteTypeThemes();
 
     /**
+     * Returns a map of gym group tag (e.g. {@code "GYM1"}) to the TM <b>number</b> that the
+     * gym's Leader gives as a reward in this game. Used by the "Gym Leader TMs Match Type"
+     * option to lock those TMs to the gym's assigned type theme. <br>
+     * Only Gyms are included (Elite Four / Champions do not reward TMs). Games for which no
+     * data has been authored return an empty map, which safely disables the feature for them.
+     */
+    default Map<String, Integer> getGymLeaderTMs() {
+        return Map.of();
+    }
+
+    /**
      * Only made public for testing. Do NOT use otherwise!
      */
     void saveTrainers();

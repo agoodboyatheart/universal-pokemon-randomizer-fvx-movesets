@@ -1149,6 +1149,11 @@ public class Gen2RomHandler extends AbstractGBCRomHandler {
     }
 
     @Override
+    public Map<String, Integer> getGymLeaderTMs() {
+        return Gen2Constants.gymLeaderRewardTMs;
+    }
+
+    @Override
     public void saveTrainers() {
         if (trainers == null) {
             throw new IllegalStateException("Trainers are not loaded");

@@ -1773,6 +1773,15 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
     }
 
     @Override
+    public Map<String, Integer> getGymLeaderTMs() {
+        if (romEntry.getRomType() == Gen3Constants.RomType_FRLG) {
+            return Gen3Constants.gymLeaderRewardTMsFRLG;
+        } else {
+            return Gen3Constants.gymLeaderRewardTMsRSE;
+        }
+    }
+
+    @Override
     public void saveTrainers() {
         if (trainers == null) {
             throw new IllegalStateException("Trainers are not loaded");
