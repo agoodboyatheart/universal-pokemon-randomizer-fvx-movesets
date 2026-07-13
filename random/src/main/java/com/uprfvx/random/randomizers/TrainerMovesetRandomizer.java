@@ -131,7 +131,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     }
 
                     // Remaining slots: wildcard picks reusing the existing synergy-weighted logic.
-                    fillWildcardMoves(t, tp, pk, ability, distinctPool, picked, doubles);
+                    fillWildcardMoves(tp, pk, ability, distinctPool, picked, doubles, level);
                 }
 
                 // Enabler-dependency guarantee across every slot: drop any dependent whose enabler did not make the
@@ -447,6 +447,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(mv -> !exclude.contains(mv))
                 .filter(mv -> effectivePower(mv, level) > 0)
                 .collect(Collectors.toList());
+        // No-duplicate-attacking-type guard: a fallback slot should not hand out a second attack of a type the
+        // mon already attacks with (relaxed automatically if that would leave nothing damaging to pick).
+        damaging = withoutDuplicateAttackingType(damaging, exclude, level);
         // Synthetic level/HP-% damage moves report effectivePower == level, so they land in the low tier.
         return weightedPick(damaging, mv -> {
             double ep = effectivePower(mv, level);
@@ -524,8 +527,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // Remaining slots: reuse the existing synergy-weighted pick + anti-synergy removal, but never pick a
     // redundant status move (so e.g. Spinarak never rolls Sunny Day and powers up the Fire moves it fears).
-    private void fillWildcardMoves(Trainer t, TrainerPokemon tp, Species pk, int ability,
-                                   List<Move> pool, List<Move> picked, boolean doubles) {
+    private void fillWildcardMoves(TrainerPokemon tp, Species pk, int ability,
+                                   List<Move> pool, List<Move> picked, boolean doubles, int level) {
         if (picked.size() >= 4) {
             return;
         }
@@ -551,60 +554,24 @@ public class TrainerMovesetRandomizer extends Randomizer {
             working.add(mv);
         }
 
-        double trainerTypeModifier = t.isImportant() ? 1.5 : (t.isBoss() ? 2 : 1);
-        double bonusModifier = trainerTypeModifier * (working.size() / 10.0);
-        double stabMoveBias = 0.25 * bonusModifier;
-        double hardAbilityMoveBias = 1 * bonusModifier;
-        double softAbilityMoveBias = 0.5 * bonusModifier;
-        double statBias = 0.5 * bonusModifier;
-        double softMoveBias = 0.25 * bonusModifier;
-        double hardMoveBias = 1 * bonusModifier;
+        // Only the anti-synergy REMOVAL passes shape the wildcard pool now. The old additive biases (STAB /
+        // ability / stat / atk:spatk-ratio duplication) were dead weight: eligibleWildcards calls .distinct()
+        // before the weightedPick, so duplicate copies never changed the odds. Leaving the wildcard a
+        // near-uniform draw over the anti-synergy-trimmed pool is the intended "surprise" of the slot.
         double softMoveAntiBias = 0.5;
 
-        // Re-apply the existing pool biases (STAB, ability, stat, atk/spatk ratio) to the wildcard pool.
-        List<Move> stab1 = working.stream()
-                .filter(mv -> mv.type == pk.getPrimaryType(false) && mv.category != MoveCategory.STATUS)
-                .collect(Collectors.toList());
-        addCopies(working, stab1, stabMoveBias);
-        if (pk.getSecondaryType(false) != null) {
-            List<Move> stab2 = working.stream()
-                    .filter(mv -> mv.type == pk.getSecondaryType(false) && mv.category != MoveCategory.STATUS)
-                    .collect(Collectors.toList());
-            addCopies(working, stab2, stabMoveBias);
-        }
         if (hasAbilities) {
-            working = updateMovesConsideringAbilitySynergies(tp, pk, working, hardAbilityMoveBias, softAbilityMoveBias);
+            working = updateMovesConsideringAbilitySynergies(tp, working);
         }
-        working = updateMovesConsideringStatSynergies(pk, working, statBias);
+        working = updateMovesConsideringStatSynergies(pk, working);
 
-        double atkSpatkRatioModifier = 0.75;
-        double atkSpatkRatio = getAtkSpatkRatio(tp, pk);
-        List<Move> physicalMoves = working.stream()
-                .filter(mv -> mv.category == MoveCategory.PHYSICAL).collect(Collectors.toList());
-        List<Move> specialMoves = working.stream()
-                .filter(mv -> mv.category == MoveCategory.SPECIAL).collect(Collectors.toList());
-        if (atkSpatkRatio < 1 && !specialMoves.isEmpty()) {
-            atkSpatkRatio = 1 / atkSpatkRatio;
-            int additionalMoves = (int) (physicalMoves.size() * atkSpatkRatioModifier * atkSpatkRatio) - specialMoves.size();
-            for (int i = 0; i < additionalMoves; i++) {
-                working.add(specialMoves.get(random.nextInt(specialMoves.size())));
-            }
-        } else if (!physicalMoves.isEmpty()) {
-            int additionalMoves = (int) (specialMoves.size() * atkSpatkRatioModifier * atkSpatkRatio) - physicalMoves.size();
-            for (int i = 0; i < additionalMoves; i++) {
-                working.add(physicalMoves.get(random.nextInt(physicalMoves.size())));
-            }
-        }
-
-        // Seed move-to-move synergy from the already-chosen role moves, so wildcards complement them.
+        // Drop moves that hard-clash with an already-chosen role move (kept - a genuine pool shaper).
         for (Move rolePick : new ArrayList<>(picked)) {
             working.removeAll(MoveSynergy.getHardMoveAntiSynergy(rolePick, working));
-            addCopies(working, MoveSynergy.getMoveSynergy(rolePick, working, romHandler.generationOfPokemon()), hardMoveBias);
-            addCopies(working, MoveSynergy.getSoftMoveSynergy(rolePick, working, romHandler.getTypeTable()), softMoveBias);
         }
 
         while (picked.size() < 4) {
-            List<Move> distinct = eligibleWildcards(working, pk, ability, picked);
+            List<Move> distinct = eligibleWildcards(working, pk, ability, picked, level);
             int slotsLeft = 4 - picked.size();
             if (distinct.isEmpty()) {
                 break;
@@ -630,7 +597,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                         working.removeAll(Collections.singletonList(dependent));
                     }
                 }
-                distinct = eligibleWildcards(working, pk, ability, picked);
+                distinct = eligibleWildcards(working, pk, ability, picked, level);
                 if (distinct.isEmpty()) {
                     break;
                 }
@@ -651,14 +618,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
             working.removeAll(Collections.singletonList(move));
             working.removeAll(MoveSynergy.getHardMoveAntiSynergy(move, working));
-            addCopies(working, MoveSynergy.getMoveSynergy(move, working, romHandler.generationOfPokemon()), hardMoveBias);
-            addCopies(working, MoveSynergy.getSoftMoveSynergy(move, working, romHandler.getTypeTable()), softMoveBias);
 
             List<Move> softAnti = MoveSynergy.getSoftMoveAntiSynergy(move, working);
             Collections.shuffle(softAnti, random);
             int softAntiCount = (int) (softMoveAntiBias * softAnti.size());
             for (int j = 0; j < softAntiCount; j++) {
-                if (eligibleWildcards(working, pk, ability, picked).size() <= (4 - picked.size())) {
+                if (eligibleWildcards(working, pk, ability, picked, level).size() <= (4 - picked.size())) {
                     break;
                 }
                 working.remove(softAnti.get(j % softAnti.size()));
@@ -683,25 +648,42 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
     }
 
-    // The distinct, currently-pickable wildcard moves (excludes already-picked and redundant status moves).
-    private List<Move> eligibleWildcards(List<Move> working, Species pk, int ability, List<Move> picked) {
-        return working.stream()
+    // The distinct, currently-pickable wildcard moves (excludes already-picked moves, redundant status moves,
+    // and - via the no-duplicate-attacking-type guard - any attack of a type the mon already attacks with).
+    private List<Move> eligibleWildcards(List<Move> working, Species pk, int ability, List<Move> picked, int level) {
+        List<Move> distinct = working.stream()
                 .filter(mv -> !picked.contains(mv))
                 .filter(mv -> !(mv.category == MoveCategory.STATUS && isRedundantStatusMove(mv, pk, ability, picked)))
                 .distinct()
                 .collect(Collectors.toList());
+        return withoutDuplicateAttackingType(distinct, picked, level);
     }
 
-    // Adds `factor * toAdd.size()` copies of the given moves into the pool (higher weight in later picks).
-    private void addCopies(List<Move> pool, List<Move> toAdd, double factor) {
-        if (toAdd.isEmpty() || factor <= 0) {
-            return;
+    // The attacking types already covered by the picked moves (a move counts as attacking when it deals real or
+    // synthetic damage, i.e. effectivePower > 0; status moves and gimmicks are ignored).
+    private Set<Type> usedAttackingTypes(List<Move> picked, int level) {
+        Set<Type> types = new HashSet<>();
+        for (Move mv : picked) {
+            if (effectivePower(mv, level) > 0) {
+                types.add(mv.type);
+            }
         }
-        Collections.shuffle(toAdd, random);
-        int count = (int) (factor * toAdd.size());
-        for (int i = 0; i < count; i++) {
-            pool.add(toAdd.get(i % toAdd.size()));
+        return types;
+    }
+
+    // No-duplicate-attacking-type guard: drops candidates whose attacking type is already covered by a picked
+    // move, so no mon ends up with two attacks of the same type. Status/gimmick moves are never filtered. Falls
+    // back to the unfiltered list when the guard would leave nothing to pick, so small / mono-type movepools
+    // still fill all four slots (the "always 4 moves" invariant wins over the guard).
+    private List<Move> withoutDuplicateAttackingType(List<Move> candidates, List<Move> picked, int level) {
+        Set<Type> used = usedAttackingTypes(picked, level);
+        if (used.isEmpty()) {
+            return candidates;
         }
+        List<Move> filtered = candidates.stream()
+                .filter(mv -> effectivePower(mv, level) <= 0 || !used.contains(mv.type))
+                .collect(Collectors.toList());
+        return filtered.isEmpty() ? candidates : filtered;
     }
 
     private static boolean hasType(Species pk, Type type) {
@@ -790,38 +772,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 || mv.hasSpecificStatChange(StatChangeType.ALL, true));
     }
 
-    private List<Move> updateMovesConsideringAbilitySynergies(TrainerPokemon tp, Species pk, List<Move> movesAtLevel, double hardAbilityMoveBias, double softAbilityMoveBias) {
-        // Hard ability/move synergy
-
-        List<Move> abilityMoveSynergyList = MoveSynergy.getHardAbilityMoveSynergy(
-                romHandler.getAbilityForTrainerPokemon(tp),
-                pk.getPrimaryType(false),
-                pk.getSecondaryType(false),
-                movesAtLevel,
-                romHandler.generationOfPokemon(),
-                romHandler.getPerfectAccuracy());
-        Collections.shuffle(abilityMoveSynergyList, random);
-        for (int i = 0; i < hardAbilityMoveBias * abilityMoveSynergyList.size(); i++) {
-            int j = i % abilityMoveSynergyList.size();
-            movesAtLevel.add(abilityMoveSynergyList.get(j));
-        }
-
-        // Soft ability/move synergy
-
-        List<Move> softAbilityMoveSynergyList = MoveSynergy.getSoftAbilityMoveSynergy(
-                romHandler.getAbilityForTrainerPokemon(tp),
-                movesAtLevel,
-                pk.getPrimaryType(false),
-                pk.getSecondaryType(false));
-
-        Collections.shuffle(softAbilityMoveSynergyList, random);
-        for (int i = 0; i < softAbilityMoveBias * softAbilityMoveSynergyList.size(); i++) {
-            int j = i % softAbilityMoveSynergyList.size();
-            movesAtLevel.add(softAbilityMoveSynergyList.get(j));
-        }
-
-        // Soft ability/move anti-synergy
-
+    // Removal-only now: prunes moves that clash with the Pokemon's ability (soft ability anti-synergy). The
+    // former synergy-ADDITION passes were dropped - they only added duplicate copies that eligibleWildcards
+    // collapsed with .distinct() before the pick, so they never influenced anything.
+    private List<Move> updateMovesConsideringAbilitySynergies(TrainerPokemon tp, List<Move> movesAtLevel) {
         List<Move> softAbilityMoveAntiSynergyList = MoveSynergy.getSoftAbilityMoveAntiSynergy(
                 romHandler.getAbilityForTrainerPokemon(tp), movesAtLevel);
         List<Move> withoutSoftAntiSynergy = new ArrayList<>(movesAtLevel);
@@ -834,18 +788,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return movesAtLevel;
     }
 
-    private List<Move> updateMovesConsideringStatSynergies(Species pk, List<Move> movesAtLevel, double statBias) {
-        // Stat/move synergy
-
-        List<Move> statSynergyList = MoveSynergy.getStatMoveSynergy(pk, movesAtLevel);
-        Collections.shuffle(statSynergyList, random);
-        for (int i = 0; i < statBias * statSynergyList.size(); i++) {
-            int j = i % statSynergyList.size();
-            movesAtLevel.add(statSynergyList.get(j));
-        }
-
-        // Stat/move anti-synergy
-
+    // Removal-only now: prunes moves that clash with the Pokemon's stats (stat anti-synergy). The former
+    // synergy-ADDITION pass was dropped for the same reason as in the ability helper above.
+    private List<Move> updateMovesConsideringStatSynergies(Species pk, List<Move> movesAtLevel) {
         List<Move> statAntiSynergyList = MoveSynergy.getStatMoveAntiSynergy(pk, movesAtLevel);
         List<Move> withoutStatAntiSynergy = new ArrayList<>(movesAtLevel);
         for (Move mv : statAntiSynergyList) {

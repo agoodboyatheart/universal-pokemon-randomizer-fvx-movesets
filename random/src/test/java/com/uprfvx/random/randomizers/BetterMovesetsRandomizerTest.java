@@ -96,6 +96,15 @@ public class BetterMovesetsRandomizerTest {
     // ceiling (observed pre-change worst case ~3.5%): trips only if a penalty is missing/broken. Soft, sampled.
     private static final double FLAWED_STRONG_MOVE_MAX_RATE = 0.08;
 
+    // No-duplicate-attacking-type guard: a mon should almost never carry two attacking moves of the same type.
+    // The guard is best-effort (it relaxes when avoiding a duplicate would leave a slot unfillable, and the
+    // "<=4 distinct candidates" shortcut takes moves unguarded), so genuinely mono-type / tiny movepools can
+    // still produce one. Ceilings are gen-aware: modern gens sit near-zero (observed <=1.9%), but gen 1 has no
+    // physical/special split and much smaller movepools, so the fallback legitimately produces more overlap
+    // (observed ~10.8% on Red/Blue). Generous margins: they trip only if the guard is missing/broken.
+    private static final double DUPLICATE_ATTACK_TYPE_MAX_RATE = 0.05;
+    private static final double DUPLICATE_ATTACK_TYPE_MAX_RATE_GEN1 = 0.18;
+
     @Test
     public void inspectBetterMovesets() {
         String romsDir = System.getProperty("romsPath");
@@ -167,6 +176,7 @@ public class BetterMovesetsRandomizerTest {
         int overTierPicks = 0;            // ... whose power*hitCount exceeds the mon's level power tier
         int lowLevelDamagingPicks = 0;    // sub-L20 (mid-unlock) mons' real non-natural damaging picks
         int lowLevelHighPowerPicks = 0;   // ... of those, high-tier (81+ BP) - should be very rare under the soft gate
+        int dupAttackTypeMons = 0;        // mons carrying 2+ attacking moves of one type (no-dup-type guard fallback)
 
         for (Trainer tr : romHandler.getTrainers()) {
             boolean printThis = printed < SAMPLE_MOVESETS_PER_ROM;
@@ -279,6 +289,25 @@ public class BetterMovesetsRandomizerTest {
                         }
                     }
                 }
+                // No-duplicate-attacking-type guard: no mon should carry two attacking moves of one type. A move
+                // counts as attacking when it deals real or synthetic damage (mirrors the randomizer's
+                // effectivePower > 0). Tallied, not hard-failed, because the guard relaxes for tiny / mono-type
+                // pools; the aggregate rate is asserted below.
+                Map<Type, Integer> attackTypeCounts = new HashMap<>();
+                for (int moveID : movesThisMon) {
+                    Move am = allMoves.get(moveID);
+                    boolean attacking = am.power > 1 || SYNTHETIC_DAMAGE_MOVES.contains(moveID);
+                    if (attacking && am.type != null) {
+                        attackTypeCounts.merge(am.type, 1, Integer::sum);
+                    }
+                }
+                if (attackTypeCounts.values().stream().anyMatch(c -> c >= 2)) {
+                    dupAttackTypeMons++;
+                    if (printThis) {
+                        System.out.println("     [dup-attack-type] " + pk.getName() + " (" + typeStr(pk)
+                                + ") carries 2+ same-type attacks");
+                    }
+                }
                 // Sleep Talk and Snore are useless without Rest, so they may only appear alongside it.
                 if (!movesThisMon.contains(MoveIDs.rest)) {
                     if (movesThisMon.contains(MoveIDs.sleepTalk)) {
@@ -380,6 +409,19 @@ public class BetterMovesetsRandomizerTest {
                                     + " - practical-value penalty not biasing",
                             romName, allMoves.get(id).name, rate * 100, FLAWED_STRONG_MOVE_MAX_RATE * 100));
                 }
+            }
+        }
+        // No-duplicate-attacking-type guard: with the guard in place, carrying two attacks of one type should be
+        // rare (only tiny / mono-type pools that force the fallback). A high rate means the guard is not biasing.
+        if (tpCount > 100) {
+            double dupRate = (double) dupAttackTypeMons / tpCount;
+            double dupCap = gen == 1 ? DUPLICATE_ATTACK_TYPE_MAX_RATE_GEN1 : DUPLICATE_ATTACK_TYPE_MAX_RATE;
+            System.out.printf("     no-dup-attack-type: %d/%d mons (%.1f%%) carry 2+ same-type attacks (guard fallback)%n",
+                    dupAttackTypeMons, tpCount, dupRate * 100);
+            if (dupRate > dupCap) {
+                violations.add(String.format(
+                        "%s: %.1f%% of mons carry two attacks of one type (%d/%d > %.0f%% cap) - dup-type guard not biasing",
+                        romName, dupRate * 100, dupAttackTypeMons, tpCount, dupCap * 100));
             }
         }
         // Soft level->power-tier guarantees (see Randomizer.levelTierWeight). Over-tier picks are allowed but

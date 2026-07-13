@@ -251,6 +251,8 @@ tasks.register<Test>("testROMs") {
     testClassesDirs = sourceSets["test"].output.classesDirs
     classpath = sourceSets["test"].runtimeClasspath
     systemProperty("romsPath", rootProject.file("roms").absolutePath)
+    // Forward -Dgolden.record so the golden-master test's re-bless flag reaches the forked test JVM.
+    System.getProperty("golden.record")?.let { systemProperty("golden.record", it) }
 
     shouldRunAfter("test")
 
