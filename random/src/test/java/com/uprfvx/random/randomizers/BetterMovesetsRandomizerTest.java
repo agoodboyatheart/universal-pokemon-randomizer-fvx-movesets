@@ -81,6 +81,21 @@ public class BetterMovesetsRandomizerTest {
             MoveIDs.hypnosis, MoveIDs.sleepPowder, MoveIDs.spore, MoveIDs.sing,
             MoveIDs.grassWhistle, MoveIDs.lovelyKiss, MoveIDs.darkVoid, MoveIDs.yawn);
 
+    // Pure charge moves: mirrors TrainerMovesetRandomizer.PURE_CHARGE_MOVES. Penalised by practicalValueWeight
+    // (a wasted wind-up turn), so they should be rare picks. Recharge moves are identified via Move.isRechargeMove.
+    private static final Set<Integer> PURE_CHARGE_MOVES = Set.of(
+            MoveIDs.solarBeam, MoveIDs.solarBlade, MoveIDs.skyAttack, MoveIDs.razorWind,
+            MoveIDs.skullBash, MoveIDs.freezeShock, MoveIDs.iceBurn, MoveIDs.meteorBeam);
+
+    // Sun-SETTER abilities: mirrors TrainerMovesetRandomizer.SUN_SETTER_ABILITIES (the exemption lever, a strict
+    // subset of the broader SUN_ABILITIES benefit set). SolarBeam / Solar Blade skip the charge penalty only when
+    // the mon guarantees sun - one of these abilities, or a Sunny Day in the same moveset.
+    private static final Set<Integer> SUN_SETTER_ABILITIES = Set.of(AbilityIDs.drought, AbilityIDs.desolateLand);
+
+    // A pure-charge or recharge move must not become a common pick under the practical-value penalty. Generous
+    // ceiling (observed pre-change worst case ~3.5%): trips only if a penalty is missing/broken. Soft, sampled.
+    private static final double FLAWED_STRONG_MOVE_MAX_RATE = 0.08;
+
     @Test
     public void inspectBetterMovesets() {
         String romsDir = System.getProperty("romsPath");
@@ -141,6 +156,9 @@ public class BetterMovesetsRandomizerTest {
         int naturalCount = 0; // moveless mons in trainers with no custom moves (e.g. first-rival) -> game fills them
         int syntheticDamageUses = 0; // times a fixed/proportional-damage move (Seismic Toss etc.) was picked
         int fixedConstantDamageUses = 0; // times a fixed-CONSTANT-damage move (Dragon Rage, SonicBoom) was picked
+        int pureChargeUses = 0;      // times a pure charge move (SolarBeam, Sky Attack, ...) was picked - now penalised
+        int rechargeUses = 0;        // times a recharge move (Hyper Beam, Giga Impact) was picked - now penalised
+        int solarOnNonSun = 0;       // SolarBeam / Solar Blade picks on a mon that cannot guarantee sun (info only)
         int doublesFormatMons = 0;   // mons in a genuine double/multi battle (ALWAYS multi-battle status)
         int doublesMoveUsesInDoubles = 0; // doubles-support moves kept on those double/multi-battle mons
         int committedDamagingMoves = 0;   // damaging moves on physical/special-committed attackers (raw base stats)
@@ -179,6 +197,12 @@ public class BetterMovesetsRandomizerTest {
                     moveCounts.merge(moveID, 1, Integer::sum);
                     if (SYNTHETIC_DAMAGE_MOVES.contains(moveID)) {
                         syntheticDamageUses++;
+                    }
+                    if (PURE_CHARGE_MOVES.contains(moveID)) {
+                        pureChargeUses++;
+                    }
+                    if (allMoves.get(moveID).isRechargeMove) {
+                        rechargeUses++;
                     }
                     // For a committed attacker, how often its damaging moves match its preferred category.
                     MoveCategory cat = allMoves.get(moveID).category;
@@ -282,6 +306,15 @@ public class BetterMovesetsRandomizerTest {
                         violations.add(romName + ": Nightmare without a sleep move on " + pk.getName());
                     }
                 }
+                // SolarBeam / Solar Blade skip the charge penalty only on a sun-guaranteed mon (sun-setter ability
+                // or a Sunny Day it also carries). Count picks that lack both - not a violation (the penalty just
+                // makes them rare wildcards, it does not ban them), but tracked as evidence the exemption is scoped.
+                if (movesThisMon.contains(MoveIDs.solarBeam) || movesThisMon.contains(MoveIDs.solarBlade)) {
+                    boolean sun = SUN_SETTER_ABILITIES.contains(ability) || movesThisMon.contains(MoveIDs.sunnyDay);
+                    if (!sun) {
+                        solarOnNonSun++;
+                    }
+                }
                 if (nonZero == 0) {
                     // A mon with empty move slots is only genuinely moveless in-game when its trainer writes
                     // custom moves yet this mon is neither reset nor given any. When the trainer has no custom
@@ -326,6 +359,28 @@ public class BetterMovesetsRandomizerTest {
             System.out.printf("     committed attackers: %.0f%% of damaging moves match preferred category (%d/%d)%n",
                     100.0 * committedMatchingMoves / committedDamagingMoves,
                     committedMatchingMoves, committedDamagingMoves);
+        }
+        // Practical-value discount evidence: pure charge / recharge moves should be uncommon picks now.
+        System.out.printf("     practical-value: %d pure-charge pick(s) (%d SolarBeam/Solar Blade on non-sun mons), "
+                        + "%d recharge pick(s), across %d Pokemon%n",
+                pureChargeUses, solarOnNonSun, rechargeUses, tpCount);
+        // Soft guarantee: no single pure-charge or recharge move should be a common pick under the penalty. This
+        // is looser than a hard per-appearance ban (the moves stay legal rare surprises) but catches a missing or
+        // broken practical-value weight, which would let a flawed strong move flood the slots again.
+        if (tpCount > 100) {
+            for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
+                int id = e.getKey();
+                boolean flawed = PURE_CHARGE_MOVES.contains(id) || allMoves.get(id).isRechargeMove;
+                if (!flawed) {
+                    continue;
+                }
+                double rate = (double) e.getValue() / tpCount;
+                if (rate > FLAWED_STRONG_MOVE_MAX_RATE) {
+                    violations.add(String.format("%s: flawed strong move '%s' too common (%.1f%% of mons > %.0f%% cap)"
+                                    + " - practical-value penalty not biasing",
+                            romName, allMoves.get(id).name, rate * 100, FLAWED_STRONG_MOVE_MAX_RATE * 100));
+                }
+            }
         }
         // Soft level->power-tier guarantees (see Randomizer.levelTierWeight). Over-tier picks are allowed but
         // must stay a minority - a broken gate would favour the strongest moves and push most picks over-tier.

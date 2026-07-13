@@ -101,19 +101,19 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     picked.addAll(distinctPool);
                 } else {
                     // Slot 1: a STAB attacking move, base power scaled to the Pokemon's level.
-                    Move stab = pickStabMove(pk, distinctPool, level, profile, picked);
+                    Move stab = pickStabMove(pk, ability, distinctPool, level, profile, picked);
                     if (stab == null) {
-                        stab = pickBestDamaging(distinctPool, picked, level);
+                        stab = pickBestDamaging(distinctPool, picked, level, ability);
                     }
                     if (stab != null) {
                         picked.add(stab);
                     }
 
                     // Slot 2: a coverage move that hits what the STAB move is walled by.
-                    Move coverage = pickCoverageMove(pk, distinctPool, level,
+                    Move coverage = pickCoverageMove(pk, ability, distinctPool, level,
                             stab == null ? null : stab.type, profile, picked);
                     if (coverage == null) {
-                        coverage = pickBestDamaging(distinctPool, picked, level);
+                        coverage = pickBestDamaging(distinctPool, picked, level, ability);
                     }
                     if (coverage != null) {
                         picked.add(coverage);
@@ -123,7 +123,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     if (includeStatus) {
                         Move status = pickStatusMove(pk, ability, distinctPool, picked);
                         if (status == null) {
-                            status = pickBestDamaging(distinctPool, picked, level);
+                            status = pickBestDamaging(distinctPool, picked, level, ability);
                         }
                         if (status != null) {
                             picked.add(status);
@@ -137,7 +137,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // Enabler-dependency guarantee across every slot: drop any dependent whose enabler did not make the
                 // final set (Snore/Sleep Talk without Rest, Spit Up/Swallow without Stockpile), then backfill with
                 // the next-best damaging move.
-                enforceEnablerDependencies(picked, distinctPool, level);
+                enforceEnablerDependencies(picked, distinctPool, level, ability);
 
                 for (int i = 0; i < 4; i++) {
                     tp.getMoves()[i] = i < picked.size() ? picked.get(i).number : 0;
@@ -174,6 +174,39 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // (across-tier gating) and any other bias to build the final pick weight.
     private static double powerSelectionWeight(double effectivePower) {
         return Math.pow(effectivePower, POWER_SELECTION_EXPONENT);
+    }
+
+    // A move's nominal base power is a poor proxy for its practical value in a trainer battle: charge moves waste
+    // a turn winding up, and recharge moves waste the turn after. The power-weighted pickers (and the wildcard)
+    // score these like clean hits, so strong-but-flawed moves (SolarBeam, Sky Attack, Hyper Beam, Giga Impact)
+    // showed up far too often, even on top bosses. practicalValueWeight demotes them so they stay rare surprises
+    // rather than staples - it does NOT ban them.
+    //
+    // Only PURE charge moves are penalised: the semi-invulnerable two-turn moves (Dig, Dive, Fly, Bounce) share
+    // the same isChargeMove flag but are mainline staples we deliberately keep, so we curate an explicit set
+    // instead of reading the flag. Geomancy is a STATUS move so it never reaches an attack slot and is omitted.
+    private static final Set<Integer> PURE_CHARGE_MOVES = Set.of(
+            MoveIDs.solarBeam, MoveIDs.solarBlade, MoveIDs.skyAttack, MoveIDs.razorWind,
+            MoveIDs.skullBash, MoveIDs.freezeShock, MoveIDs.iceBurn, MoveIDs.meteorBeam);
+    // Selection-weight multipliers for the two flawed classes (tuning knobs). Charge moves are penalised harder
+    // than recharge moves - a wasted turn up front is worse than one after the hit has landed.
+    private static final double CHARGE_MOVE_WEIGHT_PENALTY = 0.15;
+    private static final double RECHARGE_MOVE_WEIGHT_PENALTY = 0.25;
+
+    // Selection-weight multiplier reflecting a move's practical (not nominal) value: a penalty for pure charge
+    // and recharge moves, 1.0 for everything else. SolarBeam / Solar Blade are exempt (charge skipped) when the
+    // mon can guarantee sun - either a sun-setting ability, or a Sunny Day already picked into this moveset.
+    private double practicalValueWeight(Move mv, int ability, List<Move> picked) {
+        if (PURE_CHARGE_MOVES.contains(mv.number)) {
+            boolean solar = mv.number == MoveIDs.solarBeam || mv.number == MoveIDs.solarBlade;
+            boolean sun = SUN_SETTER_ABILITIES.contains(ability)
+                    || picked.stream().anyMatch(m -> m.number == MoveIDs.sunnyDay);
+            return (solar && sun) ? 1.0 : CHARGE_MOVE_WEIGHT_PENALTY;
+        }
+        if (mv.isRechargeMove) {
+            return RECHARGE_MOVE_WEIGHT_PENALTY;
+        }
+        return 1.0;
     }
 
     // Weather moves are only worth running if the Pokemon benefits from that weather, and are pointless
@@ -278,7 +311,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // Over-level moves are no longer hard-excluded here: the shared level->power-tier soft bias
         // (levelTierWeight) folded into the slot weight functions demotes them instead, so a low-level mon
         // usually gets level-appropriate power but can rarely roll a stronger move.
-        if (GlobalConstants.badStrongMoves.contains(mv.number)) {
+        // badStrongMoves are hard-banned from attack slots, EXCEPT recharge moves (Hyper Beam - the only recharge
+        // move in the list): those are allowed in but heavily demoted by practicalValueWeight, so Hyper Beam and
+        // Giga Impact (never banned) are treated consistently. Do NOT edit the shared badStrongMoves list itself -
+        // the species moveset randomizer relies on it.
+        if (GlobalConstants.badStrongMoves.contains(mv.number) && !mv.isRechargeMove) {
             return false;
         }
         return synthetic
@@ -288,7 +325,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // Slot 1: a STAB attacking move, weighted toward stronger moves within the mon's unlocked power tier
     // (via the shared level->power-tier soft bias) and, for a committed attacker, toward its preferred category.
-    private Move pickStabMove(Species pk, List<Move> pool, int level, AttackerProfile profile, List<Move> exclude) {
+    private Move pickStabMove(Species pk, int ability, List<Move> pool, int level, AttackerProfile profile, List<Move> exclude) {
         Type t1 = pk.getPrimaryType(false);
         Type t2 = pk.getSecondaryType(false);
         List<Move> candidates = pool.stream()
@@ -307,13 +344,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
         return weightedPick(candidates, mv -> {
             double ep = effectivePower(mv, level);
-            return powerSelectionWeight(ep) * levelTierWeight(level, ep) * categoryPreference(mv, profile);
+            return powerSelectionWeight(ep) * levelTierWeight(level, ep) * categoryPreference(mv, profile)
+                    * practicalValueWeight(mv, ability, exclude);
         });
     }
 
     // Slot 2: a coverage move hitting a type that resists the STAB move; SE-gated, blind-spot-weighted, and
     // (for a committed attacker) nudged toward the Pokemon's preferred damage category.
-    private Move pickCoverageMove(Species pk, List<Move> pool, int level, Type stabType,
+    private Move pickCoverageMove(Species pk, int ability, List<Move> pool, int level, Type stabType,
                                   AttackerProfile profile, List<Move> exclude) {
         if (stabType == null) {
             return null;
@@ -347,7 +385,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             if (coversAny(tt, mv.type, blindSpots, false)) {
                 weight *= COVERAGE_BLIND_SPOT_BONUS;
             }
-            return weight * categoryPreference(mv, profile);
+            return weight * categoryPreference(mv, profile) * practicalValueWeight(mv, ability, exclude);
         });
     }
 
@@ -404,7 +442,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Global fallback for any unfillable slot: a damaging move weighted toward stronger picks within the mon's
     // unlocked power tier (via the shared level->power-tier soft bias), degrading gracefully when the pool holds
     // only over-level moves - those are demoted, not excluded, so a mon always gets some damaging move.
-    private Move pickBestDamaging(List<Move> pool, List<Move> exclude, int level) {
+    private Move pickBestDamaging(List<Move> pool, List<Move> exclude, int level, int ability) {
         List<Move> damaging = pool.stream()
                 .filter(mv -> !exclude.contains(mv))
                 .filter(mv -> effectivePower(mv, level) > 0)
@@ -412,7 +450,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // Synthetic level/HP-% damage moves report effectivePower == level, so they land in the low tier.
         return weightedPick(damaging, mv -> {
             double ep = effectivePower(mv, level);
-            return powerSelectionWeight(ep) * levelTierWeight(level, ep);
+            return powerSelectionWeight(ep) * levelTierWeight(level, ep) * practicalValueWeight(mv, ability, exclude);
         });
     }
 
@@ -602,7 +640,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 }
             }
 
-            Move move = distinct.get(random.nextInt(distinct.size()));
+            // A light practical-value discount so charge/recharge moves are rarer wildcards too; normal moves
+            // keep equal odds (weightedPick is uniform when weights match), preserving the wildcard's surprise.
+            // Any Sunny Day already picked lives in `picked`, so the SolarBeam sun exemption fires naturally here.
+            Move move = weightedPick(distinct, mv -> practicalValueWeight(mv, ability, picked));
             picked.add(move);
             if (picked.size() >= 4) {
                 break;
@@ -703,7 +744,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Final cross-slot guarantee: drop any dependent whose enabler did not make the chosen set, then backfill to
     // four with the next-best damaging move. The backfill pool excludes every dependent, or pickBestDamaging could
     // re-select the move just removed (Snore and Spit Up are themselves valid damaging moves).
-    private void enforceEnablerDependencies(List<Move> picked, List<Move> distinctPool, int level) {
+    private void enforceEnablerDependencies(List<Move> picked, List<Move> distinctPool, int level, int ability) {
         Set<Integer> pickedNumbers = new HashSet<>();
         for (Move mv : picked) {
             pickedNumbers.add(mv.number);
@@ -719,7 +760,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(mv -> !DEPENDENT_MOVE_ENABLERS.containsKey(mv.number))
                 .collect(Collectors.toList());
         Move fill;
-        while (picked.size() < 4 && (fill = pickBestDamaging(backfillPool, picked, level)) != null) {
+        while (picked.size() < 4 && (fill = pickBestDamaging(backfillPool, picked, level, ability)) != null) {
             picked.add(fill);
         }
     }
