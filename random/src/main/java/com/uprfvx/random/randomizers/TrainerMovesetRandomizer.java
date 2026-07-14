@@ -1265,8 +1265,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
         // TM Moves
         boolean[] tmCompat = allTMCompat.get(tp.getSpecies());
-        for (int tmMove: allTMMoves) {
-            if (tmCompat[allTMMoves.indexOf(tmMove) + 1]) {
+        for (int i = 0; i < allTMMoves.size(); i++) {
+            int tmMove = allTMMoves.get(i);
+            if (tmCompat[i + 1]) {
                 Move thisMove = moves.get(tmMove);
                 if (thisMove.power > 1 && this.random.nextDouble()
                         < tmMoveProbability * levelTierWeight(tp.getLevel(), thisMove.power * thisMove.hitCount)) {
@@ -1285,8 +1286,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // Move Tutor Moves
         if (romHandler.hasMoveTutors()) {
             boolean[] tutorCompat = allTutorCompat.get(tp.getSpecies());
-            for (int tutorMove: allTutorMoves) {
-                if (tutorCompat[allTutorMoves.indexOf(tutorMove) + 1]) {
+            for (int i = 0; i < allTutorMoves.size(); i++) {
+                int tutorMove = allTutorMoves.get(i);
+                if (tutorCompat[i + 1]) {
                     Move thisMove = moves.get(tutorMove);
                     if (thisMove.power > 1 && this.random.nextDouble()
                             < tutorMoveProbability * levelTierWeight(tp.getLevel(), thisMove.power * thisMove.hitCount)) {
