@@ -208,10 +208,11 @@ public class GlobalConstants {
 
     // Sub-75 base power attacks that are still worth running (utility/priority/pivot/etc.).
     public static final List<Integer> goodWeakMoves = Arrays.asList(
-            MoveIDs.accelerock, MoveIDs.acrobatics, MoveIDs.avalanche, MoveIDs.bonemerang, MoveIDs.bouncyBubble,
-            MoveIDs.bulletPunch, MoveIDs.buzzyBuzz, MoveIDs.circleThrow, MoveIDs.clearSmog, MoveIDs.doubleIronBash,
-            MoveIDs.dragonDarts, MoveIDs.dragonTail, MoveIDs.drainingKiss, MoveIDs.endeavor, MoveIDs.facade,
-            MoveIDs.fireFang, MoveIDs.flipTurn, MoveIDs.freezeDry, MoveIDs.frustration, MoveIDs.gearGrind,
+            MoveIDs.accelerock, MoveIDs.acrobatics, MoveIDs.aquaJet, MoveIDs.avalanche, MoveIDs.bonemerang,
+            MoveIDs.bouncyBubble, MoveIDs.bulletPunch, MoveIDs.buzzyBuzz, MoveIDs.circleThrow, MoveIDs.clearSmog,
+            MoveIDs.doubleIronBash, MoveIDs.dragonDarts, MoveIDs.dragonTail, MoveIDs.drainingKiss, MoveIDs.endeavor,
+            MoveIDs.facade, MoveIDs.fakeOut, MoveIDs.fireFang, MoveIDs.flipTurn, MoveIDs.freezeDry,
+            MoveIDs.frustration, MoveIDs.gearGrind,
             MoveIDs.gigaDrain, MoveIDs.grassKnot, MoveIDs.gyroBall, MoveIDs.iceFang, MoveIDs.iceShard,
             MoveIDs.icicleSpear, MoveIDs.knockOff, MoveIDs.lowKick, MoveIDs.machPunch, MoveIDs.naturesMadness,
             MoveIDs.nightShade, MoveIDs.nuzzle, MoveIDs.pikaPapow, MoveIDs.psychoCut, MoveIDs.pursuit,

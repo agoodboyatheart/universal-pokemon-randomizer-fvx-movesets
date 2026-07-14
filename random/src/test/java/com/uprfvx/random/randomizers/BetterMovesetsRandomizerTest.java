@@ -52,6 +52,11 @@ public class BetterMovesetsRandomizerTest {
     // still get skipped gracefully by tryLoad returning null.
     private static final long MAX_ROM_BYTES = 6L * 1024 * 1024 * 1024;
     private static final double UBIQUITOUS_RATE = 0.20;
+    // Gen 1 has a tiny shared movepool (few TMs, each learnable by much of the dex) and no physical/special split,
+    // so under Batch 5's 100%-pool availability a handful of universal moves (Bubblebeam, Swift, Rest, Substitute,
+    // Toxic) legitimately land on ~1 in 4-5 mons - observed max ~24.5%. This mirrors the existing gen-1 carve-outs
+    // for duplicate-attack-type and team-repeat; gens 2+ still hold under the base 20% ceiling.
+    private static final double UBIQUITOUS_RATE_GEN1 = 0.28;
     private static final int SAMPLE_MOVESETS_PER_ROM = 6;
 
     private static final Set<Integer> RAIN_ABILITIES = Set.of(
@@ -568,9 +573,10 @@ public class BetterMovesetsRandomizerTest {
         }
 
         int finalTp = tpCount;
+        double ubiquitousCap = gen == 1 ? UBIQUITOUS_RATE_GEN1 : UBIQUITOUS_RATE;
         for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
             double rate = (double) e.getValue() / (double) finalTp;
-            if (rate >= UBIQUITOUS_RATE) {
+            if (rate >= ubiquitousCap) {
                 violations.add(String.format("%s: '%s' is ubiquitous (%.1f%% of mons)",
                         romName, allMoves.get(e.getKey()).name, rate * 100));
             }

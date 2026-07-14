@@ -125,7 +125,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                         secondAttack = pickCoverageMove(pk, ability, distinctPool, level,
                                 stab == null ? null : stab.type, profile, picked);
                     } else {
-                        secondAttack = pickRegularSecondAttack(distinctPool, picked, level, ability);
+                        secondAttack = pickRegularSecondAttack(distinctPool, picked, level, ability, profile);
                     }
                     if (secondAttack == null) {
                         secondAttack = pickBestDamaging(distinctPool, picked, level, ability);
@@ -231,22 +231,57 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // of their stronger category in the STAB and coverage slots; mixed attackers have no preference.
     private enum AttackerProfile { PHYSICAL, SPECIAL, MIXED }
 
-    // How lopsided Attack vs Sp.Atk must be to commit to a category (>=1.15x, i.e. a ~15% edge). Tuning knob.
-    private static final double ATTACKER_COMMIT_RATIO = 1.15;
-    // Weight multiplier applied to a move matching the attacker's preferred category in the STAB/coverage slots.
-    private static final double CATEGORY_PREFERENCE_BONUS = 3.0;
+    // How lopsided Attack vs Sp.Atk must be to commit to a category (>=1.25x, i.e. a ~25% edge). Below this the
+    // mon is "mixed" and its picks are category-flat. Tuning knob.
+    private static final double ATTACKER_COMMIT_RATIO = 1.25;
+    // Weight multiplier applied to a move matching a committed attacker's preferred category (STAB, coverage,
+    // Regular second attack). ~9x gives a committed attacker a roughly 90% category lean. Tuning knob.
+    private static final double CATEGORY_PREFERENCE_BONUS = 9.0;
 
-    // Within a single power tier the attack-slot pickers weight moves by effective power, so the strongest in-band
-    // move dominates (e.g. Water Pulse 60 crowds out Water Gun / Bubble 40). This exponent softens that power term
-    // so weaker same-tier moves surface more often while the strongest stays slightly favoured. 1.0 = the old
-    // power-proportional behaviour; 0.5 (square root) gives roughly a 55/45 split for a 60-vs-40 BP pair. The
-    // across-tier level gating is unaffected - that is handled separately by levelTierWeight. Tuning knob.
+    // Within a single power band the Boss attack-slot pickers weight moves by effective power, so the stronger
+    // in-band move is softly favoured. This exponent softens that power term so weaker same-band moves still
+    // surface. 1.0 = power-proportional; 0.5 (square root) gives roughly a 55/45 split for a 60-vs-40 BP pair.
+    // Applied only to the Boss STAB / coverage / fallback picks - Regular STAB and the Regular second attack are
+    // flat (no power term). Across-band level-appropriateness is now enforced by the hard power-band filter
+    // (applyPowerBandFilter), not by a soft weight. Tuning knob.
     private static final double POWER_SELECTION_EXPONENT = 0.5;
 
-    // A move's power-based selection weight, softened by POWER_SELECTION_EXPONENT. Multiply by levelTierWeight
-    // (across-tier gating) and any other bias to build the final pick weight.
+    // A move's power-based selection weight, softened by POWER_SELECTION_EXPONENT.
     private static double powerSelectionWeight(double effectivePower) {
         return Math.pow(effectivePower, POWER_SELECTION_EXPONENT);
+    }
+
+    // Hard power-band filter (Batch 5). Where the shared levelTierWeight is a SOFT bias used by the species
+    // power-curve randomizer, the trainer side removes level-inappropriate attacking moves outright, so a
+    // level's movepool reads as authored rather than occasionally sprouting an over-level nuke. Bands reuse the
+    // shared BP edges (TIER_LOW_MAX_BP 60 / TIER_MID_MAX_BP 80); only the level windows are trainer-specific:
+    //   Lv < 15        -> Low only     (remove effective power > 60)
+    //   15 <= Lv < 30  -> Low + Avg    (remove effective power > 80)
+    //   Lv >= 30       -> Avg + High   (remove effective power <= 60, i.e. drop the now-weak Low band)
+    // Exemptions (never removed): the mon's OWN level-up moves (any BP, any level); status/gimmick moves
+    // (effectivePower 0); and, from the Lv30+ Low-removal only, priority/utility weak moves (goodWeakMoves), so
+    // a high-level mon can still run Aqua Jet / Sucker Punch / Rapid Spin etc.
+    private static final int BAND_MID_UNLOCK_LEVEL = 15;   // Average band (61-80) becomes available here
+    private static final int BAND_HIGH_UNLOCK_LEVEL = 30;  // High band (81+) available AND Low band dropped here
+
+    private void applyPowerBandFilter(List<Move> pool, int level, Set<Integer> ownLevelUpMoveNumbers) {
+        pool.removeIf(mv -> {
+            double ep = effectivePower(mv, level);
+            if (ep <= 0) {
+                return false; // status / gimmick / non-attacking: never banded
+            }
+            if (ownLevelUpMoveNumbers.contains(mv.number)) {
+                return false; // the mon's own learnset moves are exempt at any power/level
+            }
+            if (level < BAND_MID_UNLOCK_LEVEL) {
+                return ep > TIER_LOW_MAX_BP;
+            }
+            if (level < BAND_HIGH_UNLOCK_LEVEL) {
+                return ep > TIER_MID_MAX_BP;
+            }
+            // Lv >= 30: drop the Low band, but keep priority/utility weak moves.
+            return ep <= TIER_LOW_MAX_BP && !GlobalConstants.goodWeakMoves.contains(mv.number);
+        });
     }
 
     // A move's nominal base power is a poor proxy for its practical value in a trainer battle: charge moves waste
@@ -403,9 +438,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
             return false;
         }
         boolean synthetic = isSyntheticDamageMove(mv);
-        // Over-level moves are no longer hard-excluded here: the shared level->power-tier soft bias
-        // (levelTierWeight) folded into the slot weight functions demotes them instead, so a low-level mon
-        // usually gets level-appropriate power but can rarely roll a stronger move.
+        // Level-appropriateness is handled upstream by the hard power-band filter (applyPowerBandFilter), which
+        // removes level-inappropriate attacking moves from the pool before this eligibility check runs.
         // badStrongMoves are hard-banned from attack slots, EXCEPT recharge moves (Hyper Beam - the only recharge
         // move in the list): those are allowed in but heavily demoted by practicalValueWeight, so Hyper Beam and
         // Giga Impact (never banned) are treated consistently. Do NOT edit the shared badStrongMoves list itself -
@@ -418,10 +452,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 || GlobalConstants.goodWeakMoves.contains(mv.number);
     }
 
-    // Slot 1: a STAB attacking move, weighted toward stronger moves within the mon's unlocked power tier
-    // (via the shared level->power-tier soft bias) and, for a committed attacker, toward its preferred category.
+    // Slot 1: a STAB attacking move. Level-appropriateness is already enforced by the hard power-band filter on
+    // the pool, so this slot no longer applies a level->power weight. Boss/Important trainers get a soft power
+    // lean (and the accuracy difficulty lever); Regular trainers pick flat across the available bands, so a weak
+    // level-up STAB competes evenly with a universal TM. Both tiers nudge a committed attacker toward its category.
     private Move pickStabMove(Species pk, int ability, List<Move> pool, int level, AttackerProfile profile,
-                              List<Move> exclude, boolean reliable) {
+                              List<Move> exclude, boolean bossTier) {
         Type t1 = pk.getPrimaryType(false);
         Type t2 = pk.getSecondaryType(false);
         List<Move> candidates = pool.stream()
@@ -430,8 +466,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(mv -> isAttackSlotEligible(mv, level))
                 .collect(Collectors.toList());
         if (candidates.isEmpty()) {
-            // No good-damaging STAB move at all: fall back to any damaging STAB (still tier-weighted, so a
-            // low-level mon leans toward level-appropriate power). effectivePower > 0 is guaranteed here.
+            // No good-damaging STAB move at all: fall back to any damaging STAB. effectivePower > 0 guaranteed here.
             candidates = pool.stream()
                     .filter(mv -> !exclude.contains(mv))
                     .filter(mv -> effectivePower(mv, level) > 0)
@@ -440,9 +475,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
         return weightedPick(candidates, mv -> {
             double ep = effectivePower(mv, level);
-            return powerSelectionWeight(ep) * levelTierWeight(level, ep) * categoryPreference(mv, profile)
+            return (bossTier ? powerSelectionWeight(ep) : 1.0) * categoryPreference(mv, profile)
                     * practicalValueWeight(mv, ability, exclude)
-                    * (reliable ? accuracyWeight(mv) : 1.0);
+                    * (bossTier ? accuracyWeight(mv) : 1.0);
         });
     }
 
@@ -475,7 +510,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // still occasionally win, so bosses read as authored rather than perfectly optimized.
         return weightedPick(eligible, mv -> {
             double ep = effectivePower(mv, level);
-            double weight = powerSelectionWeight(ep) * levelTierWeight(level, ep);
+            double weight = powerSelectionWeight(ep);
             if (coversAny(tt, mv.type, holes, true)) {
                 weight *= COVERAGE_SUPER_EFFECTIVE_BONUS;
             }
@@ -520,7 +555,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return false;
     }
 
-    // Slot 3: a non-redundant good status move, synergy-weighted to suit the Pokemon.
+    // Slot 3: a non-redundant good status move, picked FLAT among the eligible candidates (Batch 5 / Q3). The
+    // stat-boost gate lives in the candidate filter via isRedundantStatusMove: an Attack-only booster is only
+    // eligible if a physical attack was already picked, a Sp.Atk-only booster only if a special attack was, based
+    // on the actually-picked attacks. Beyond that gate the choice is deliberately even - the old synergy bonus and
+    // the accuracy (reliability) lean are dropped for status, so boss status reads as varied rather than optimised.
     private Move pickStatusMove(Species pk, int ability, List<Move> pool, List<Move> picked, int level) {
         List<Move> candidates = pool.stream()
                 .filter(mv -> !picked.contains(mv))
@@ -532,18 +571,13 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (candidates.isEmpty()) {
             return null;
         }
-        Set<Integer> synergy = MoveSynergy.getStatMoveSynergy(pk, candidates)
-                .stream().map(mv -> mv.number).collect(Collectors.toSet());
-        // teamRepeatWeight demotes a status move a teammate already carries (status moves have effectivePower 0,
-        // so only the exact-move tally applies here) - the team trends toward varied status, not five Toxics.
-        // accuracyWeight (boss slot) leans toward reliable status: Thunder Wave / Toxic (>=90%) over Hypnosis / Sing.
-        return weightedPick(candidates,
-                mv -> (synergy.contains(mv.number) ? 3.0 : 1.0) * teamRepeatWeight(mv, level) * accuracyWeight(mv));
+        // Flat pick among eligible candidates, tempered only by teamRepeatWeight so the team trends toward varied
+        // status (status moves have effectivePower 0, so only the exact-move repeat tally applies here).
+        return weightedPick(candidates, mv -> teamRepeatWeight(mv, level));
     }
 
-    // Global fallback for any unfillable slot: a damaging move weighted toward stronger picks within the mon's
-    // unlocked power tier (via the shared level->power-tier soft bias), degrading gracefully when the pool holds
-    // only over-level moves - those are demoted, not excluded, so a mon always gets some damaging move.
+    // Global fallback for any unfillable slot: a damaging move softly weighted toward stronger picks. Level-
+    // appropriateness is already handled by the hard power-band filter on the pool, so no level->power term here.
     private Move pickBestDamaging(List<Move> pool, List<Move> exclude, int level, int ability) {
         List<Move> damaging = pool.stream()
                 .filter(mv -> !exclude.contains(mv))
@@ -552,20 +586,19 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // No-duplicate-attacking-type guard: a fallback slot should not hand out a second attack of a type the
         // mon already attacks with (relaxed automatically if that would leave nothing damaging to pick).
         damaging = withoutDuplicateAttackingType(damaging, exclude, level);
-        // Synthetic level/HP-% damage moves report effectivePower == level, so they land in the low tier.
-        return weightedPick(damaging, mv -> {
-            double ep = effectivePower(mv, level);
-            return powerSelectionWeight(ep) * levelTierWeight(level, ep) * practicalValueWeight(mv, ability, exclude);
-        });
+        return weightedPick(damaging, mv ->
+                powerSelectionWeight(effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude));
     }
 
-    // Slot 2 for Regular-tier trainers: a plain, level-appropriate second attacking move. Unlike the boss coverage
-    // slot it does NOT hole-target super-effective types, and unlike pickBestDamaging it is NOT power-weighted
-    // toward the strongest option - the flat within-tier draw is deliberate. Power-weighting let one ubiquitous
-    // high-BP TM (e.g. Secret Power in Gen 3) dominate this slot across the whole cast, which reads as "optimal",
-    // not "authored". Level gating (levelTierWeight) still keeps the pick level-appropriate and the practical-value
-    // discount keeps charge/recharge moves rare; the no-duplicate-attacking-type guard still applies.
-    private Move pickRegularSecondAttack(List<Move> pool, List<Move> exclude, int level, int ability) {
+    // Slot 2 for Regular-tier trainers: a plain second attacking move. Unlike the boss coverage slot it does NOT
+    // hole-target super-effective types, and it is NOT power-weighted toward the strongest option - the flat draw
+    // is deliberate. Power-weighting let one ubiquitous high-BP TM (e.g. Secret Power in Gen 3) dominate this slot
+    // across the whole cast, which reads as "optimal", not "authored". Level-appropriateness is enforced by the
+    // hard power-band filter on the pool. A committed attacker is still nudged toward its category (phys/special
+    // lean), the generic-neutral penalty demotes always-neutral filler, the practical-value discount keeps
+    // charge/recharge moves rare, and the no-duplicate-attacking-type guard still applies.
+    private Move pickRegularSecondAttack(List<Move> pool, List<Move> exclude, int level, int ability,
+                                         AttackerProfile profile) {
         List<Move> damaging = pool.stream()
                 .filter(mv -> !exclude.contains(mv))
                 .filter(mv -> effectivePower(mv, level) > 0)
@@ -580,14 +613,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     .collect(Collectors.toList());
         }
         damaging = withoutDuplicateAttackingType(damaging, exclude, level);
-        // Flat within-tier weighting: no powerSelectionWeight term, so a 40 BP move competes evenly with a 70 BP
-        // one inside the same unlocked tier - variety over optimisation. The one exception is the generic-neutral
-        // penalty: without super-effective hole-targeting, always-neutral universal TMs (Normal-type Secret Power,
-        // Facade, Return - learnable by nearly the whole dex, super-effective against nothing) otherwise flood this
-        // slot on ~half the cast, which reads as flavourless filler, not authored. They are demoted, not banned.
-        return weightedPick(damaging, mv -> genericNeutralPenalty(mv)
-                * levelTierWeight(level, effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude)
-                * teamRepeatWeight(mv, level));
+        // Flat power (no powerSelectionWeight), so a 40 BP move competes evenly with a 70 BP one - variety over
+        // optimisation. The generic-neutral penalty demotes always-neutral universal TMs (Normal-type Secret
+        // Power, Facade, Return - learnable by nearly the whole dex, super-effective against nothing) which would
+        // otherwise flood this slot as flavourless filler. Both are demotions, not bans.
+        return weightedPick(damaging, mv -> genericNeutralPenalty(mv) * categoryPreference(mv, profile)
+                * practicalValueWeight(mv, ability, exclude) * teamRepeatWeight(mv, level));
     }
 
     // Weight multiplier for the Regular second-attack slot: demotes "always-neutral" attacking moves - those whose
@@ -1190,10 +1221,6 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
 
         List<Move> moves = romHandler.getMoves();
-        double eggMoveProbability = 0.1;
-        double preEvoMoveProbability = 0.5;
-        double tmMoveProbability = 0.6;
-        double tutorMoveProbability = 0.6;
 
         if (allLevelUpMoves == null) {
             allLevelUpMoves = romHandler.getMovesLearnt();
@@ -1219,15 +1246,20 @@ public class TrainerMovesetRandomizer extends Randomizer {
             allTutorMoves = romHandler.getMoveTutorMoves();
         }
 
-        // Level-up Moves
-        List<Move> moveSelectionPoolAtLevel = allLevelUpMoves.get(tp.getSpecies().getNumber())
+        // Level-up Moves. These are the mon's OWN learnset moves - collected here so the hard power-band filter
+        // below can exempt them (a level-up move is level-appropriate by definition, at any base power).
+        List<Move> ownLevelUpMoves = allLevelUpMoves.get(tp.getSpecies().getNumber())
                 .stream()
                 .filter(ml -> (ml.level <= tp.getLevel() && ml.level != 0) || (ml.level == 0 && tp.getLevel() >= 30))
                 .map(ml -> moves.get(ml.move))
                 .distinct()
-                .collect(Collectors.toList());
+                .toList();
+        Set<Integer> ownLevelUpMoveNumbers = ownLevelUpMoves.stream()
+                .map(mv -> mv.number).collect(Collectors.toSet());
+        List<Move> moveSelectionPoolAtLevel = new ArrayList<>(ownLevelUpMoves);
 
-        // Pre-Evo Moves
+        // Pre-Evo Moves (100% availability - the hard power-band filter, not a random roll, keeps them level-
+        // appropriate; unlike the mon's own level-up moves these are NOT exempt from that filter).
         if (!cyclicEvolutions) {
             Species preEvo;
             if (romHandler.altFormesCanHaveDifferentEvolutions()) {
@@ -1240,50 +1272,28 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 moveSelectionPoolAtLevel.addAll(allLevelUpMoves.get(preEvo.getNumber())
                         .stream()
                         .filter(ml -> ml.level <= tp.getLevel())
-                        .filter(_ -> this.random.nextDouble() < preEvoMoveProbability)
                         .map(ml -> moves.get(ml.move))
                         .distinct().toList());
             }
         }
 
-        // TM Moves
+        // TM Moves (100% availability - every TM the species can learn enters the pool; the hard power-band
+        // filter below removes the level-inappropriate ones).
         boolean[] tmCompat = allTMCompat.get(tp.getSpecies());
         for (int i = 0; i < allTMMoves.size(); i++) {
             int tmMove = allTMMoves.get(i);
             if (tmCompat[i + 1]) {
-                Move thisMove = moves.get(tmMove);
-                if (thisMove.power > 1 && this.random.nextDouble()
-                        < tmMoveProbability * levelTierWeight(tp.getLevel(), thisMove.power * thisMove.hitCount)) {
-                    moveSelectionPoolAtLevel.add(thisMove);
-                } else if ((thisMove.power <= 1 && this.random.nextInt(100) < tp.getLevel()) ||
-                        ((thisMove.power <= 1 || this.random.nextDouble()
-                                < levelTierWeight(tp.getLevel(), thisMove.power * thisMove.hitCount))
-                                && this.random.nextInt(200) < tp.getLevel())) {
-                    // The variety roll admits power<=1 moves and, softly, real damaging moves in proportion to
-                    // the level->power-tier weight, so over-level moves only rarely slip in rather than never.
-                    moveSelectionPoolAtLevel.add(thisMove);
-                }
+                moveSelectionPoolAtLevel.add(moves.get(tmMove));
             }
         }
 
-        // Move Tutor Moves
+        // Move Tutor Moves (100% availability, same as TMs).
         if (romHandler.hasMoveTutors()) {
             boolean[] tutorCompat = allTutorCompat.get(tp.getSpecies());
             for (int i = 0; i < allTutorMoves.size(); i++) {
                 int tutorMove = allTutorMoves.get(i);
                 if (tutorCompat[i + 1]) {
-                    Move thisMove = moves.get(tutorMove);
-                    if (thisMove.power > 1 && this.random.nextDouble()
-                            < tutorMoveProbability * levelTierWeight(tp.getLevel(), thisMove.power * thisMove.hitCount)) {
-                        moveSelectionPoolAtLevel.add(thisMove);
-                    } else if ((thisMove.power <= 1 && this.random.nextInt(100) < tp.getLevel()) ||
-                            ((thisMove.power <= 1 || this.random.nextDouble()
-                                    < levelTierWeight(tp.getLevel(), thisMove.power * thisMove.hitCount))
-                                    && this.random.nextInt(200) < tp.getLevel())) {
-                        // The variety roll admits power<=1 moves and, softly, real damaging moves in proportion to
-                        // the level->power-tier weight, so over-level moves only rarely slip in rather than never.
-                        moveSelectionPoolAtLevel.add(thisMove);
-                    }
+                    moveSelectionPoolAtLevel.add(moves.get(tutorMove));
                 }
             }
         }
@@ -1300,30 +1310,31 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 firstEvo = firstEvo.getEvolutionsTo().get(0).getFrom();
             }
             if (allEggMoves.get(firstEvo.getNumber()) != null) {
+                // 100% availability - egg moves carry no level requirement, so a low-level mon could otherwise
+                // inherit a far-too-strong move (Petal Dance / Leaf Storm); the hard power-band filter below
+                // removes over-level ones and keeps status / gimmick / synthetic-damage moves.
                 moveSelectionPoolAtLevel.addAll(allEggMoves.get(firstEvo.getNumber())
                         .stream()
-                        .filter(egm -> this.random.nextDouble() < eggMoveProbability)
                         .map(moves::get)
-                        // Egg moves carry no level requirement, so a low-level mon could otherwise inherit a
-                        // far-too-strong move (e.g. Petal Dance / Leaf Storm). Gate real damaging moves by the same
-                        // level->power-tier soft bias the TM/tutor pool uses, so over-level ones only rarely slip
-                        // in; keep power<=1 moves (status, gimmicks, synthetic level/HP-% damage) always.
-                        .filter(m -> m.power <= 1
-                                || this.random.nextDouble() < levelTierWeight(tp.getLevel(), m.power * m.hitCount))
-                        .collect(Collectors.toList()));
+                        .toList());
             }
         }
+
+        // Hard power-band filter: remove level-inappropriate attacking moves outright (the mon's own level-up
+        // moves, status/gimmick moves, and - at high level - priority weak moves are exempt; see the method doc).
+        applyPowerBandFilter(moveSelectionPoolAtLevel, tp.getLevel(), ownLevelUpMoveNumbers);
 
         return moveSelectionPoolAtLevel.stream().distinct().collect(Collectors.toList());
     }
 
     /**
      * Builds the candidate move pool for a trainer Smeargle: the full usable move universe (Sketch can
-     * copy anything). Excludes only mechanically-unusable / banned moves, then applies the same
-     * level->power soft gate the egg-move branch uses (Sketch, like an egg move, carries no level
-     * requirement) so a low-level Smeargle still gets level-appropriate moves and different Smeargles
-     * roll different subsets. Everything downstream (trimMoveList, role slots, redundancy) runs on this
-     * list unchanged, so Smeargle goes through the identical checks and balances as every other mon.
+     * copy anything). Excludes only mechanically-unusable / banned moves, then applies the same hard
+     * power-band filter every other mon's pool gets, so a low-level Smeargle still only draws level-
+     * appropriate attacks. Sketched moves are not learnset moves, so none are exempt as "own level-up"
+     * moves (the priority/status exemptions still apply via the filter). Everything downstream
+     * (trimMoveList, role slots, redundancy) runs on this list unchanged, so Smeargle goes through the
+     * identical checks and balances as every other mon.
      */
     private List<Move> buildSmeargleSketchPool(TrainerPokemon tp) {
         Set<Integer> banned = new HashSet<>();
@@ -1341,14 +1352,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
             if (banned.contains(mv.number)) {
                 continue;
             }
-            // Keep status/gimmick/synthetic-damage moves always; gate real damaging moves by the same
-            // level->power-tier soft bias the TM/tutor/egg pools use, so over-level nukes only rarely
-            // slip in on a low-level Smeargle.
-            if (mv.power <= 1
-                    || this.random.nextDouble() < levelTierWeight(tp.getLevel(), mv.power * mv.hitCount)) {
-                pool.add(mv);
-            }
+            pool.add(mv);
         }
+        applyPowerBandFilter(pool, tp.getLevel(), Collections.emptySet());
         return pool.stream().distinct().collect(Collectors.toList());
     }
 }
