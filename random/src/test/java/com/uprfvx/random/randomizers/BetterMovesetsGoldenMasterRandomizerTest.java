@@ -69,10 +69,10 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
                 BOSS L20 MILTANK (NORMAL): 29,247,208,174
                 BOSS L14 METAPOD (BUG): 106,0,0,0
                 BOSS L14 KAKUNA (BUG/POISON): 106,40,81,0
-                BOSS L16 SCYTHER (BUG/FLYING): 210,228,29,249
+                BOSS L16 SCYTHER (BUG/FLYING): 210,98,168,249
                 BOSS L21 GASTLY (GHOST/POISON): 247,202,174,237
                 BOSS L21 HAUNTER (GHOST/POISON): 122,202,174,95
-                BOSS L25 GENGAR (GHOST/POISON): 122,7,182,94
+                BOSS L25 GENGAR (GHOST/POISON): 122,8,182,94
                 BOSS L23 HAUNTER (GHOST/POISON): 247,202,156,237
                 BOSS L27 SEEL (WATER): 62,29,195,207
                 BOSS L29 DEWGONG (WATER/ICE): 62,63,156,214
@@ -80,7 +80,7 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
                 BOSS L30 MAGNEMITE (ELECTRIC/STEEL): 84,205,156,207
                 BOSS L30 MAGNEMITE (ELECTRIC/STEEL): 87,129,86,218
                 BOSS L35 STEELIX (STEEL/GROUND): 231,91,46,249
-                BOSS L27 PRIMEAPE (FIGHTING): 2,8,156,218
+                BOSS L27 PRIMEAPE (FIGHTING): 2,129,156,218
                 BOSS L30 POLIWRATH (WATER/FIGHTING): 249,196,174,55
                 BOSS L37 DRAGONAIR (DRAGON): 225,192,174,213
                 BOSS L37 DRAGONAIR (DRAGON): 225,53,86,87

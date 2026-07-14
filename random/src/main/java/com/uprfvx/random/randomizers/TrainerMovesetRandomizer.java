@@ -161,6 +161,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Any slot that cannot be filled falls back to the next-best damaging move, so every mon gets 4 moves.
 
     private static final double COVERAGE_BLIND_SPOT_BONUS = 2.0;
+    // Weight multiplier for a coverage move that hits a STAB hole super-effectively. A strong preference rather
+    // than a hard gate: bosses still usually get SE coverage, but occasionally a flavourful neutral move (more
+    // "authored", less Smogon-optimal). Mirrors COVERAGE_BLIND_SPOT_BONUS. Tuning knob.
+    private static final double COVERAGE_SUPER_EFFECTIVE_BONUS = 3.5;
     private static final int TRICK_ROOM_MAX_SPEED = 60;
 
     // Attacking-stat profile, from the (ability-adjusted) Attack:Sp.Atk ratio. Committed attackers prefer moves
@@ -383,14 +387,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (eligible.isEmpty()) {
             return null;
         }
-        // Prefer super-effective coverage; only fall back to merely-neutral coverage if none is SE.
-        List<Move> superEffective = eligible.stream()
-                .filter(mv -> coversAny(tt, mv.type, holes, true))
-                .collect(Collectors.toList());
-        List<Move> chosenSet = superEffective.isEmpty() ? eligible : superEffective;
-        return weightedPick(chosenSet, mv -> {
+        // Strongly prefer super-effective coverage, but as a weight (not a hard gate): a neutral coverage move can
+        // still occasionally win, so bosses read as authored rather than perfectly optimized.
+        return weightedPick(eligible, mv -> {
             double ep = effectivePower(mv, level);
             double weight = powerSelectionWeight(ep) * levelTierWeight(level, ep);
+            if (coversAny(tt, mv.type, holes, true)) {
+                weight *= COVERAGE_SUPER_EFFECTIVE_BONUS;
+            }
             if (coversAny(tt, mv.type, blindSpots, false)) {
                 weight *= COVERAGE_BLIND_SPOT_BONUS;
             }
