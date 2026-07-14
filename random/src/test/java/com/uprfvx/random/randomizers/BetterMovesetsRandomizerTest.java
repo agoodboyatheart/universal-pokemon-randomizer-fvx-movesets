@@ -118,6 +118,20 @@ public class BetterMovesetsRandomizerTest {
     private static final double TEAM_NONSTAB_REPEAT_MAX_RATE = 0.12;
     private static final double TEAM_NONSTAB_REPEAT_MAX_RATE_GEN1 = 0.17;
 
+    // Accuracy-as-difficulty lever (Issue E): mirrors TrainerMovesetRandomizer.RELIABLE_ACCURACY. A damaging move
+    // is "low accuracy" when its hitratio is a real value below this (never-miss moves store hitratio ==
+    // getPerfectAccuracy() and are exempt). The boss/important CURATED attacking slots (STAB, coverage) softly demote
+    // such moves. NOTE: this is measured and PRINTED as evidence, not hard-asserted. A cross-tier comparison is not
+    // a valid test of the lever: boss/important mons carry MORE low-accuracy attacks than regulars regardless (their
+    // higher levels and fuller movepools give them the strong-but-inaccurate nukes - Blizzard, Focus Blast, Hydro
+    // Pump, Stone Edge - that regulars' weaker, more accurate pools never reach). The lever's real effect is WITHIN
+    // the boss tier: penalty-on vs penalty-off (measured over this ROM set, seed 20260712) lowers the boss low-acc
+    // rate in every game - e.g. gen 2 Gold 24.2%->21.5%, gen 3 Emerald 14.6%->11.6%, gen 4 HG/SS 11.3%->9.3%, gen 7
+    // Ultra Sun 8.5%->6.3%. The reduction (~0.3-3pp, a soft Moderate demotion on ~2 of 4 boss slots) is far smaller
+    // than the cross-gen spread (4%-24%), so no absolute or cross-tier cap can robustly tell working from broken -
+    // hence a print, not an assert. The print still surfaces a gross regression during review.
+    private static final double RELIABLE_ACCURACY = 90.0;
+
     @Test
     public void inspectBetterMovesets() {
         String romsDir = System.getProperty("romsPath");
@@ -168,6 +182,7 @@ public class BetterMovesetsRandomizerTest {
         new TrainerMovesetRandomizer(romHandler, s, new Random(20260712L)).randomizeTrainerMovesets();
 
         List<Move> allMoves = romHandler.getMoves();
+        int perfectAccuracy = romHandler.getPerfectAccuracy();
         Map<Integer, List<MoveLearnt>> movesLearnt = romHandler.getMovesLearnt();
         boolean altFormesCanDiffer = romHandler.altFormesCanHaveDifferentEvolutions();
         List<String> violations = new ArrayList<>();
@@ -192,6 +207,10 @@ public class BetterMovesetsRandomizerTest {
         int dupAttackTypeMons = 0;        // mons carrying 2+ attacking moves of one type (no-dup-type guard fallback)
         int teamNonStabSlots = 0;         // total non-STAB move slots across all teams (team-repeat denominator)
         int teamNonStabRepeats = 0;       // of those, ones repeating a non-STAB move an earlier teammate already had
+        int bossAttackPicks = 0;          // boss/important attacking-move picks (accuracy lever denominator)
+        int bossLowAccAttackPicks = 0;    // ... of those, low-accuracy (below RELIABLE_ACCURACY, not never-miss)
+        int regAttackPicks = 0;           // regular-tier attacking-move picks (loose - no accuracy lever)
+        int regLowAccAttackPicks = 0;     // ... of those, low-accuracy
 
         for (Trainer tr : romHandler.getTrainers()) {
             boolean printThis = printed < SAMPLE_MOVESETS_PER_ROM;
@@ -202,6 +221,8 @@ public class BetterMovesetsRandomizerTest {
             // No battle-style setting is applied here, so a trainer is a double/multi battle exactly when the
             // base game always makes it one. Doubles-support moves may appear only on these mons.
             boolean trainerDoubles = tr.getMultiBattleStatus() == Trainer.MultiBattleStatus.ALWAYS;
+            // Boss/Important trainers get the accuracy-biased curated slots; regulars stay loose (accuracy lever).
+            boolean bossTier = tr.isBoss() || tr.isImportant();
             for (TrainerPokemon tp : tr.getPokemon()) {
                 tpCount++;
                 if (trainerDoubles) {
@@ -304,6 +325,25 @@ public class BetterMovesetsRandomizerTest {
                                     System.out.println("     [over-tier] " + mv.name + " (" + (int) effPow
                                             + " pow) on L" + level + " " + pk.getName());
                                 }
+                            }
+                        }
+                    }
+                    // Accuracy-as-difficulty lever (Issue E): tally attacking picks by tier and how many are
+                    // low-accuracy. A move is attacking when it deals real or synthetic damage (mirrors
+                    // effectivePower > 0); "low accuracy" = a real hitratio below RELIABLE_ACCURACY (never-miss
+                    // moves store hitratio == perfectAccuracy and are exempt, matching accuracyWeight).
+                    boolean attackingMove = mv.power > 1 || SYNTHETIC_DAMAGE_MOVES.contains(moveID);
+                    if (attackingMove) {
+                        boolean lowAcc = mv.hitratio != perfectAccuracy && mv.hitratio < RELIABLE_ACCURACY;
+                        if (bossTier) {
+                            bossAttackPicks++;
+                            if (lowAcc) {
+                                bossLowAccAttackPicks++;
+                            }
+                        } else {
+                            regAttackPicks++;
+                            if (lowAcc) {
+                                regLowAccAttackPicks++;
                             }
                         }
                     }
@@ -467,6 +507,16 @@ public class BetterMovesetsRandomizerTest {
                         "%s: %.1f%% of non-STAB slots repeat a teammate's move (%d/%d > %.0f%% cap) - team penalty not biasing",
                         romName, repeatRate * 100, teamNonStabRepeats, teamNonStabSlots, repeatCap * 100));
             }
+        }
+        // Accuracy-as-difficulty lever (Issue E): PRINTED as evidence only (see RELIABLE_ACCURACY comment for why a
+        // cross-tier or absolute assert is not well-founded here). Shows the boss/imp vs regular low-accuracy attack
+        // rates so a gross regression is visible during review.
+        if (bossAttackPicks > 50 && regAttackPicks > 50) {
+            double bossRate = (double) bossLowAccAttackPicks / bossAttackPicks;
+            double regRate = (double) regLowAccAttackPicks / regAttackPicks;
+            System.out.printf("     accuracy lever: boss/imp low-acc attacks %.1f%% (%d/%d) vs regular %.1f%% (%d/%d)%n",
+                    bossRate * 100, bossLowAccAttackPicks, bossAttackPicks,
+                    regRate * 100, regLowAccAttackPicks, regAttackPicks);
         }
         // Soft level->power-tier guarantees (see Randomizer.levelTierWeight). Over-tier picks are allowed but
         // must stay a minority - a broken gate would favour the strongest moves and push most picks over-tier.

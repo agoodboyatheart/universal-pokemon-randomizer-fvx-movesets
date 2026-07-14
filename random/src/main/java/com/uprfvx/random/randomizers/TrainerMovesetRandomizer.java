@@ -108,7 +108,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     picked.addAll(distinctPool);
                 } else {
                     // Slot 1: a STAB attacking move, base power scaled to the Pokemon's level.
-                    Move stab = pickStabMove(pk, ability, distinctPool, level, profile, picked);
+                    Move stab = pickStabMove(pk, ability, distinctPool, level, profile, picked, isBossTier);
                     if (stab == null) {
                         stab = pickBestDamaging(distinctPool, picked, level, ability);
                     }
@@ -283,6 +283,28 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return 1.0;
     }
 
+    // Reliability as a difficulty lever (Batch 4 Issue E). For a Hardcore Nuzlocke the player fears variance, so a
+    // boss that leans on reliable moves is scarier than one packing a flashy but coin-flip 70%-accuracy nuke. This
+    // softly demotes low-accuracy moves so the Boss/Important CURATED slots (STAB, coverage, status) trend toward
+    // dependable options; Regular second attacks and every tier's wildcards deliberately skip it, so lower tiers
+    // stay loose and surprising. Always a demotion, never a ban.
+    //
+    // Accuracy lives in mv.hitratio on a 0-100 scale, with one trap: never-miss moves (Swift, Aerial Ace, Aura
+    // Sphere, ...) and no-accuracy-check status moves (Swords Dance, Rest) store hitratio == getPerfectAccuracy()
+    // (0 in most gens), NOT 100 - so they must be read as perfectly reliable, not as 0% accurate. Moves at or above
+    // RELIABLE_ACCURACY are unpenalised; below it the weight falls off as (accuracy / RELIABLE_ACCURACY) raised to
+    // ACCURACY_PENALTY_EXPONENT, so an 80% move keeps ~0.79 of its weight and a 50% move ~0.31. Tuning knobs.
+    private static final double RELIABLE_ACCURACY = 90.0;
+    private static final double ACCURACY_PENALTY_EXPONENT = 2.0;
+
+    private double accuracyWeight(Move mv) {
+        double acc = mv.hitratio;
+        if (acc == romHandler.getPerfectAccuracy() || acc >= RELIABLE_ACCURACY) {
+            return 1.0;
+        }
+        return Math.pow(acc / RELIABLE_ACCURACY, ACCURACY_PENALTY_EXPONENT);
+    }
+
     // Weather moves are only worth running if the Pokemon benefits from that weather, and are pointless
     // (redundant) if the Pokemon's own ability already sets it.
     private static final Set<Integer> RAIN_BENEFIT_ABILITIES = Set.of(
@@ -399,7 +421,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // Slot 1: a STAB attacking move, weighted toward stronger moves within the mon's unlocked power tier
     // (via the shared level->power-tier soft bias) and, for a committed attacker, toward its preferred category.
-    private Move pickStabMove(Species pk, int ability, List<Move> pool, int level, AttackerProfile profile, List<Move> exclude) {
+    private Move pickStabMove(Species pk, int ability, List<Move> pool, int level, AttackerProfile profile,
+                              List<Move> exclude, boolean reliable) {
         Type t1 = pk.getPrimaryType(false);
         Type t2 = pk.getSecondaryType(false);
         List<Move> candidates = pool.stream()
@@ -419,7 +442,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return weightedPick(candidates, mv -> {
             double ep = effectivePower(mv, level);
             return powerSelectionWeight(ep) * levelTierWeight(level, ep) * categoryPreference(mv, profile)
-                    * practicalValueWeight(mv, ability, exclude);
+                    * practicalValueWeight(mv, ability, exclude)
+                    * (reliable ? accuracyWeight(mv) : 1.0);
         });
     }
 
@@ -460,7 +484,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 weight *= COVERAGE_BLIND_SPOT_BONUS;
             }
             return weight * categoryPreference(mv, profile) * practicalValueWeight(mv, ability, exclude)
-                    * teamRepeatWeight(mv, level);
+                    * teamRepeatWeight(mv, level) * accuracyWeight(mv);
         });
     }
 
@@ -513,8 +537,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .stream().map(mv -> mv.number).collect(Collectors.toSet());
         // teamRepeatWeight demotes a status move a teammate already carries (status moves have effectivePower 0,
         // so only the exact-move tally applies here) - the team trends toward varied status, not five Toxics.
+        // accuracyWeight (boss slot) leans toward reliable status: Thunder Wave / Toxic (>=90%) over Hypnosis / Sing.
         return weightedPick(candidates,
-                mv -> (synergy.contains(mv.number) ? 3.0 : 1.0) * teamRepeatWeight(mv, level));
+                mv -> (synergy.contains(mv.number) ? 3.0 : 1.0) * teamRepeatWeight(mv, level) * accuracyWeight(mv));
     }
 
     // Global fallback for any unfillable slot: a damaging move weighted toward stronger picks within the mon's
