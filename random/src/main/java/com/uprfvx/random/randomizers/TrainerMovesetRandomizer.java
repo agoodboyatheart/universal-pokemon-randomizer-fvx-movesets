@@ -4,6 +4,7 @@ import com.uprfvx.random.Settings;
 import com.uprfvx.romio.constants.AbilityIDs;
 import com.uprfvx.romio.constants.GlobalConstants;
 import com.uprfvx.romio.constants.MoveIDs;
+import com.uprfvx.romio.constants.SpeciesIDs;
 import com.uprfvx.romio.gamedata.*;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
@@ -1179,6 +1180,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     private List<Move> getMoveSelectionPoolAtLevel(TrainerPokemon tp, boolean cyclicEvolutions) {
 
+        // Smeargle special-case: its Sketch move lets it copy ANY move in the game, so with vanilla
+        // (UNCHANGED) learnsets its real pool is basically just Sketch. Hand it the full usable move
+        // universe instead and let the normal checks-and-balances below run on that. Only when species
+        // movesets are UNCHANGED — if they're randomised, Smeargle already gets a randomised learnset.
+        if (tp.getSpecies().getNumber() == SpeciesIDs.smeargle
+                && settings.getMovesetsMod() == Settings.MovesetsMod.UNCHANGED) {
+            return buildSmeargleSketchPool(tp);
+        }
+
         List<Move> moves = romHandler.getMoves();
         double eggMoveProbability = 0.1;
         double preEvoMoveProbability = 0.5;
@@ -1305,5 +1315,40 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
 
         return moveSelectionPoolAtLevel.stream().distinct().collect(Collectors.toList());
+    }
+
+    /**
+     * Builds the candidate move pool for a trainer Smeargle: the full usable move universe (Sketch can
+     * copy anything). Excludes only mechanically-unusable / banned moves, then applies the same
+     * level->power soft gate the egg-move branch uses (Sketch, like an egg move, carries no level
+     * requirement) so a low-level Smeargle still gets level-appropriate moves and different Smeargles
+     * roll different subsets. Everything downstream (trimMoveList, role slots, redundancy) runs on this
+     * list unchanged, so Smeargle goes through the identical checks and balances as every other mon.
+     */
+    private List<Move> buildSmeargleSketchPool(TrainerPokemon tp) {
+        Set<Integer> banned = new HashSet<>();
+        banned.addAll(romHandler.getGameBreakingMoves());
+        banned.addAll(romHandler.getIllegalMoves());
+        banned.addAll(romHandler.getMovesBannedFromLevelup());
+        banned.add(MoveIDs.struggle); // not a selectable move
+        banned.add(MoveIDs.sketch);   // a trainer Smeargle re-Sketching Sketch is pointless
+
+        List<Move> pool = new ArrayList<>();
+        for (Move mv : romHandler.getMoves()) {
+            if (mv == null) {
+                continue; // move list is indexed by number; index 0 is blank
+            }
+            if (banned.contains(mv.number)) {
+                continue;
+            }
+            // Keep status/gimmick/synthetic-damage moves always; gate real damaging moves by the same
+            // level->power-tier soft bias the TM/tutor/egg pools use, so over-level nukes only rarely
+            // slip in on a low-level Smeargle.
+            if (mv.power <= 1
+                    || this.random.nextDouble() < levelTierWeight(tp.getLevel(), mv.power * mv.hitCount)) {
+                pool.add(mv);
+            }
+        }
+        return pool.stream().distinct().collect(Collectors.toList());
     }
 }

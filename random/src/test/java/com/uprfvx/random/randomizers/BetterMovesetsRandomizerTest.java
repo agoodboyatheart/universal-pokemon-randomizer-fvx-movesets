@@ -4,6 +4,7 @@ import com.uprfvx.random.Settings;
 import com.uprfvx.romio.constants.AbilityIDs;
 import com.uprfvx.romio.constants.GlobalConstants;
 import com.uprfvx.romio.constants.MoveIDs;
+import com.uprfvx.romio.constants.SpeciesIDs;
 import com.uprfvx.romio.gamedata.Effectiveness;
 import com.uprfvx.romio.gamedata.GenRestrictions;
 import com.uprfvx.romio.gamedata.Move;
@@ -168,6 +169,135 @@ public class BetterMovesetsRandomizerTest {
         assertTrue(failures.isEmpty(),
                 "Better Movesets invariant failures (" + failures.size() + "):\n  " + String.join("\n  ", failures));
         System.out.println("\n=== All invariants held across " + loaded + " ROM(s). ===");
+    }
+
+    /**
+     * Smeargle special-case: because its signature move Sketch can copy ANY move in the game, a trainer Smeargle
+     * should draw from the full usable move universe (then pass through the same slot logic as every other mon) -
+     * but ONLY when species movesets are UNCHANGED, and never under a randomised moveset mode.
+     * <p>
+     * Trainer Smeargles are rare in vanilla ROMs, so rather than hope one exists we inject Smeargle into a boss
+     * trainer mon (at a high level, to unlock every power tier) and check both paths deterministically on a single
+     * representative gen 2+ ROM (the branch is generation-independent). See {@code buildSmeargleSketchPool}.
+     */
+    @Test
+    public void smeargleGetsFullSketchPoolOnlyWhenMovesetsUnchanged() {
+        String romsDir = System.getProperty("romsPath");
+        assumeTrue(romsDir != null, "romsPath not set");
+        File dir = new File(romsDir);
+        assumeTrue(dir.isDirectory(), "roms dir missing: " + romsDir);
+        File[] files = dir.listFiles();
+        assumeTrue(files != null && files.length > 0, "roms dir empty: " + romsDir);
+        List<File> candidates = new ArrayList<>(Arrays.asList(files));
+        candidates.sort(Comparator.comparingLong(File::length)); // smallest/fastest first
+
+        // Load the smallest ROM that actually has Smeargle (gen 2 onward).
+        RomHandler romHandler = null;
+        Species smeargle = null;
+        for (File f : candidates) {
+            if (!f.isFile() || f.getName().equalsIgnoreCase("readme.txt") || f.length() > MAX_ROM_BYTES) {
+                continue;
+            }
+            RomHandler rh = tryLoad(f.getAbsolutePath());
+            if (rh == null) {
+                continue;
+            }
+            for (Species sp : rh.getSpecies()) {
+                if (sp != null && sp.getNumber() == SpeciesIDs.smeargle) {
+                    smeargle = sp;
+                    break;
+                }
+            }
+            if (smeargle != null) {
+                romHandler = rh;
+                System.out.println("\n=== Smeargle sketch-pool test using: " + f.getName() + " ===");
+                break;
+            }
+        }
+        assumeTrue(romHandler != null, "No Smeargle-capable (gen 2+) ROM found in " + romsDir);
+
+        final RomHandler rom = romHandler; // effectively-final alias for use in lambdas below
+        rom.getRestrictedSpeciesService().setRestrictions(new GenRestrictions());
+
+        // Turn a boss/important trainer mon into a level-50 Smeargle. Boss tier gets the full STAB + coverage +
+        // status + wildcard treatment, and L50 unlocks every power tier, so the whole sketch pool is exercised.
+        TrainerPokemon victim = null;
+        for (Trainer tr : rom.getTrainers()) {
+            if ((tr.isBoss() || tr.isImportant()) && !tr.shouldNotGetBuffs() && !tr.getPokemon().isEmpty()) {
+                victim = tr.getPokemon().get(0);
+                break;
+            }
+        }
+        assumeTrue(victim != null, "No eligible boss/important trainer mon to inject Smeargle into");
+        victim.getSpeciesHolder().setSpecies(smeargle);
+        victim.setLevel(50);
+
+        List<String> failures = new ArrayList<>();
+
+        // ON: movesets UNCHANGED -> Smeargle draws from the full usable move universe.
+        Settings on = new Settings();
+        on.setBetterBossTrainerMovesets(true);
+        on.setBetterImportantTrainerMovesets(true);
+        on.setMovesetsMod(Settings.MovesetsMod.UNCHANGED); // default, set explicitly for clarity
+        new TrainerMovesetRandomizer(rom, on, new Random(20260714L)).randomizeTrainerMovesets();
+        List<Integer> onMoves = nonZeroMoves(victim.getMoves());
+        boolean onReset = victim.isResetMoves();
+        System.out.println("  UNCHANGED -> " + moveNames(rom, onMoves) + (onReset ? " [reset]" : ""));
+
+        long onDamaging = onMoves.stream().filter(id -> rom.getMoves().get(id).power > 1).count();
+        if (onReset || onMoves.isEmpty()) {
+            failures.add("Smeargle got no custom moveset under UNCHANGED (reset=" + onReset + ")");
+        }
+        if (onMoves.size() > 4) {
+            failures.add("Smeargle has more than 4 moves under UNCHANGED: " + onMoves.size());
+        }
+        if (new HashSet<>(onMoves).size() != onMoves.size()) {
+            failures.add("Smeargle has duplicate moves under UNCHANGED: " + moveNames(rom, onMoves));
+        }
+        // A boss draws a damaging STAB + coverage move, and vanilla Smeargle learns NO damaging move by level-up
+        // (only Sketch). So >=2 damaging moves here proves the expanded pool was actually used.
+        if (onDamaging < 2) {
+            failures.add("Smeargle drew only " + onDamaging + " damaging move(s) under UNCHANGED - "
+                    + "expanded pool not applied: " + moveNames(rom, onMoves));
+        }
+
+        // OFF: a randomised moveset mode -> the special branch must be gated off, so Smeargle falls back to its
+        // ordinary (vanilla, here) learnset-derived pool. With the same seed and mon, the result must differ from
+        // the full-universe draw above (the tiny vanilla pool cannot reproduce it).
+        Settings off = new Settings();
+        off.setBetterBossTrainerMovesets(true);
+        off.setBetterImportantTrainerMovesets(true);
+        off.setMovesetsMod(Settings.MovesetsMod.COMPLETELY_RANDOM);
+        new TrainerMovesetRandomizer(rom, off, new Random(20260714L)).randomizeTrainerMovesets();
+        List<Integer> offMoves = nonZeroMoves(victim.getMoves());
+        System.out.println("  COMPLETELY_RANDOM -> " + moveNames(rom, offMoves)
+                + (victim.isResetMoves() ? " [reset]" : ""));
+        if (new HashSet<>(onMoves).equals(new HashSet<>(offMoves))) {
+            failures.add("Smeargle got the same moveset with movesets randomised as UNCHANGED - trigger gate not "
+                    + "respected: " + moveNames(rom, onMoves));
+        }
+
+        assertTrue(failures.isEmpty(), "Smeargle sketch-pool failures:\n  " + String.join("\n  ", failures));
+        System.out.println("  === Smeargle sketch-pool checks held. ===");
+    }
+
+    private static List<Integer> nonZeroMoves(int[] moves) {
+        List<Integer> result = new ArrayList<>();
+        for (int id : moves) {
+            if (id != 0) {
+                result.add(id);
+            }
+        }
+        return result;
+    }
+
+    private static String moveNames(RomHandler romHandler, List<Integer> moveIDs) {
+        List<Move> allMoves = romHandler.getMoves();
+        StringBuilder sb = new StringBuilder();
+        for (int id : moveIDs) {
+            sb.append(allMoves.get(id).name).append(' ');
+        }
+        return sb.toString().trim();
     }
 
     private List<String> checkOneRom(RomHandler romHandler, String romName) {
