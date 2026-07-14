@@ -89,17 +89,17 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
                 IMP  L12 GASTLY (GHOST/POISON): 122,202,92,104
                 IMP  L14 ZUBAT (POISON/FLYING): 44,129,197,48""");
         EXPECTED.put("Pokemon Emerald (U)", """
-                REG  L21 GEODUDE (ROCK/GROUND): 91,157,118,111
+                REG  L21 GEODUDE (ROCK/GROUND): 91,280,157,111
                 REG  L32 POOCHYENA (DARK): 44,91,28,104
-                REG  L31 ZUBAT (POISON/FLYING): 17,211,259,263
-                REG  L31 CARVANHA (WATER/DARK): 352,59,103,116
+                REG  L31 ZUBAT (POISON/FLYING): 17,202,263,211
+                REG  L31 CARVANHA (WATER/DARK): 352,59,116,210
                 REG  L32 ZUBAT (POISON/FLYING): 188,44,17,202
-                REG  L32 CARVANHA (WATER/DARK): 352,196,189,242
-                REG  L36 POOCHYENA (DARK): 44,91,316,231
+                REG  L32 CARVANHA (WATER/DARK): 352,242,189,103
+                REG  L36 POOCHYENA (DARK): 44,231,316,91
                 REG  L36 CARVANHA (WATER/DARK): 242,56,58,103
                 REG  L36 ZUBAT (POISON/FLYING): 188,44,102,247
                 REG  L26 SKITTY (NORMAL): 290,247,274,203
-                REG  L26 POOCHYENA (DARK): 44,263,316,46
+                REG  L26 POOCHYENA (DARK): 44,247,316,46
                 REG  L26 ZIGZAGOON (NORMAL): 290,352,247,28
                 REG  L26 LOTAD (WATER/GRASS): 352,59,310,240
                 REG  L26 SEEDOT (GRASS): 331,91,263,74
@@ -108,8 +108,8 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
                 REG  L29 MANECTRIC (ELECTRIC): 209,98,182,164
                 REG  L29 SHIFTRY (GRASS/DARK): 168,91,241,102
                 REG  L30 PELIPPER (WATER/FLYING): 17,211,290,164
-                REG  L30 XATU (PSYCHIC/FLYING): 332,202,211,182
-                REG  L30 ZANGOOSE (NORMAL): 38,247,14,8
+                REG  L30 XATU (PSYCHIC/FLYING): 332,101,211,202
+                REG  L30 ZANGOOSE (NORMAL): 38,196,14,223
                 REG  L30 SEVIPER (POISON): 188,242,103,290
                 REG  L36 CARVANHA (WATER/DARK): 242,38,156,213
                 REG  L34 GYARADOS (WATER/FLYING): 352,85,82,156
@@ -120,10 +120,10 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
                 REG  L5 BIDOOF (NORMAL): 33,365,168,92
                 REG  L7 KRICKETOT (BUG): 45,117,253,0
                 REG  L6 ZUBAT (POISON/FLYING): 314,371,141,48
-                REG  L5 RATTATA (NORMAL): 129,365,39,104
+                REG  L5 RATTATA (NORMAL): 129,196,39,104
                 REG  L5 RATTATA (NORMAL): 98,196,68,351
                 REG  L5 RATTATA (NORMAL): 98,365,196,39
-                REG  L5 RATTATA (NORMAL): 98,365,451,203
+                REG  L5 RATTATA (NORMAL): 98,196,451,203
                 REG  L5 RATTATA (NORMAL): 98,365,382,39
                 REG  L8 MAGIKARP (WATER): 150,0,0,0
                 REG  L7 BUDEW (GRASS/POISON): 202,129,74,213
@@ -135,10 +135,10 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
                 REG  L11 PACHIRISU (ELECTRIC): 351,98,156,92
                 REG  L11 PACHIRISU (ELECTRIC): 9,98,182,213
                 REG  L14 PONYTA (FIRE): 172,263,241,218
-                REG  L12 BIDOOF (NORMAL): 290,91,111,92
+                REG  L12 BIDOOF (NORMAL): 290,365,111,92
                 REG  L12 PACHIRISU (ELECTRIC): 351,98,237,164
                 REG  L10 GEODUDE (ROCK/GROUND): 246,33,111,397
-                REG  L11 GEODUDE (ROCK/GROUND): 88,33,111,218
+                REG  L11 GEODUDE (ROCK/GROUND): 88,246,111,92
                 REG  L12 GEODUDE (ROCK/GROUND): 88,33,218,111""");
     }
 

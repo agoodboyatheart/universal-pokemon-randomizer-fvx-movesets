@@ -89,9 +89,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
                 int level = tp.getLevel();
                 AttackerProfile profile = classifyAttacker(tp, pk);
-                // Boss & Important trainers get the full STAB + coverage + status + wildcard structure;
-                // Regular trainers skip the status slot (STAB + coverage + wildcard + wildcard).
-                boolean includeStatus = t.isBoss() || t.isImportant();
+                // Boss & Important trainers get the full curated structure: STAB + optimized coverage + status +
+                // wildcard. Regular trainers are deliberately "dumbed down" so the tier gap reads like the mainline
+                // games - they get a guaranteed STAB, a plain (non-optimized) second attacking move, and two
+                // wildcards, but neither the super-effective hole-targeted coverage slot nor the status slot.
+                boolean isBossTier = t.isBoss() || t.isImportant();
 
                 List<Move> distinctPool = movesAtLevel.stream().distinct().collect(Collectors.toList());
                 List<Move> picked = new ArrayList<>();
@@ -109,18 +111,25 @@ public class TrainerMovesetRandomizer extends Randomizer {
                         picked.add(stab);
                     }
 
-                    // Slot 2: a coverage move that hits what the STAB move is walled by.
-                    Move coverage = pickCoverageMove(pk, ability, distinctPool, level,
-                            stab == null ? null : stab.type, profile, picked);
-                    if (coverage == null) {
-                        coverage = pickBestDamaging(distinctPool, picked, level, ability);
+                    // Slot 2: a second attacking move. Bosses/Important get an optimized coverage move that hits
+                    // what the STAB move is walled by; Regular trainers instead get a plain level-appropriate
+                    // damaging move (no super-effective hole-targeting), so their teams look less curated.
+                    Move secondAttack;
+                    if (isBossTier) {
+                        secondAttack = pickCoverageMove(pk, ability, distinctPool, level,
+                                stab == null ? null : stab.type, profile, picked);
+                    } else {
+                        secondAttack = pickRegularSecondAttack(distinctPool, picked, level, ability);
                     }
-                    if (coverage != null) {
-                        picked.add(coverage);
+                    if (secondAttack == null) {
+                        secondAttack = pickBestDamaging(distinctPool, picked, level, ability);
+                    }
+                    if (secondAttack != null) {
+                        picked.add(secondAttack);
                     }
 
                     // Slot 3 (bosses/important only): a non-redundant status move.
-                    if (includeStatus) {
+                    if (isBossTier) {
                         Move status = pickStatusMove(pk, ability, distinctPool, picked);
                         if (status == null) {
                             status = pickBestDamaging(distinctPool, picked, level, ability);
@@ -455,6 +464,50 @@ public class TrainerMovesetRandomizer extends Randomizer {
             double ep = effectivePower(mv, level);
             return powerSelectionWeight(ep) * levelTierWeight(level, ep) * practicalValueWeight(mv, ability, exclude);
         });
+    }
+
+    // Slot 2 for Regular-tier trainers: a plain, level-appropriate second attacking move. Unlike the boss coverage
+    // slot it does NOT hole-target super-effective types, and unlike pickBestDamaging it is NOT power-weighted
+    // toward the strongest option - the flat within-tier draw is deliberate. Power-weighting let one ubiquitous
+    // high-BP TM (e.g. Secret Power in Gen 3) dominate this slot across the whole cast, which reads as "optimal",
+    // not "authored". Level gating (levelTierWeight) still keeps the pick level-appropriate and the practical-value
+    // discount keeps charge/recharge moves rare; the no-duplicate-attacking-type guard still applies.
+    private Move pickRegularSecondAttack(List<Move> pool, List<Move> exclude, int level, int ability) {
+        List<Move> damaging = pool.stream()
+                .filter(mv -> !exclude.contains(mv))
+                .filter(mv -> effectivePower(mv, level) > 0)
+                .filter(mv -> isAttackSlotEligible(mv, level))
+                .collect(Collectors.toList());
+        if (damaging.isEmpty()) {
+            // No "good" damaging move: relax to any damaging move (mirrors the STAB slot's fallback) so the slot
+            // still fills. pickBestDamaging is the last-resort caller-side fallback if even this returns null.
+            damaging = pool.stream()
+                    .filter(mv -> !exclude.contains(mv))
+                    .filter(mv -> effectivePower(mv, level) > 0)
+                    .collect(Collectors.toList());
+        }
+        damaging = withoutDuplicateAttackingType(damaging, exclude, level);
+        // Flat within-tier weighting: no powerSelectionWeight term, so a 40 BP move competes evenly with a 70 BP
+        // one inside the same unlocked tier - variety over optimisation. The one exception is the generic-neutral
+        // penalty: without super-effective hole-targeting, always-neutral universal TMs (Normal-type Secret Power,
+        // Facade, Return - learnable by nearly the whole dex, super-effective against nothing) otherwise flood this
+        // slot on ~half the cast, which reads as flavourless filler, not authored. They are demoted, not banned.
+        return weightedPick(damaging, mv -> genericNeutralPenalty(mv)
+                * levelTierWeight(level, effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude));
+    }
+
+    // Weight multiplier for the Regular second-attack slot: demotes "always-neutral" attacking moves - those whose
+    // type is super-effective against nothing in this ROM's type chart (Normal in every mainline game, but computed
+    // from the live TypeTable so it stays correct for custom/randomised type charts). 1.0 for any move that is at
+    // least super-effective against something. Tuning knob.
+    private static final double GENERIC_NEUTRAL_MOVE_PENALTY = 0.2;
+
+    private double genericNeutralPenalty(Move mv) {
+        TypeTable tt = romHandler.getTypeTable();
+        if (mv.type == null || !tt.getTypes().contains(mv.type)) {
+            return 1.0;
+        }
+        return tt.superEffectiveWhenAttacking(mv.type).isEmpty() ? GENERIC_NEUTRAL_MOVE_PENALTY : 1.0;
     }
 
     // Situational status moves whose payoff can never apply to this Pokemon based on intrinsic traits only
