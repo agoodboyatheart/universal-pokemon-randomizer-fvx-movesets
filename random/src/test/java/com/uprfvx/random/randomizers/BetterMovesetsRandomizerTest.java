@@ -105,6 +105,19 @@ public class BetterMovesetsRandomizerTest {
     private static final double DUPLICATE_ATTACK_TYPE_MAX_RATE = 0.05;
     private static final double DUPLICATE_ATTACK_TYPE_MAX_RATE_GEN1 = 0.18;
 
+    // Team-level authoring (Issue D): the per-trainer soft penalty should keep a single trainer from stacking the
+    // same NON-STAB move (coverage / status / wildcard territory) across several teammates. STAB is deliberately
+    // exempt (a mono-type themed team legitimately shares its STAB), so we measure only non-STAB repetition: for
+    // each trainer, a move carried as non-STAB by k of its mons contributes k-1 "repeat" slots. Tallied as an
+    // aggregate rate over all non-STAB slots and soft-asserted under a generous cap - it trips only if the team
+    // penalty is missing/broken (which would let the coverage/status pickers hand every similar mon the same move).
+    // Caps are gen-aware, like the dup-attack-type guard: gen 1's tiny movepools (and no phys/special split) force
+    // more unavoidable repetition, so the penalty has less headroom there. Measured (penalty on vs off) over the
+    // local ROM set: gen 1 ~12.9% on / ~17.1% off; gen 2 ~9.2% / ~13.0%; gen 3+ <=5.9% / up to ~11.2%. The caps sit
+    // above the penalty-on figures with margin (deterministic, fixed seed) but below the penalty-off ones.
+    private static final double TEAM_NONSTAB_REPEAT_MAX_RATE = 0.12;
+    private static final double TEAM_NONSTAB_REPEAT_MAX_RATE_GEN1 = 0.17;
+
     @Test
     public void inspectBetterMovesets() {
         String romsDir = System.getProperty("romsPath");
@@ -177,9 +190,15 @@ public class BetterMovesetsRandomizerTest {
         int lowLevelDamagingPicks = 0;    // sub-L20 (mid-unlock) mons' real non-natural damaging picks
         int lowLevelHighPowerPicks = 0;   // ... of those, high-tier (81+ BP) - should be very rare under the soft gate
         int dupAttackTypeMons = 0;        // mons carrying 2+ attacking moves of one type (no-dup-type guard fallback)
+        int teamNonStabSlots = 0;         // total non-STAB move slots across all teams (team-repeat denominator)
+        int teamNonStabRepeats = 0;       // of those, ones repeating a non-STAB move an earlier teammate already had
 
         for (Trainer tr : romHandler.getTrainers()) {
             boolean printThis = printed < SAMPLE_MOVESETS_PER_ROM;
+            // Team-level authoring tally: how many mons on THIS trainer carry each non-STAB move. A move counted as
+            // STAB for its carrier (its type matches one of the mon's types) is skipped, so themed mono-type teams
+            // don't register their shared STAB as "repetition". A move on k of the team's mons adds k-1 repeats.
+            Map<Integer, Integer> teamNonStabMoveCounts = new HashMap<>();
             // No battle-style setting is applied here, so a trainer is a double/multi battle exactly when the
             // base game always makes it one. Doubles-support moves may appear only on these mons.
             boolean trainerDoubles = tr.getMultiBattleStatus() == Trainer.MultiBattleStatus.ALWAYS;
@@ -308,6 +327,18 @@ public class BetterMovesetsRandomizerTest {
                                 + ") carries 2+ same-type attacks");
                     }
                 }
+                // Team-level authoring: record this mon's non-STAB moves against the trainer's running tally, so a
+                // move a later teammate repeats registers as a repeat. STAB moves (type matches one of the mon's
+                // types) are exempt, matching the randomizer's penalty scope.
+                for (int moveID : movesThisMon) {
+                    if (hasType(pk, allMoves.get(moveID).type)) {
+                        continue;
+                    }
+                    teamNonStabSlots++;
+                    if (teamNonStabMoveCounts.merge(moveID, 1, Integer::sum) >= 2) {
+                        teamNonStabRepeats++;
+                    }
+                }
                 // Sleep Talk and Snore are useless without Rest, so they may only appear alongside it.
                 if (!movesThisMon.contains(MoveIDs.rest)) {
                     if (movesThisMon.contains(MoveIDs.sleepTalk)) {
@@ -422,6 +453,19 @@ public class BetterMovesetsRandomizerTest {
                 violations.add(String.format(
                         "%s: %.1f%% of mons carry two attacks of one type (%d/%d > %.0f%% cap) - dup-type guard not biasing",
                         romName, dupRate * 100, dupAttackTypeMons, tpCount, dupCap * 100));
+            }
+        }
+        // Team-level authoring (Issue D): the per-trainer penalty should keep trainers from stacking the same
+        // non-STAB move across teammates. A high non-STAB repeat rate means the penalty is not biasing.
+        if (teamNonStabSlots > 100) {
+            double repeatRate = (double) teamNonStabRepeats / teamNonStabSlots;
+            double repeatCap = gen == 1 ? TEAM_NONSTAB_REPEAT_MAX_RATE_GEN1 : TEAM_NONSTAB_REPEAT_MAX_RATE;
+            System.out.printf("     team authoring: %.1f%% of non-STAB move slots repeat a teammate's move (%d/%d)%n",
+                    repeatRate * 100, teamNonStabRepeats, teamNonStabSlots);
+            if (repeatRate > repeatCap) {
+                violations.add(String.format(
+                        "%s: %.1f%% of non-STAB slots repeat a teammate's move (%d/%d > %.0f%% cap) - team penalty not biasing",
+                        romName, repeatRate * 100, teamNonStabRepeats, teamNonStabSlots, repeatCap * 100));
             }
         }
         // Soft level->power-tier guarantees (see Randomizer.levelTierWeight). Over-tier picks are allowed but

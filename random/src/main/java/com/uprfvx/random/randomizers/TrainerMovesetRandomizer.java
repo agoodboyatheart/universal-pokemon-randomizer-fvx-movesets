@@ -41,6 +41,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
             boolean doubles = isDoublesFormatBattle(t);
 
+            // Team-level authoring: track the moves/attacking-types already handed to EARLIER Pokemon on this
+            // same trainer, so the choosy slots can softly avoid repeating them (mainline teams feel authored
+            // through role variety, not by stacking the same coverage/status on every mon). Reset per trainer.
+            teamUsage = new TeamMoveUsage();
+
             for (TrainerPokemon tp : t.getPokemon()) {
                 tp.setResetMoves(false);
 
@@ -130,7 +135,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
                     // Slot 3 (bosses/important only): a non-redundant status move.
                     if (isBossTier) {
-                        Move status = pickStatusMove(pk, ability, distinctPool, picked);
+                        Move status = pickStatusMove(pk, ability, distinctPool, picked, level);
                         if (status == null) {
                             status = pickBestDamaging(distinctPool, picked, level, ability);
                         }
@@ -151,6 +156,13 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 for (int i = 0; i < 4; i++) {
                     tp.getMoves()[i] = i < picked.size() ? picked.get(i).number : 0;
                 }
+
+                // Record this mon's final moves so later teammates can softly avoid repeating them. (The tiny-pool
+                // and reset-moves paths above continue out before this, so they never contribute - those mons had
+                // no real choice of moves anyway, so leaving them out of the team tally is fine.)
+                for (Move mv : picked) {
+                    teamUsage.record(mv, level);
+                }
             }
         }
         changesMade = true;
@@ -159,6 +171,55 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // ===== Role-based moveset construction (custom Better Movesets redesign) ==========================
     // Boss/Important: STAB + Coverage + Status + Wildcard. Regular: STAB + Coverage + Wildcard + Wildcard.
     // Any slot that cannot be filled falls back to the next-best damaging move, so every mon gets 4 moves.
+
+    // ===== Team-level authoring (Batch 4 Issue D) ====================================================
+    // A soft, per-trainer memory of what earlier teammates were given. The choosy attack/status/wildcard
+    // slots multiply their pick weights by teamRepeatWeight, so a trainer's team tends toward role variety
+    // instead of stacking the same move or attacking type on several mons - closer to how mainline teams
+    // read as authored. Always a demotion, never a ban (weightedPick falls back to a uniform pick if every
+    // weight collapses), so mono-type teams and small movepools still fill all four slots.
+    private TeamMoveUsage teamUsage;
+
+    // Weight multiplier for a candidate the current trainer's earlier mons already used. Geometric decay by
+    // count: the FIRST time a move/type appears on the team it is unpenalised (x1.0); each prior use multiplies
+    // in another penalty factor. The exact-move penalty bites harder than the attacking-type penalty - the same
+    // move on every mon reads worse than merely sharing an attacking type. Tuning knobs.
+    private static final double TEAM_MOVE_REPEAT_PENALTY = 0.35;
+    private static final double TEAM_TYPE_REPEAT_PENALTY = 0.6;
+
+    private double teamRepeatWeight(Move mv, int level) {
+        if (teamUsage == null) {
+            return 1.0;
+        }
+        double weight = Math.pow(TEAM_MOVE_REPEAT_PENALTY, teamUsage.moveUses(mv.number));
+        if (effectivePower(mv, level) > 0) {
+            weight *= Math.pow(TEAM_TYPE_REPEAT_PENALTY, teamUsage.typeUses(mv.type));
+        }
+        return weight;
+    }
+
+    // Per-trainer tally of moves and attacking types already assigned to earlier teammates. An "attacking" move
+    // is one that deals real or synthetic damage (effectivePower > 0), matching the no-duplicate-type guard; a
+    // status move contributes only to the exact-move tally, not the type tally.
+    private static final class TeamMoveUsage {
+        private final Map<Integer, Integer> moveCounts = new HashMap<>();
+        private final Map<Type, Integer> typeCounts = new HashMap<>();
+
+        int moveUses(int moveNumber) {
+            return moveCounts.getOrDefault(moveNumber, 0);
+        }
+
+        int typeUses(Type type) {
+            return type == null ? 0 : typeCounts.getOrDefault(type, 0);
+        }
+
+        void record(Move mv, int level) {
+            moveCounts.merge(mv.number, 1, Integer::sum);
+            if (mv.type != null && effectivePower(mv, level) > 0) {
+                typeCounts.merge(mv.type, 1, Integer::sum);
+            }
+        }
+    }
 
     private static final double COVERAGE_BLIND_SPOT_BONUS = 2.0;
     // Weight multiplier for a coverage move that hits a STAB hole super-effectively. A strong preference rather
@@ -398,7 +459,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
             if (coversAny(tt, mv.type, blindSpots, false)) {
                 weight *= COVERAGE_BLIND_SPOT_BONUS;
             }
-            return weight * categoryPreference(mv, profile) * practicalValueWeight(mv, ability, exclude);
+            return weight * categoryPreference(mv, profile) * practicalValueWeight(mv, ability, exclude)
+                    * teamRepeatWeight(mv, level);
         });
     }
 
@@ -436,7 +498,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     }
 
     // Slot 3: a non-redundant good status move, synergy-weighted to suit the Pokemon.
-    private Move pickStatusMove(Species pk, int ability, List<Move> pool, List<Move> picked) {
+    private Move pickStatusMove(Species pk, int ability, List<Move> pool, List<Move> picked, int level) {
         List<Move> candidates = pool.stream()
                 .filter(mv -> !picked.contains(mv))
                 .filter(mv -> mv.category == MoveCategory.STATUS)
@@ -449,7 +511,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
         Set<Integer> synergy = MoveSynergy.getStatMoveSynergy(pk, candidates)
                 .stream().map(mv -> mv.number).collect(Collectors.toSet());
-        return weightedPick(candidates, mv -> synergy.contains(mv.number) ? 3.0 : 1.0);
+        // teamRepeatWeight demotes a status move a teammate already carries (status moves have effectivePower 0,
+        // so only the exact-move tally applies here) - the team trends toward varied status, not five Toxics.
+        return weightedPick(candidates,
+                mv -> (synergy.contains(mv.number) ? 3.0 : 1.0) * teamRepeatWeight(mv, level));
     }
 
     // Global fallback for any unfillable slot: a damaging move weighted toward stronger picks within the mon's
@@ -497,7 +562,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // Facade, Return - learnable by nearly the whole dex, super-effective against nothing) otherwise flood this
         // slot on ~half the cast, which reads as flavourless filler, not authored. They are demoted, not banned.
         return weightedPick(damaging, mv -> genericNeutralPenalty(mv)
-                * levelTierWeight(level, effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude));
+                * levelTierWeight(level, effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude)
+                * teamRepeatWeight(mv, level));
     }
 
     // Weight multiplier for the Regular second-attack slot: demotes "always-neutral" attacking moves - those whose
@@ -667,7 +733,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
             // A light practical-value discount so charge/recharge moves are rarer wildcards too; normal moves
             // keep equal odds (weightedPick is uniform when weights match), preserving the wildcard's surprise.
             // Any Sunny Day already picked lives in `picked`, so the SolarBeam sun exemption fires naturally here.
-            Move move = weightedPick(distinct, mv -> practicalValueWeight(mv, ability, picked));
+            // teamRepeatWeight then softly steers away from moves/attacking-types earlier teammates already used.
+            Move move = weightedPick(distinct,
+                    mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level));
             picked.add(move);
             if (picked.size() >= 4) {
                 break;
