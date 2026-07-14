@@ -153,9 +153,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // the next-best damaging move.
                 enforceEnablerDependencies(picked, distinctPool, level, ability);
 
-                for (int i = 0; i < 4; i++) {
-                    tp.getMoves()[i] = i < picked.size() ? picked.get(i).number : 0;
-                }
+                writeMoves(tp, picked);
 
                 // Record this mon's final moves so later teammates can softly avoid repeating them. (The tiny-pool
                 // and reset-moves paths above continue out before this, so they never contribute - those mons had
@@ -1000,17 +998,28 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return atkSpatkRatio;
     }
 
-    private List<Move> trimMoveList(TrainerPokemon tp, List<Move> movesAtLevel, boolean isDoubleBattle) {
-        int movesLeft = movesAtLevel.size();
+    // Writes up to four moves into a trainer Pokemon's move slots, zero-filling any unused slot (and ignoring
+    // anything past the fourth move, matching the game's four-move limit). The one place that turns a chosen
+    // move list into the Pokemon's actual moveset.
+    private static void writeMoves(TrainerPokemon tp, List<Move> moves) {
+        for (int i = 0; i < 4; i++) {
+            tp.getMoves()[i] = i < moves.size() ? moves.get(i).number : 0;
+        }
+    }
 
-        if (movesLeft <= 4) {
-            for (int i = 0; i < 4; i++) {
-                if (i < movesLeft) {
-                    tp.getMoves()[i] = movesAtLevel.get(i).number;
-                } else {
-                    tp.getMoves()[i] = 0;
-                }
-            }
+    // If the list has already been narrowed to four or fewer moves, write it straight into the Pokemon and
+    // report that trimming is finished (so trimMoveList can hand back an empty list to its caller). Returns
+    // false, leaving tp untouched, while there are still more than four moves to narrow down.
+    private static boolean writeMovesetIfSmallEnough(TrainerPokemon tp, List<Move> moves) {
+        if (moves.size() > 4) {
+            return false;
+        }
+        writeMoves(tp, moves);
+        return true;
+    }
+
+    private List<Move> trimMoveList(TrainerPokemon tp, List<Move> movesAtLevel, boolean isDoubleBattle) {
+        if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
             return new ArrayList<>();
         }
 
@@ -1020,16 +1029,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                         (isDoubleBattle || !GlobalConstants.doubleBattleMoves.contains(mv.number)))
                 .collect(Collectors.toList());
 
-        movesLeft = movesAtLevel.size();
-
-        if (movesLeft <= 4) {
-            for (int i = 0; i < 4; i++) {
-                if (i < movesLeft) {
-                    tp.getMoves()[i] = movesAtLevel.get(i).number;
-                } else {
-                    tp.getMoves()[i] = 0;
-                }
-            }
+        if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
             return new ArrayList<>();
         }
 
@@ -1039,16 +1039,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
         movesAtLevel.removeAll(obsoletedMoves);
 
-        movesLeft = movesAtLevel.size();
-
-        if (movesLeft <= 4) {
-            for (int i = 0; i < 4; i++) {
-                if (i < movesLeft) {
-                    tp.getMoves()[i] = movesAtLevel.get(i).number;
-                } else {
-                    tp.getMoves()[i] = 0;
-                }
-            }
+        if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
             return new ArrayList<>();
         }
 
@@ -1062,16 +1053,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             }
         }
 
-        movesLeft = movesAtLevel.size();
-
-        if (movesLeft <= 4) {
-            for (int i = 0; i < 4; i++) {
-                if (i < movesLeft) {
-                    tp.getMoves()[i] = movesAtLevel.get(i).number;
-                } else {
-                    tp.getMoves()[i] = 0;
-                }
-            }
+        if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
             return new ArrayList<>();
         }
 
@@ -1088,16 +1070,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             }
         }
 
-        movesLeft = movesAtLevel.size();
-
-        if (movesLeft <= 4) {
-            for (int i = 0; i < 4; i++) {
-                if (i < movesLeft) {
-                    tp.getMoves()[i] = movesAtLevel.get(i).number;
-                } else {
-                    tp.getMoves()[i] = 0;
-                }
-            }
+        if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
             return new ArrayList<>();
         }
         return movesAtLevel;
