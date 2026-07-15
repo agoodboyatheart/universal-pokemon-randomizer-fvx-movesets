@@ -574,6 +574,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // the pool, so this slot no longer applies a level->power weight. Boss/Important trainers get a soft power
     // lean (and the accuracy difficulty lever); Regular trainers pick flat across the available bands, so a weak
     // level-up STAB competes evenly with a universal TM. Both tiers nudge a committed attacker toward its category.
+    // teamRepeatWeight applies here too (Batch 8 follow-up): STAB was the one choosy slot omitting it, which let a
+    // mono-type team (a Ghost/Dragon gym leader) stack the identical STAB move on every mon - e.g. Ominous Wind on
+    // 4 of Morty's Ghosts. Its exact-move term breaks that; its type term self-cancels among same-type candidates,
+    // so a mono-type mon is still steered to a DIFFERENT move of its type, never off-type.
     private Move pickStabMove(Species pk, int ability, List<Move> pool, int level, AttackerProfile profile,
                               List<Move> exclude, boolean bossTier) {
         Type t1 = pk.getPrimaryType(false);
@@ -596,6 +600,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             return (bossTier ? powerSelectionWeight(ep) : 1.0) * categoryPreference(mv, profile)
                     * practicalValueWeight(mv, ability, exclude)
                     * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv)
+                    * teamRepeatWeight(mv, level)
                     * (bossTier ? accuracyWeight(mv) : 1.0);
         });
     }
