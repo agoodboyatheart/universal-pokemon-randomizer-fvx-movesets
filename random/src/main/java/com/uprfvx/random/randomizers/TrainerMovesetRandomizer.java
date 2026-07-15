@@ -1196,15 +1196,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
             return new ArrayList<>();
         }
 
-        List<Move> obsoletedMoves = getObsoleteMoves(movesAtLevel);
-
-        // Remove obsoleted moves
-
-        movesAtLevel.removeAll(obsoletedMoves);
-
-        if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
-            return new ArrayList<>();
-        }
+        // The upstream "obsolete weaker same-type/category moves" cull is deliberately NOT applied to trainer
+        // movesets. It reduced each (type, category) to its single strongest damaging move here - BEFORE the role
+        // slots and the team-repeat penalty run - which collapsed a mono-type team's STAB options (every Dragon to
+        // Outrage + Dragon Pulse, every Ground to Earthquake) and forced the same STAB onto multiple teammates.
+        // Level-appropriateness is already enforced by the hard power-band filter, and move quality by
+        // isAttackSlotEligible + the pick-slot weights, so the cull only cost intra-team variety without adding value.
 
         List<Move> requiresOtherMove = movesAtLevel
                 .stream()
@@ -1237,107 +1234,6 @@ public class TrainerMovesetRandomizer extends Randomizer {
             return new ArrayList<>();
         }
         return movesAtLevel;
-    }
-
-    private List<Move> getObsoleteMoves(List<Move> movesAtLevel) {
-        List<Move> obsoletedMoves = new ArrayList<>();
-        for (Move mv : movesAtLevel) {
-            if (GlobalConstants.cannotObsoleteMoves.contains(mv.number)) {
-                continue;
-            }
-            if (mv.power > 0) {
-                List<Move> obsoleteThis = movesAtLevel
-                        .stream()
-                        .filter(mv2 -> !GlobalConstants.cannotBeObsoletedMoves.contains(mv2.number) &&
-                                mv.type == mv2.type &&
-                                ((((mv.statChangeMoveType == mv2.statChangeMoveType &&
-                                        mv.statChanges[0].equals(mv2.statChanges[0])) ||
-                                        (mv2.statChangeMoveType == StatChangeMoveType.NONE_OR_UNKNOWN &&
-                                                mv.hasBeneficialStatChange())) &&
-                                        mv.absorbPercent >= mv2.absorbPercent &&
-                                        !mv.isChargeMove &&
-                                        !mv.isRechargeMove) ||
-                                        mv2.power * mv2.hitCount <= 30) &&
-                                mv.hitratio >= mv2.hitratio &&
-                                mv.category == mv2.category &&
-                                mv.priority >= mv2.priority &&
-                                mv2.power > 0 &&
-                                mv.power * mv.hitCount > mv2.power * mv2.hitCount).collect(Collectors.toList());
-//                for (Move obsoleted: obsoleteThis) {
-//                    System.out.println(obsoleted.name + " obsoleted by " + mv.name);
-//                }
-                obsoletedMoves.addAll(obsoleteThis);
-            } else if (mv.statChangeMoveType == StatChangeMoveType.NO_DAMAGE_USER ||
-                    mv.statChangeMoveType == StatChangeMoveType.NO_DAMAGE_TARGET) {
-                List<Move> obsoleteThis = new ArrayList<>();
-                List<Move.StatChange> statChanges1 = new ArrayList<>();
-                for (Move.StatChange sc : mv.statChanges) {
-                    if (sc.type != StatChangeType.NONE) {
-                        statChanges1.add(sc);
-                    }
-                }
-                for (Move mv2 : movesAtLevel
-                        .stream()
-                        .filter(otherMv -> !otherMv.equals(mv) &&
-                                otherMv.power <= 0 &&
-                                otherMv.statChangeMoveType == mv.statChangeMoveType &&
-                                (otherMv.statusType == mv.statusType ||
-                                        otherMv.statusType == StatusType.NONE)).collect(Collectors.toList())) {
-                    List<Move.StatChange> statChanges2 = new ArrayList<>();
-                    for (Move.StatChange sc : mv2.statChanges) {
-                        if (sc.type != StatChangeType.NONE) {
-                            statChanges2.add(sc);
-                        }
-                    }
-                    if (statChanges2.size() > statChanges1.size()) {
-                        continue;
-                    }
-                    List<Move.StatChange> statChanges1Filtered = statChanges1
-                            .stream()
-                            .filter(sc -> !statChanges2.contains(sc)).collect(Collectors.toList());
-                    statChanges2.removeAll(statChanges1);
-                    if (!statChanges1Filtered.isEmpty() && statChanges2.isEmpty()) {
-                        if (!GlobalConstants.cannotBeObsoletedMoves.contains(mv2.number)) {
-                            obsoleteThis.add(mv2);
-                        }
-                        continue;
-                    }
-                    if (statChanges1Filtered.isEmpty() && statChanges2.isEmpty()) {
-                        continue;
-                    }
-                    boolean maybeBetter = false;
-                    for (Move.StatChange sc1 : statChanges1Filtered) {
-                        boolean canStillBeBetter = false;
-                        for (Move.StatChange sc2 : statChanges2) {
-                            if (sc1.type == sc2.type) {
-                                canStillBeBetter = true;
-                                if ((mv.statChangeMoveType == StatChangeMoveType.NO_DAMAGE_USER && sc1.stages > sc2.stages) ||
-                                        (mv.statChangeMoveType == StatChangeMoveType.NO_DAMAGE_TARGET && sc1.stages < sc2.stages)) {
-                                    maybeBetter = true;
-                                } else {
-                                    canStillBeBetter = false;
-                                }
-                            }
-                        }
-                        if (!canStillBeBetter) {
-                            maybeBetter = false;
-                            break;
-                        }
-                    }
-                    if (maybeBetter) {
-                        if (!GlobalConstants.cannotBeObsoletedMoves.contains(mv2.number)) {
-                            obsoleteThis.add(mv2);
-                        }
-                    }
-                }
-//                for (Move obsoleted : obsoleteThis) {
-//                    System.out.println(obsoleted.name + " obsoleted by " + mv.name);
-//                }
-                obsoletedMoves.addAll(obsoleteThis);
-            }
-        }
-
-        return obsoletedMoves.stream().distinct().collect(Collectors.toList());
     }
 
     // Builds the dex-wide availability tally: move number -> number of DISTINCT species that can learn it via any
