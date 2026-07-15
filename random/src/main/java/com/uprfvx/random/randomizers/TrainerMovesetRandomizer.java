@@ -60,6 +60,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // cannot slip in via a small movepool or the trim / fallback paths that skip the per-slot gate.
                 movesAtLevel.removeIf(mv -> isSituationalStatusRedundant(mv, pk, ability));
 
+                // AI-unusable moves (Feint, Counter, Focus Punch, ...): the ROM battle AI is a greedy single-turn
+                // scorer that can't predict the player or run a multi-turn plan, so these are dead weight in its
+                // hands. Strip them before any slot logic - one removal here closes ALL three doors they enter by
+                // (attack slots, the status slot, the wildcard pool), mirroring the situational-status strip above.
+                movesAtLevel.removeIf(mv -> AI_UNUSABLE_MOVES.contains(mv.number));
+
                 // Some moves are dead weight unless an "enabler" move is also known: Sleep Talk and Snore only act
                 // while the user sleeps (Rest), and Spit Up and Swallow consume Stockpile counters. If a dependent's
                 // enabler is not even in the pool, strip it before it can claim a slot; the post-pass below then
@@ -340,6 +346,47 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return 1.0;
     }
 
+    // Batch 7 - filtering moves the ROM battle AI structurally cannot use. The AI is a greedy single-turn scorer:
+    // it can't predict what the player will do this turn and it never runs a multi-turn plan, so any move whose
+    // value depends on either is dead weight (or self-defeating) in its hands - which quietly LOWERS difficulty,
+    // the opposite of this fork's goal. See project_memory/enemy-ai-move-limitations.md for the per-generation
+    // reasoning. These are TRAINER-side only: the shared goodWeakMoves / goodStatusMoves lists still rate them for
+    // a human player (and the species learnset randomizer), so we do not touch those lists.
+
+    // Tier 1 - HARD exclude: structurally unusable, stripped from the trainer move pool up front (see the strip in
+    // randomizeTrainerMovesets) so they reach no slot at all. NB feint = 364 (the Protect-breaker), NOT feintAttack
+    // = 185 (a fine 60-BP Dark move). suckerPunch / endeavor are in goodWeakMoves and destinyBond is in
+    // goodStatusMoves; stripping here overrides those whitelists trainer-side without editing the shared lists.
+    private static final Set<Integer> AI_UNUSABLE_MOVES = Set.of(
+            MoveIDs.feint,        // Protect-breaker; AI can't know the player will Protect
+            MoveIDs.suckerPunch,  // only works if the target attacks that turn - unpredictable
+            MoveIDs.counter,      // needs to predict a physical hit
+            MoveIDs.mirrorCoat,   // needs to predict a special hit
+            MoveIDs.metalBurst,   // needs to predict either
+            MoveIDs.bide,         // stores damage over 2-3 turns with no prediction
+            MoveIDs.focusPunch,   // fails if hit first; AI can't predict incoming damage
+            MoveIDs.futureSight,  // delayed damage with no lookahead to set it up
+            MoveIDs.doomDesire,   // delayed damage with no lookahead to set it up
+            MoveIDs.endeavor,     // value depends on relative-HP timing the AI can't model
+            MoveIDs.destinyBond); // needs to bait the player's killing blow
+
+    // Tier 2 - WEIGHTED penalty: the AI CAN fire these, but usually to little effect (a self-KO it has no
+    // self-faint awareness of, an item swap it can't value, a Perish/Belly-Drum plan it can't coordinate). Not
+    // banned - kept as rare surprises via a heavy weight penalty, per the "authored, surprising, not optimal"
+    // goal. (Two-turn PURE_CHARGE_MOVES are already demoted by practicalValueWeight, so they are not repeated.)
+    private static final Set<Integer> AI_FLAWED_MOVES = Set.of(
+            MoveIDs.explosion, MoveIDs.selfDestruct,
+            MoveIDs.trick, MoveIDs.switcheroo,
+            MoveIDs.perishSong, MoveIDs.bellyDrum);
+    private static final double AI_FLAWED_MOVE_WEIGHT_PENALTY = 0.15; // tuning knob (matches CHARGE penalty)
+
+    // Selection-weight multiplier that demotes the AI-flawed moves above; 1.0 for everything else. Multiplied into
+    // every slot's weightedPick (STAB / coverage / regular-2nd / best-damaging / status / wildcard) so the penalty
+    // applies wherever a flawed move could be chosen. Always a demotion, never a ban.
+    private double aiUsabilityWeight(Move mv) {
+        return AI_FLAWED_MOVES.contains(mv.number) ? AI_FLAWED_MOVE_WEIGHT_PENALTY : 1.0;
+    }
+
     // Reliability as a difficulty lever (Batch 4 Issue E). For a Hardcore Nuzlocke the player fears variance, so a
     // boss that leans on reliable moves is scarier than one packing a flashy but coin-flip 70%-accuracy nuke. This
     // softly demotes low-accuracy moves so the Boss/Important CURATED slots (STAB, coverage, status) trend toward
@@ -500,7 +547,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             double ep = effectivePower(mv, level);
             return (bossTier ? powerSelectionWeight(ep) : 1.0) * categoryPreference(mv, profile)
                     * practicalValueWeight(mv, ability, exclude)
-                    * availabilityWeight(mv)
+                    * availabilityWeight(mv) * aiUsabilityWeight(mv)
                     * (bossTier ? accuracyWeight(mv) : 1.0);
         });
     }
@@ -542,7 +589,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 weight *= COVERAGE_BLIND_SPOT_BONUS;
             }
             return weight * categoryPreference(mv, profile) * practicalValueWeight(mv, ability, exclude)
-                    * availabilityWeight(mv) * teamRepeatWeight(mv, level) * accuracyWeight(mv);
+                    * availabilityWeight(mv) * aiUsabilityWeight(mv) * teamRepeatWeight(mv, level) * accuracyWeight(mv);
         });
     }
 
@@ -599,7 +646,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // (status moves have effectivePower 0, so only the exact-move repeat tally applies here) and by
         // availabilityWeight so universal status TMs (Toxic / Protect / Substitute / Double Team) no longer flood
         // the slot purely by being learnable by nearly the whole dex.
-        return weightedPick(candidates, mv -> teamRepeatWeight(mv, level) * availabilityWeight(mv));
+        return weightedPick(candidates, mv -> teamRepeatWeight(mv, level) * availabilityWeight(mv)
+                * aiUsabilityWeight(mv));
     }
 
     // Global fallback for any unfillable slot: a damaging move softly weighted toward stronger picks. Level-
@@ -614,7 +662,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         damaging = withoutDuplicateAttackingType(damaging, exclude, level);
         return weightedPick(damaging, mv ->
                 powerSelectionWeight(effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude)
-                        * availabilityWeight(mv));
+                        * availabilityWeight(mv) * aiUsabilityWeight(mv));
     }
 
     // Slot 2 for Regular-tier trainers: a plain second attacking move. Unlike the boss coverage slot it does NOT
@@ -645,7 +693,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // Power, Facade, Return - learnable by nearly the whole dex, super-effective against nothing) which would
         // otherwise flood this slot as flavourless filler. Both are demotions, not bans.
         return weightedPick(damaging, mv -> genericNeutralPenalty(mv) * categoryPreference(mv, profile)
-                * practicalValueWeight(mv, ability, exclude) * availabilityWeight(mv) * teamRepeatWeight(mv, level));
+                * practicalValueWeight(mv, ability, exclude) * availabilityWeight(mv) * aiUsabilityWeight(mv)
+                * teamRepeatWeight(mv, level));
     }
 
     // Weight multiplier for the Regular second-attack slot: demotes "always-neutral" attacking moves - those whose
@@ -818,7 +867,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             // teamRepeatWeight then softly steers away from moves/attacking-types earlier teammates already used.
             Move move = weightedPick(distinct,
                     mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level)
-                            * availabilityWeight(mv));
+                            * availabilityWeight(mv) * aiUsabilityWeight(mv));
             picked.add(move);
             if (picked.size() >= 4) {
                 break;

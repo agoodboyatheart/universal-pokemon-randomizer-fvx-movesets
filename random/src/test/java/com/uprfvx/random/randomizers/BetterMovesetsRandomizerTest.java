@@ -102,6 +102,24 @@ public class BetterMovesetsRandomizerTest {
     // ceiling (observed pre-change worst case ~3.5%): trips only if a penalty is missing/broken. Soft, sampled.
     private static final double FLAWED_STRONG_MOVE_MAX_RATE = 0.08;
 
+    // Batch 7 - AI move-usability filtering. Mirrors TrainerMovesetRandomizer.AI_UNUSABLE_MOVES: moves the ROM
+    // battle AI structurally cannot use (prediction / multi-turn plans it never runs), stripped from the trainer
+    // pool up front. NB feint = 364 (Protect-breaker), NOT feintAttack. These must NEVER appear on a buffed mon.
+    private static final Set<Integer> AI_UNUSABLE_MOVES = Set.of(
+            MoveIDs.feint, MoveIDs.suckerPunch, MoveIDs.counter, MoveIDs.mirrorCoat, MoveIDs.metalBurst,
+            MoveIDs.bide, MoveIDs.focusPunch, MoveIDs.futureSight, MoveIDs.doomDesire, MoveIDs.endeavor,
+            MoveIDs.destinyBond);
+
+    // Mirrors TrainerMovesetRandomizer.AI_FLAWED_MOVES: the AI can fire these but usually to little effect, so they
+    // are heavily weight-penalised (never banned). Should stay rare, checked against a generous soft ceiling.
+    private static final Set<Integer> AI_FLAWED_MOVES = Set.of(
+            MoveIDs.explosion, MoveIDs.selfDestruct, MoveIDs.trick, MoveIDs.switcheroo,
+            MoveIDs.perishSong, MoveIDs.bellyDrum);
+
+    // An AI-flawed move is a heavy-penalty rare surprise, not a staple. Generous ceiling (trips only if the
+    // aiUsabilityWeight penalty is missing/broken). Soft, sampled; gated on a decent sample size like the others.
+    private static final double AI_FLAWED_MOVE_MAX_RATE = 0.05;
+
     // No-duplicate-attacking-type guard: a mon should almost never carry two attacking moves of the same type.
     // The guard is best-effort (it relaxes when avoiding a duplicate would leave a slot unfillable, and the
     // "<=4 distinct candidates" shortcut takes moves unguarded), so genuinely mono-type / tiny movepools can
@@ -330,6 +348,8 @@ public class BetterMovesetsRandomizerTest {
         int fixedConstantDamageUses = 0; // times a fixed-CONSTANT-damage move (Dragon Rage, SonicBoom) was picked
         int pureChargeUses = 0;      // times a pure charge move (SolarBeam, Sky Attack, ...) was picked - now penalised
         int rechargeUses = 0;        // times a recharge move (Hyper Beam, Giga Impact) was picked - now penalised
+        int aiUnusableUses = 0;      // times an AI-unusable move (Feint, Counter, ...) was picked - must stay 0
+        int aiFlawedUses = 0;        // times an AI-flawed move (Explosion, Trick, ...) was picked - now penalised
         int solarOnNonSun = 0;       // SolarBeam / Solar Blade picks on a mon that cannot guarantee sun (info only)
         int doublesFormatMons = 0;   // mons in a genuine double/multi battle (ALWAYS multi-battle status)
         int doublesMoveUsesInDoubles = 0; // doubles-support moves kept on those double/multi-battle mons
@@ -388,6 +408,12 @@ public class BetterMovesetsRandomizerTest {
                     }
                     if (allMoves.get(moveID).isRechargeMove) {
                         rechargeUses++;
+                    }
+                    if (AI_UNUSABLE_MOVES.contains(moveID)) {
+                        aiUnusableUses++;
+                    }
+                    if (AI_FLAWED_MOVES.contains(moveID)) {
+                        aiFlawedUses++;
                     }
                     // For a committed attacker, how often its damaging moves match its preferred category.
                     MoveCategory cat = allMoves.get(moveID).category;
@@ -615,6 +641,32 @@ public class BetterMovesetsRandomizerTest {
                     violations.add(String.format("%s: flawed strong move '%s' too common (%.1f%% of mons > %.0f%% cap)"
                                     + " - practical-value penalty not biasing",
                             romName, allMoves.get(id).name, rate * 100, FLAWED_STRONG_MOVE_MAX_RATE * 100));
+                }
+            }
+        }
+        // Batch 7 - AI move usability. AI-unusable moves are stripped from the pool up front, so they must NEVER
+        // appear on a buffed mon (a HARD invariant, checked at any sample size). AI-flawed moves are only heavily
+        // penalised, so they stay rare surprises - checked against a soft ceiling like the practical-value block.
+        System.out.printf("     ai-usability: %d unusable pick(s) (must be 0), %d flawed pick(s), across %d Pokemon%n",
+                aiUnusableUses, aiFlawedUses, tpCount);
+        if (aiUnusableUses > 0) {
+            for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
+                if (AI_UNUSABLE_MOVES.contains(e.getKey())) {
+                    violations.add(String.format("%s: AI-unusable move '%s' appeared %d time(s) - pool strip missing/broken",
+                            romName, allMoves.get(e.getKey()).name, e.getValue()));
+                }
+            }
+        }
+        if (tpCount > 100) {
+            for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
+                if (!AI_FLAWED_MOVES.contains(e.getKey())) {
+                    continue;
+                }
+                double rate = (double) e.getValue() / tpCount;
+                if (rate > AI_FLAWED_MOVE_MAX_RATE) {
+                    violations.add(String.format("%s: AI-flawed move '%s' too common (%.1f%% of mons > %.0f%% cap)"
+                                    + " - aiUsabilityWeight penalty not biasing",
+                            romName, allMoves.get(e.getKey()).name, rate * 100, AI_FLAWED_MOVE_MAX_RATE * 100));
                 }
             }
         }
