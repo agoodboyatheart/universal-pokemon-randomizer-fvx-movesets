@@ -338,10 +338,74 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Exemptions (never removed): the mon's OWN level-up moves (any BP, any level); status/gimmick moves
     // (effectivePower 0); and, from the Lv30+ Low-removal only, priority/utility weak moves (goodWeakMoves), so
     // a high-level mon can still run Aqua Jet / Sucker Punch / Rapid Spin etc.
+    //
+    // Batch 9 - thin-STAB-pool relaxation (reach DOWN at high level only): the Lv>=30 Low-band drop can leave a
+    // mon with too few usable STAB moves, so several teammates of the same type converge on the one surviving
+    // STAB. When a mon's eligible STAB pool would fall below STAB_MIN_POOL, we re-admit the STRONGEST dropped
+    // Low-band STAB moves (reaching down in power, never up - an under-leveled mon is never handed an over-band
+    // move) just enough to reach the floor. This only ever ADDS options; a mon that already has enough STABs is
+    // untouched. Low/mid-level pools are left as-is (reaching up would reintroduce the low-level-overpowered
+    // problem earlier batches removed).
     private static final int BAND_MID_UNLOCK_LEVEL = 15;   // Average band (61-80) becomes available here
     private static final int BAND_HIGH_UNLOCK_LEVEL = 30;  // High band (81+) available AND Low band dropped here
+    private static final int STAB_MIN_POOL = 3;            // Lv>=30 STAB floor before Low-band moves are re-admitted
 
-    private void applyPowerBandFilter(List<Move> pool, int level, Set<Integer> ownLevelUpMoveNumbers) {
+    private void applyPowerBandFilter(List<Move> pool, int level, Set<Integer> ownLevelUpMoveNumbers, Species pk) {
+        // Low- and mid-level bands are unchanged: the reach-down relaxation applies only at high level, so an
+        // under-leveled mon is never handed a stronger-than-band move.
+        if (level < BAND_HIGH_UNLOCK_LEVEL) {
+            pool.removeIf(mv -> {
+                double ep = effectivePower(mv, level);
+                if (ep <= 0) {
+                    return false; // status / gimmick / non-attacking: never banded
+                }
+                if (ownLevelUpMoveNumbers.contains(mv.number)) {
+                    return false; // the mon's own learnset moves are exempt at any power/level
+                }
+                if (level < BAND_MID_UNLOCK_LEVEL) {
+                    return ep > TIER_LOW_MAX_BP;
+                }
+                return ep > TIER_MID_MAX_BP;
+            });
+            return;
+        }
+
+        // Lv >= 30. A dropped Low-band move: an attacking move at or below the Low edge that the normal rule would
+        // remove (not the mon's own level-up move, not a priority/utility goodWeakMove).
+        Type t1 = pk.getPrimaryType(false);
+        Type t2 = pk.getSecondaryType(false);
+        java.util.function.Predicate<Move> isStab = mv -> mv.type == t1 || (t2 != null && mv.type == t2);
+        java.util.function.Predicate<Move> droppedByLowBand = mv -> {
+            double ep = effectivePower(mv, level);
+            return ep > 0 && ep <= TIER_LOW_MAX_BP
+                    && !ownLevelUpMoveNumbers.contains(mv.number)
+                    && !GlobalConstants.goodWeakMoves.contains(mv.number);
+        };
+
+        // The usable STAB moves that survive the normal Lv30+ rule - the real options pickStabMove would see.
+        long keptStab = pool.stream()
+                .filter(isStab)
+                .filter(mv -> !droppedByLowBand.test(mv))
+                .filter(mv -> isAttackSlotEligible(mv, level))
+                .count();
+
+        // Dropped Low-band STAB moves that are nonetheless attack-slot usable (isGoodDamaging) - recoverable.
+        List<Move> recoverableLowStab = pool.stream()
+                .filter(droppedByLowBand)
+                .filter(isStab)
+                .filter(mv -> isAttackSlotEligible(mv, level))
+                .sorted(Comparator.comparingDouble((Move mv) -> effectivePower(mv, level)).reversed())
+                .collect(Collectors.toList());
+
+        // If the mon is STAB-thin, re-admit just enough of the strongest recoverable Low-band STABs to reach the
+        // floor. Reaches DOWN only; adds nothing when the mon already has STAB_MIN_POOL usable STABs.
+        Set<Integer> reAdmit = new HashSet<>();
+        if (keptStab < STAB_MIN_POOL) {
+            recoverableLowStab.stream()
+                    .limit(STAB_MIN_POOL - keptStab)
+                    .forEach(mv -> reAdmit.add(mv.number));
+        }
+
         pool.removeIf(mv -> {
             double ep = effectivePower(mv, level);
             if (ep <= 0) {
@@ -350,11 +414,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
             if (ownLevelUpMoveNumbers.contains(mv.number)) {
                 return false; // the mon's own learnset moves are exempt at any power/level
             }
-            if (level < BAND_MID_UNLOCK_LEVEL) {
-                return ep > TIER_LOW_MAX_BP;
-            }
-            if (level < BAND_HIGH_UNLOCK_LEVEL) {
-                return ep > TIER_MID_MAX_BP;
+            if (reAdmit.contains(mv.number)) {
+                return false; // thin-pool relaxation: kept to widen the STAB slot
             }
             // Lv >= 30: drop the Low band, but keep priority/utility weak moves.
             return ep <= TIER_LOW_MAX_BP && !GlobalConstants.goodWeakMoves.contains(mv.number);
@@ -1517,7 +1578,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
         // Hard power-band filter: remove level-inappropriate attacking moves outright (the mon's own level-up
         // moves, status/gimmick moves, and - at high level - priority weak moves are exempt; see the method doc).
-        applyPowerBandFilter(moveSelectionPoolAtLevel, tp.getLevel(), ownLevelUpMoveNumbers);
+        applyPowerBandFilter(moveSelectionPoolAtLevel, tp.getLevel(), ownLevelUpMoveNumbers, tp.getSpecies());
 
         return moveSelectionPoolAtLevel.stream().distinct().collect(Collectors.toList());
     }
@@ -1549,7 +1610,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             }
             pool.add(mv);
         }
-        applyPowerBandFilter(pool, tp.getLevel(), Collections.emptySet());
+        applyPowerBandFilter(pool, tp.getLevel(), Collections.emptySet(), tp.getSpecies());
         return pool.stream().distinct().collect(Collectors.toList());
     }
 }
