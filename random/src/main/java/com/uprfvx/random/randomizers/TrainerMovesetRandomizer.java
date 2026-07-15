@@ -551,23 +551,21 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (mv == null || mv.category == MoveCategory.STATUS) {
             return false;
         }
-        double power = effectivePower(mv, level);
-        if (power <= 0) {
+        if (effectivePower(mv, level) <= 0) {
             return false;
         }
-        boolean synthetic = isSyntheticDamageMove(mv);
-        // Level-appropriateness is handled upstream by the hard power-band filter (applyPowerBandFilter), which
-        // removes level-inappropriate attacking moves from the pool before this eligibility check runs.
-        // badStrongMoves are hard-banned from attack slots, EXCEPT recharge moves (Hyper Beam - the only recharge
-        // move in the list): those are allowed in but heavily demoted by practicalValueWeight, so Hyper Beam and
-        // Giga Impact (never banned) are treated consistently. Do NOT edit the shared badStrongMoves list itself -
-        // the species moveset randomizer relies on it.
-        if (GlobalConstants.badStrongMoves.contains(mv.number) && !mv.isRechargeMove) {
-            return false;
-        }
-        return synthetic
-                || mv.isGoodDamaging(romHandler.getPerfectAccuracy())
-                || GlobalConstants.goodWeakMoves.contains(mv.number);
+        // Any real damaging move is eligible. Level-appropriateness is enforced SOLELY by the hard power-band filter
+        // (applyPowerBandFilter). Two upstream culls are deliberately NOT applied trainer-side:
+        //  - the isGoodDamaging / MIN_DAMAGING_MOVE_POWER (50) floor - it culled weak-but-level-appropriate STABs the
+        //    band filter already permits (gen-4 Leech Life 20 BP, Mega Drain 40, Fury Cutter), collapsing low-level
+        //    variety to the single move per type that cleared 50 BP (Bug -> Bug Bite);
+        //  - the badStrongMoves hard-ban - it barred legitimate staples (Mega Kick, Take Down, Thrash, Slam, Strength,
+        //    Uproar, Hyper Fang, Crush Claw, Dragon Rush...) from EVER filling an attack slot.
+        // Recoil / low-accuracy / charge / AI-flawed downsides are handled SOFTLY by the pick-slot weights
+        // (powerSelectionWeight, accuracyWeight, practicalValueWeight, aiUsabilityWeight) and by the up-front
+        // AI_UNUSABLE strip + enabler-dependency checks - not by a hard eligibility ban. (Do NOT edit the shared
+        // badStrongMoves list itself - the species moveset randomizer still relies on it.)
+        return effectivePower(mv, level) > 0;
     }
 
     // Slot 1: a STAB attacking move. Level-appropriateness is already enforced by the hard power-band filter on
