@@ -335,9 +335,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
     //   Lv < 15        -> Low only     (remove effective power > 60)
     //   15 <= Lv < 30  -> Low + Avg    (remove effective power > 80)
     //   Lv >= 30       -> Avg + High   (remove effective power <= 60, i.e. drop the now-weak Low band)
-    // Exemptions (never removed): the mon's OWN level-up moves (any BP, any level); status/gimmick moves
-    // (effectivePower 0); and, from the Lv30+ Low-removal only, priority/utility weak moves (goodWeakMoves), so
-    // a high-level mon can still run Aqua Jet / Sucker Punch / Rapid Spin etc.
+    // Exemptions: status/gimmick moves (effectivePower 0) are never banded. The mon's OWN level-up moves are
+    // exempt from the low/mid-level caps ONLY where they EXCEED the cap - a signature move learned early stays
+    // usable (that is the whole point of the exemption). They are deliberately NOT exempt from the Lv30+ Low-band
+    // drop: a move learned early is not level-appropriate for a high-level mon, so a Lv45 mon does not keep its
+    // Lv3 Water Gun / Leech Life as a STAB. From the Lv30+ Low-removal, priority/utility weak moves (goodWeakMoves)
+    // are still kept, so a high-level mon can run Aqua Jet / Sucker Punch / Rapid Spin.
     private static final int BAND_MID_UNLOCK_LEVEL = 15;   // Average band (61-80) becomes available here
     private static final int BAND_HIGH_UNLOCK_LEVEL = 30;  // High band (81+) available AND Low band dropped here
 
@@ -347,16 +350,18 @@ public class TrainerMovesetRandomizer extends Randomizer {
             if (ep <= 0) {
                 return false; // status / gimmick / non-attacking: never banded
             }
-            if (ownLevelUpMoveNumbers.contains(mv.number)) {
-                return false; // the mon's own learnset moves are exempt at any power/level
-            }
+            boolean ownLevelUp = ownLevelUpMoveNumbers.contains(mv.number);
             if (level < BAND_MID_UNLOCK_LEVEL) {
-                return ep > TIER_LOW_MAX_BP;
+                // Lv<15: keep Low only. Exempt own level-up moves that EXCEED the cap (a signature move learned
+                // early is level-appropriate for that mon).
+                return ep > TIER_LOW_MAX_BP && !ownLevelUp;
             }
             if (level < BAND_HIGH_UNLOCK_LEVEL) {
-                return ep > TIER_MID_MAX_BP;
+                return ep > TIER_MID_MAX_BP && !ownLevelUp;
             }
-            // Lv >= 30: drop the Low band, but keep priority/utility weak moves.
+            // Lv >= 30: drop the now-weak Low band. The own-level-up exemption does NOT apply to this drop - a
+            // move learned early is not level-appropriate for a high-level mon. Only priority/utility weak moves
+            // (goodWeakMoves) survive.
             return ep <= TIER_LOW_MAX_BP && !GlobalConstants.goodWeakMoves.contains(mv.number);
         });
     }
