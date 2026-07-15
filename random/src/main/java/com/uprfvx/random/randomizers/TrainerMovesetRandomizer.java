@@ -17,7 +17,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private Map<Integer, List<Integer>> allEggMoves;
     private Map<Species, boolean[]> allTMCompat, allTutorCompat;
     private List<Integer> allTMMoves, allTutorMoves;
-    
+    private Map<Integer, Integer> moveAvailability;   // move number -> # of species that can learn it (any source)
+
     private final boolean hasAbilities;
 
     public TrainerMovesetRandomizer(RomHandler romHandler, Settings settings, Random random) {
@@ -237,6 +238,28 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Weight multiplier applied to a move matching a committed attacker's preferred category (STAB, coverage,
     // Regular second attack). ~9x gives a committed attacker a roughly 90% category lean. Tuning knob.
     private static final double CATEGORY_PREFERENCE_BONUS = 9.0;
+
+    // Availability normalization (Batch 6). The 100%-available pool (Batch 5) enters every learnable move into
+    // every eligible mon's pool, so a move learnable by half the dex (universal TMs like Double Team / Toxic /
+    // Return, broad tutors like Signal Beam) lands in nearly every pool while a rare signature move lands in
+    // almost none. Under a near-uniform pick, a move's population frequency ends up proportional to how many
+    // movepools it qualifies for - so ubiquitous moves win by exposure, not merit. This weight down-weights a
+    // move by its dex-wide learnability so each move gets a fairer shot within its qualifying set. It is a soft
+    // multiplicative weight applied in EVERY pick slot, never a ban: an availability >= 1 always yields a finite
+    // weight > 0, so these common moves still appear - just at a fair rate, not a runaway one.
+    //
+    // A move's cross-population frequency scales as availability^(1 - k). k = 0 disables it; k = 1 fully flattens
+    // frequency (risking obscure-move flooding). k ~ 0.4 is a partial correction: a move in 400 pools still
+    // appears clearly more than one in 4 pools, it just no longer swamps it. The one exposed knob - tune vs logs.
+    private static final double AVAILABILITY_NORMALIZATION_EXPONENT = 0.4;
+
+    // Down-weights a move by how many species can learn it (see AVAILABILITY_NORMALIZATION_EXPONENT). Mirrors
+    // teamRepeatWeight's shape. availability is >= 1 (a move in a candidate pool is learnable by >= 1 species),
+    // so the result is always finite and > 0 - this never removes a move, only rebalances the odds.
+    private double availabilityWeight(Move mv) {
+        int a = moveAvailability.getOrDefault(mv.number, 1);
+        return Math.pow(Math.max(a, 1), -AVAILABILITY_NORMALIZATION_EXPONENT);
+    }
 
     // Within a single power band the Boss attack-slot pickers weight moves by effective power, so the stronger
     // in-band move is softly favoured. This exponent softens that power term so weaker same-band moves still
@@ -477,6 +500,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             double ep = effectivePower(mv, level);
             return (bossTier ? powerSelectionWeight(ep) : 1.0) * categoryPreference(mv, profile)
                     * practicalValueWeight(mv, ability, exclude)
+                    * availabilityWeight(mv)
                     * (bossTier ? accuracyWeight(mv) : 1.0);
         });
     }
@@ -518,7 +542,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 weight *= COVERAGE_BLIND_SPOT_BONUS;
             }
             return weight * categoryPreference(mv, profile) * practicalValueWeight(mv, ability, exclude)
-                    * teamRepeatWeight(mv, level) * accuracyWeight(mv);
+                    * availabilityWeight(mv) * teamRepeatWeight(mv, level) * accuracyWeight(mv);
         });
     }
 
@@ -571,9 +595,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (candidates.isEmpty()) {
             return null;
         }
-        // Flat pick among eligible candidates, tempered only by teamRepeatWeight so the team trends toward varied
-        // status (status moves have effectivePower 0, so only the exact-move repeat tally applies here).
-        return weightedPick(candidates, mv -> teamRepeatWeight(mv, level));
+        // Flat pick among eligible candidates, tempered by teamRepeatWeight so the team trends toward varied status
+        // (status moves have effectivePower 0, so only the exact-move repeat tally applies here) and by
+        // availabilityWeight so universal status TMs (Toxic / Protect / Substitute / Double Team) no longer flood
+        // the slot purely by being learnable by nearly the whole dex.
+        return weightedPick(candidates, mv -> teamRepeatWeight(mv, level) * availabilityWeight(mv));
     }
 
     // Global fallback for any unfillable slot: a damaging move softly weighted toward stronger picks. Level-
@@ -587,7 +613,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // mon already attacks with (relaxed automatically if that would leave nothing damaging to pick).
         damaging = withoutDuplicateAttackingType(damaging, exclude, level);
         return weightedPick(damaging, mv ->
-                powerSelectionWeight(effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude));
+                powerSelectionWeight(effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude)
+                        * availabilityWeight(mv));
     }
 
     // Slot 2 for Regular-tier trainers: a plain second attacking move. Unlike the boss coverage slot it does NOT
@@ -618,7 +645,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // Power, Facade, Return - learnable by nearly the whole dex, super-effective against nothing) which would
         // otherwise flood this slot as flavourless filler. Both are demotions, not bans.
         return weightedPick(damaging, mv -> genericNeutralPenalty(mv) * categoryPreference(mv, profile)
-                * practicalValueWeight(mv, ability, exclude) * teamRepeatWeight(mv, level));
+                * practicalValueWeight(mv, ability, exclude) * availabilityWeight(mv) * teamRepeatWeight(mv, level));
     }
 
     // Weight multiplier for the Regular second-attack slot: demotes "always-neutral" attacking moves - those whose
@@ -790,7 +817,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
             // Any Sunny Day already picked lives in `picked`, so the SolarBeam sun exemption fires naturally here.
             // teamRepeatWeight then softly steers away from moves/attacking-types earlier teammates already used.
             Move move = weightedPick(distinct,
-                    mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level));
+                    mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level)
+                            * availabilityWeight(mv));
             picked.add(move);
             if (picked.size() >= 4) {
                 break;
@@ -1209,7 +1237,95 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return obsoletedMoves.stream().distinct().collect(Collectors.toList());
     }
 
+    // Builds the dex-wide availability tally: move number -> number of DISTINCT species that can learn it via any
+    // source (level-up, egg, TM/HM, tutor). A species that learns a move by two routes counts once (we unify per
+    // species number first, then tally). Level is ignored here - this is raw learnability, not level-appropriateness,
+    // so a universal move's reach is measured the same way regardless of the power-band filter. Called once per run,
+    // after the source caches are warm; cost is O(species x (learnset + TM + tutor)) - a few hundred thousand touches.
+    private void buildMoveAvailability() {
+        Map<Integer, Set<Integer>> perSpecies = new HashMap<>();   // species number -> distinct learnable move numbers
+
+        // Level-up moves (keyed by species number).
+        for (Map.Entry<Integer, List<MoveLearnt>> e : allLevelUpMoves.entrySet()) {
+            Set<Integer> set = perSpecies.computeIfAbsent(e.getKey(), k -> new HashSet<>());
+            for (MoveLearnt ml : e.getValue()) {
+                set.add(ml.move);
+            }
+        }
+
+        // Egg moves (keyed by species number; lists may be null).
+        for (Map.Entry<Integer, List<Integer>> e : allEggMoves.entrySet()) {
+            if (e.getValue() == null) {
+                continue;
+            }
+            perSpecies.computeIfAbsent(e.getKey(), k -> new HashSet<>()).addAll(e.getValue());
+        }
+
+        // TM/HM moves (keyed by Species; boolean[] is 1-indexed against allTMMoves).
+        for (Map.Entry<Species, boolean[]> e : allTMCompat.entrySet()) {
+            Set<Integer> set = perSpecies.computeIfAbsent(e.getKey().getNumber(), k -> new HashSet<>());
+            boolean[] compat = e.getValue();
+            for (int i = 0; i < allTMMoves.size(); i++) {
+                if (compat[i + 1]) {
+                    set.add(allTMMoves.get(i));
+                }
+            }
+        }
+
+        // Tutor moves (same shape as TMs), only if this game has them.
+        if (romHandler.hasMoveTutors() && allTutorCompat != null) {
+            for (Map.Entry<Species, boolean[]> e : allTutorCompat.entrySet()) {
+                Set<Integer> set = perSpecies.computeIfAbsent(e.getKey().getNumber(), k -> new HashSet<>());
+                boolean[] compat = e.getValue();
+                for (int i = 0; i < allTutorMoves.size(); i++) {
+                    if (compat[i + 1]) {
+                        set.add(allTutorMoves.get(i));
+                    }
+                }
+            }
+        }
+
+        // Collapse per-species sets into per-move counts (each species contributes at most 1 to each move).
+        moveAvailability = new HashMap<>();
+        for (Set<Integer> moves : perSpecies.values()) {
+            for (int moveNumber : moves) {
+                moveAvailability.merge(moveNumber, 1, Integer::sum);
+            }
+        }
+    }
+
+    // Lazily loads the six move-source caches (once per run) and builds the availability tally from them. Called at
+    // the top of getMoveSelectionPoolAtLevel BEFORE the Smeargle branch, so even a run whose only buffed mon is a
+    // Smeargle (which builds its pool separately) still has a populated moveAvailability for the pick-slot weights.
+    private void ensureMoveSourceCaches() {
+        if (allLevelUpMoves == null) {
+            allLevelUpMoves = romHandler.getMovesLearnt();
+        }
+        if (allEggMoves == null) {
+            allEggMoves = romHandler.getEggMoves();
+        }
+        if (allTMCompat == null) {
+            allTMCompat = romHandler.getTMHMCompatibility();
+        }
+        if (allTMMoves == null) {
+            allTMMoves = romHandler.getTMMoves();
+        }
+        if (allTutorCompat == null && romHandler.hasMoveTutors()) {
+            allTutorCompat = romHandler.getMoveTutorCompatibility();
+        }
+        if (allTutorMoves == null) {
+            allTutorMoves = romHandler.getMoveTutorMoves();
+        }
+        // Availability tally (Batch 6): built once from the SAME cached maps - never re-calls the (uncached,
+        // per-call-rebuilding) RomHandler getters. See availabilityWeight.
+        if (moveAvailability == null) {
+            buildMoveAvailability();
+        }
+    }
+
     private List<Move> getMoveSelectionPoolAtLevel(TrainerPokemon tp, boolean cyclicEvolutions) {
+
+        ensureMoveSourceCaches();
 
         // Smeargle special-case: its Sketch move lets it copy ANY move in the game, so with vanilla
         // (UNCHANGED) learnsets its real pool is basically just Sketch. Hand it the full usable move
@@ -1221,30 +1337,6 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
 
         List<Move> moves = romHandler.getMoves();
-
-        if (allLevelUpMoves == null) {
-            allLevelUpMoves = romHandler.getMovesLearnt();
-        }
-
-        if (allEggMoves == null) {
-            allEggMoves = romHandler.getEggMoves();
-        }
-
-        if (allTMCompat == null) {
-            allTMCompat = romHandler.getTMHMCompatibility();
-        }
-
-        if (allTMMoves == null) {
-            allTMMoves = romHandler.getTMMoves();
-        }
-
-        if (allTutorCompat == null && romHandler.hasMoveTutors()) {
-            allTutorCompat = romHandler.getMoveTutorCompatibility();
-        }
-
-        if (allTutorMoves == null) {
-            allTutorMoves = romHandler.getMoveTutorMoves();
-        }
 
         // Level-up Moves. These are the mon's OWN learnset moves - collected here so the hard power-band filter
         // below can exempt them (a level-up move is level-appropriate by definition, at any base power).
