@@ -39,6 +39,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(t -> !t.shouldNotGetBuffs())
                 .collect(Collectors.toList());
 
+        // Reset the cross-trainer per-species move tally (Batch 8) once per run, before any trainer is built.
+        speciesMoveUsage.clear();
+
         for (Trainer t : trainers) {
 
             boolean doubles = isDoublesFormatBattle(t);
@@ -54,6 +57,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 List<Move> movesAtLevel = getMoveSelectionPoolAtLevel(tp, isCyclicEvolutions);
 
                 Species pk = tp.getSpecies();
+                // The current species, so speciesRepeatWeight can consult the run-wide tally without threading
+                // the Species through every picker (Batch 8).
+                currentSpeciesNumber = pk.getNumber();
                 int ability = hasAbilities ? romHandler.getAbilityForTrainerPokemon(tp) : 0;
 
                 // Strip intrinsically-redundant situational status moves (weather / Trick Room) up front, so they
@@ -168,6 +174,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // no real choice of moves anyway, so leaving them out of the team tally is fine.)
                 for (Move mv : picked) {
                     teamUsage.record(mv, level);
+                    // Also tally against this species' run-wide usage so later trainers' copies of the same
+                    // species are softly steered off the moves it has already been given (Batch 8).
+                    recordSpeciesMove(mv);
                 }
             }
         }
@@ -191,7 +200,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // in another penalty factor. The exact-move penalty bites harder than the attacking-type penalty - the same
     // move on every mon reads worse than merely sharing an attacking type. Tuning knobs.
     private static final double TEAM_MOVE_REPEAT_PENALTY = 0.35;
-    private static final double TEAM_TYPE_REPEAT_PENALTY = 0.6;
+    private static final double TEAM_TYPE_REPEAT_PENALTY = 0.5;
 
     private double teamRepeatWeight(Move mv, int level) {
         if (teamUsage == null) {
@@ -202,6 +211,45 @@ public class TrainerMovesetRandomizer extends Randomizer {
             weight *= Math.pow(TEAM_TYPE_REPEAT_PENALTY, teamUsage.typeUses(mv.type));
         }
         return weight;
+    }
+
+    // ===== Species-level authoring (Batch 8) =========================================================
+    // teamRepeatWeight above stops one TEAM stacking the same move; it has no memory across trainers, so a
+    // species still received its single best-available move on nearly every trainer it appeared on - e.g.
+    // Electrode -> Signal Beam on 8/8 appearances, Ninjask -> X-Scissor on 6/6. That makes each species feel
+    // "solved". speciesRepeatWeight is the cross-run analogue: a per-SPECIES tally of the moves that species
+    // has already been handed anywhere in this run, geometrically down-weighting a repeat so the move spreads
+    // across the species' appearances instead of hitting 100%. The FIRST appearance keeps the signature move at
+    // full weight (x1.0); each later one demotes it. Soft, never a ban (weightedPick falls back to a uniform
+    // draw), so a species with only ONE viable move for a slot still keeps it - the penalty only diversifies
+    // where real alternatives exist, which is exactly the "authored, not random" behaviour we want.
+    //
+    // Per-run state (cleared at the top of randomizeTrainerMovesets). currentSpeciesNumber is set once per mon
+    // so the six pick lambdas can consult the tally without threading the Species through every picker.
+    private final Map<Integer, Map<Integer, Integer>> speciesMoveUsage = new HashMap<>();
+    private int currentSpeciesNumber = -1;
+
+    // Geometric decay per prior use of this move on this species this run. The primary tuning knob for Batch 8 -
+    // calibrate against a fresh log so a high-appearance species' top move lands around 55-65% (moderate: keep
+    // the signature common, not guaranteed), not below ~50% (which reads as random and erases species identity).
+    private static final double SPECIES_MOVE_REPEAT_PENALTY = 0.6;
+
+    private double speciesRepeatWeight(Move mv) {
+        if (currentSpeciesNumber < 0) {
+            return 1.0;
+        }
+        Map<Integer, Integer> counts = speciesMoveUsage.get(currentSpeciesNumber);
+        int uses = counts == null ? 0 : counts.getOrDefault(mv.number, 0);
+        return Math.pow(SPECIES_MOVE_REPEAT_PENALTY, uses);
+    }
+
+    // Record one picked move against the current species' run-wide tally.
+    private void recordSpeciesMove(Move mv) {
+        if (currentSpeciesNumber < 0) {
+            return;
+        }
+        speciesMoveUsage.computeIfAbsent(currentSpeciesNumber, k -> new HashMap<>())
+                .merge(mv.number, 1, Integer::sum);
     }
 
     // Per-trainer tally of moves and attacking types already assigned to earlier teammates. An "attacking" move
@@ -547,7 +595,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             double ep = effectivePower(mv, level);
             return (bossTier ? powerSelectionWeight(ep) : 1.0) * categoryPreference(mv, profile)
                     * practicalValueWeight(mv, ability, exclude)
-                    * availabilityWeight(mv) * aiUsabilityWeight(mv)
+                    * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv)
                     * (bossTier ? accuracyWeight(mv) : 1.0);
         });
     }
@@ -589,7 +637,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 weight *= COVERAGE_BLIND_SPOT_BONUS;
             }
             return weight * categoryPreference(mv, profile) * practicalValueWeight(mv, ability, exclude)
-                    * availabilityWeight(mv) * aiUsabilityWeight(mv) * teamRepeatWeight(mv, level) * accuracyWeight(mv);
+                    * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv)
+                    * teamRepeatWeight(mv, level) * accuracyWeight(mv);
         });
     }
 
@@ -647,7 +696,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // availabilityWeight so universal status TMs (Toxic / Protect / Substitute / Double Team) no longer flood
         // the slot purely by being learnable by nearly the whole dex.
         return weightedPick(candidates, mv -> teamRepeatWeight(mv, level) * availabilityWeight(mv)
-                * aiUsabilityWeight(mv));
+                * aiUsabilityWeight(mv) * speciesRepeatWeight(mv));
     }
 
     // Global fallback for any unfillable slot: a damaging move softly weighted toward stronger picks. Level-
@@ -662,7 +711,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         damaging = withoutDuplicateAttackingType(damaging, exclude, level);
         return weightedPick(damaging, mv ->
                 powerSelectionWeight(effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude)
-                        * availabilityWeight(mv) * aiUsabilityWeight(mv));
+                        * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv));
     }
 
     // Slot 2 for Regular-tier trainers: a plain second attacking move. Unlike the boss coverage slot it does NOT
@@ -694,7 +743,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // otherwise flood this slot as flavourless filler. Both are demotions, not bans.
         return weightedPick(damaging, mv -> genericNeutralPenalty(mv) * categoryPreference(mv, profile)
                 * practicalValueWeight(mv, ability, exclude) * availabilityWeight(mv) * aiUsabilityWeight(mv)
-                * teamRepeatWeight(mv, level));
+                * speciesRepeatWeight(mv) * teamRepeatWeight(mv, level));
     }
 
     // Weight multiplier for the Regular second-attack slot: demotes "always-neutral" attacking moves - those whose
@@ -867,7 +916,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             // teamRepeatWeight then softly steers away from moves/attacking-types earlier teammates already used.
             Move move = weightedPick(distinct,
                     mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level)
-                            * availabilityWeight(mv) * aiUsabilityWeight(mv));
+                            * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv));
             picked.add(move);
             if (picked.size() >= 4) {
                 break;
