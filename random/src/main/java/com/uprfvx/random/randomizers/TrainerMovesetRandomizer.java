@@ -987,12 +987,16 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return withoutDuplicateAttackingType(distinct, picked, level);
     }
 
-    // The attacking types already covered by the picked moves (a move counts as attacking when it deals real or
-    // synthetic damage, i.e. effectivePower > 0; status moves and gimmicks are ignored).
+    // The attacking types already covered by the picked moves, used by the no-duplicate-attacking-type guard.
+    // Only REAL damaging moves mark their type as covered. Fixed/proportional-damage moves (Seismic Toss,
+    // Night Shade, Super Fang, ...) are deliberately excluded: they deal type-independent damage and provide no
+    // offensive coverage of their nominal type, so holding one should not steer the mon off a genuine attack of
+    // that type (e.g. a Seismic Toss carrier can still be given a real Fighting move). Status/gimmick moves
+    // (effectivePower 0) are ignored as before.
     private Set<Type> usedAttackingTypes(List<Move> picked, int level) {
         Set<Type> types = new HashSet<>();
         for (Move mv : picked) {
-            if (effectivePower(mv, level) > 0) {
+            if (effectivePower(mv, level) > 0 && !isSyntheticDamageMove(mv)) {
                 types.add(mv.type);
             }
         }
@@ -1330,6 +1334,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (allTutorCompat == null && romHandler.hasMoveTutors()) {
             allTutorCompat = romHandler.getMoveTutorCompatibility();
         }
+        // Loaded unconditionally, unlike allTutorCompat above: on tutorless games the getter returns an empty list,
+        // and every reader of allTutorMoves gates on hasMoveTutors() first, so that empty list is never indexed.
         if (allTutorMoves == null) {
             allTutorMoves = romHandler.getMoveTutorMoves();
         }
