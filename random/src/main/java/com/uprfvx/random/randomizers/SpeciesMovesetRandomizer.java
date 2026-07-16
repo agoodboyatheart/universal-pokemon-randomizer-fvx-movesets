@@ -451,7 +451,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
             for (int i = 0; i < moves.size(); i++) {
                 if (moves.get(i).level == 0) continue; // Don't reorder evolution move
                 Move mv = allMoves.get(moves.get(i).move);
-                if (mv.power > 1) {
+                if (mv.isDamaging()) {
                     // considered a damaging move for this purpose
                     damagingMoveIndices.add(i);
                     damagingMoves.add(mv);

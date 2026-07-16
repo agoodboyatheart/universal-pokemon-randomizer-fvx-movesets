@@ -158,6 +158,16 @@ public class Move implements Comparable<Move> {
                 statChangeMoveType == StatChangeMoveType.DAMAGE_USER && statChanges[0].stages > 0;
     }
 
+    /**
+     * Whether this move deals direct, base-power damage: a non-status move with a real base power
+     * (power &gt; 1; power 0/1 marks fixed-, variable-, or no-power moves like Seismic Toss or Counter).
+     * This is the PERMISSIVE "is it a damaging move" tier - any real attack qualifies. For the stricter
+     * viability gate (is it a GOOD damaging move: strong and reliable enough) use {@link #isGoodDamaging(int)}.
+     */
+    public boolean isDamaging() {
+        return category != MoveCategory.STATUS && power > 1;
+    }
+
     public boolean isGoodDamaging(int perfectAccuracy) {
         return (power * hitCount) >= 2 * GlobalConstants.MIN_DAMAGING_MOVE_POWER
                 || ((power * hitCount) >= GlobalConstants.MIN_DAMAGING_MOVE_POWER

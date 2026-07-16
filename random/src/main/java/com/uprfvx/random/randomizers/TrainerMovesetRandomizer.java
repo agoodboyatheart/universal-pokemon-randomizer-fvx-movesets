@@ -535,10 +535,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Returns 0 for status moves and for the many other power<=1 moves we deliberately leave wildcard-only
     // (OHKO gimmicks, counter/mirror-coat, variable-power moves), keeping them out of the attacking slots.
     private static double effectivePower(Move mv, int level) {
-        if (mv == null || mv.category == MoveCategory.STATUS) {
+        if (mv == null) {
             return 0;
         }
-        if (mv.power > 1) {
+        if (mv.isDamaging()) {
             return mv.power * mv.hitCount;
         }
         if (isSyntheticDamageMove(mv)) {
