@@ -532,7 +532,10 @@ public class BetterMovesetsRandomizerTest {
                 // move a later teammate repeats registers as a repeat. STAB moves (type matches one of the mon's
                 // types) are exempt, matching the randomizer's penalty scope.
                 for (int moveID : movesThisMon) {
-                    if (hasType(pk, allMoves.get(moveID).type)) {
+                    // A typeless move (type == null) is never STAB; guard so it isn't wrongly exempted on a
+                    // mono-type mon, whose null secondary type would make hasType(pk, null) return true.
+                    Type moveType = allMoves.get(moveID).type;
+                    if (moveType != null && hasType(pk, moveType)) {
                         continue;
                     }
                     teamNonStabSlots++;
