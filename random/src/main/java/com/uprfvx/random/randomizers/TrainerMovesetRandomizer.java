@@ -160,7 +160,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     }
 
                     // Remaining slots: wildcard picks reusing the existing synergy-weighted logic.
-                    fillWildcardMoves(tp, pk, ability, distinctPool, picked, doubles, level);
+                    fillWildcardMoves(tp, pk, ability, distinctPool, picked, doubles, level, isBossTier);
                 }
 
                 // Enabler-dependency guarantee across every slot: drop any dependent whose enabler did not make the
@@ -292,6 +292,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // than a hard gate: bosses still usually get SE coverage, but occasionally a flavourful neutral move (more
     // "authored", less Smogon-optimal). Mirrors COVERAGE_BLIND_SPOT_BONUS. Tuning knob.
     private static final double COVERAGE_SUPER_EFFECTIVE_BONUS = 3.5;
+
+    // Weight multiplier biasing a BOSS/Important trainer's final wildcard toward a damaging move. The reserved status
+    // slot already guarantees one non-damaging move, so an un-biased wildcard stacks a second ~61% of the time and
+    // drops bosses below regulars in attacks; this restores the 3-attacks-plus-status modal boss. Soft, so a status
+    // wildcard can still occasionally win (mirrors COVERAGE_SUPER_EFFECTIVE_BONUS). Regulars unaffected. Tuning knob.
+    private static final double BOSS_WILDCARD_DAMAGING_BONUS = 3.0;
     private static final int TRICK_ROOM_MAX_SPEED = 60;
 
     // Attacking-stat profile, from the (ability-adjusted) Attack:Sp.Atk ratio. Committed attackers prefer moves
@@ -862,7 +868,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Remaining slots: reuse the existing synergy-weighted pick + anti-synergy removal, but never pick a
     // redundant status move (so e.g. Spinarak never rolls Sunny Day and powers up the Fire moves it fears).
     private void fillWildcardMoves(TrainerPokemon tp, Species pk, int ability,
-                                   List<Move> pool, List<Move> picked, boolean doubles, int level) {
+                                   List<Move> pool, List<Move> picked, boolean doubles, int level,
+                                   boolean isBossTier) {
         if (picked.size() >= 4) {
             return;
         }
@@ -945,9 +952,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
             // keep equal odds (weightedPick is uniform when weights match), preserving the wildcard's surprise.
             // Any Sunny Day already picked lives in `picked`, so the SolarBeam sun exemption fires naturally here.
             // teamRepeatWeight then softly steers away from moves/attacking-types earlier teammates already used.
+            // A boss damaging pick here is always a distinct third attacking type (eligibleWildcards ran the no-dup
+            // guard), so the boss-only lean broadens coverage rather than stacking a same-type attack.
             Move move = weightedPick(distinct,
                     mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level)
-                            * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv));
+                            * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv)
+                            * (isBossTier && isAttackSlotEligible(mv, level) ? BOSS_WILDCARD_DAMAGING_BONUS : 1.0));
             picked.add(move);
             if (picked.size() >= 4) {
                 break;

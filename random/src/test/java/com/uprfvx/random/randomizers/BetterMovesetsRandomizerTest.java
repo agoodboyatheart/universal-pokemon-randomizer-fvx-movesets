@@ -156,6 +156,12 @@ public class BetterMovesetsRandomizerTest {
     // hence a print, not an assert. The print still surfaces a gross regression during review.
     private static final double RELIABLE_ACCURACY = 90.0;
 
+    // Boss offensive breadth (Batch 11): how far a boss/important tier's average attacking-move count may trail the
+    // regular tier's before it signals the boss-wildcard damaging lean is missing/broken. The reserved status slot
+    // gives regulars a small structural edge (~0.1); this tolerance covers it with margin, but a wildcard reverting
+    // to a flat ~39%-damaging draw (a second non-damaging move stacking on the status one) trails by ~0.3 and trips.
+    private static final double BOSS_BREADTH_TOLERANCE = 0.20;
+
     @Test
     public void inspectBetterMovesets() {
         String romsDir = System.getProperty("romsPath");
@@ -366,6 +372,14 @@ public class BetterMovesetsRandomizerTest {
         int bossLowAccAttackPicks = 0;    // ... of those, low-accuracy (below RELIABLE_ACCURACY, not never-miss)
         int regAttackPicks = 0;           // regular-tier attacking-move picks (loose - no accuracy lever)
         int regLowAccAttackPicks = 0;     // ... of those, low-accuracy
+        // Boss offensive breadth (Batch 11): bosses reserve a guaranteed status slot, which - left unchecked -
+        // let the wildcard stack a SECOND non-damaging move and dropped their average attack count BELOW regulars'.
+        // The boss-wildcard damaging lean should restore a boss edge, so we tally attacking moves per mon by tier
+        // and assert boss/important average >= regular average below.
+        int bossMonCount = 0;             // boss/important mons that received a moveset (breadth denominator)
+        int bossAttackMoveTotal = 0;      // total attacking moves across those mons
+        int regMonCount = 0;              // regular-tier mons that received a moveset
+        int regAttackMoveTotal = 0;       // total attacking moves across those mons
 
         for (Trainer tr : romHandler.getTrainers()) {
             boolean printThis = printed < SAMPLE_MOVESETS_PER_ROM;
@@ -391,6 +405,7 @@ public class BetterMovesetsRandomizerTest {
                 Set<Integer> naturalMoves = naturalLevelUpMoves(movesLearnt, altFormesCanDiffer, pk, tp.getLevel());
                 Set<Integer> movesThisMon = new HashSet<>();
                 int nonZero = 0;
+                int monAttackMoves = 0; // attacking moves on THIS mon (boss offensive-breadth tally)
                 StringBuilder line = new StringBuilder("  [" + tierOf(tr) + "] L" + tp.getLevel() + " "
                         + pk.getName() + " (" + typeStr(pk) + "): ");
 
@@ -497,6 +512,7 @@ public class BetterMovesetsRandomizerTest {
                     // moves store hitratio == perfectAccuracy and are exempt, matching accuracyWeight).
                     boolean attackingMove = mv.power > 1 || SYNTHETIC_DAMAGE_MOVES.contains(moveID);
                     if (attackingMove) {
+                        monAttackMoves++;
                         boolean lowAcc = mv.hitratio != perfectAccuracy && mv.hitratio < RELIABLE_ACCURACY;
                         if (bossTier) {
                             bossAttackPicks++;
@@ -509,6 +525,18 @@ public class BetterMovesetsRandomizerTest {
                                 regLowAccAttackPicks++;
                             }
                         }
+                    }
+                }
+                // Boss offensive breadth (Batch 11): accumulate this mon's attacking-move count by tier. Only mons
+                // that actually received a moveset count (a moveless/reset mon skipped the slot logic, so it carries
+                // no authored profile and would just dilute both averages).
+                if (nonZero > 0) {
+                    if (bossTier) {
+                        bossMonCount++;
+                        bossAttackMoveTotal += monAttackMoves;
+                    } else {
+                        regMonCount++;
+                        regAttackMoveTotal += monAttackMoves;
                     }
                 }
                 // No-duplicate-attacking-type guard: no mon should carry two attacking moves of one type. A move
@@ -710,6 +738,27 @@ public class BetterMovesetsRandomizerTest {
             System.out.printf("     accuracy lever: boss/imp low-acc attacks %.1f%% (%d/%d) vs regular %.1f%% (%d/%d)%n",
                     bossRate * 100, bossLowAccAttackPicks, bossAttackPicks,
                     regRate * 100, regLowAccAttackPicks, regAttackPicks);
+        }
+        // Boss offensive breadth (Batch 11). Bosses reserve a guaranteed status slot that regulars do not, so in RAW
+        // attack count a boss structurally tops out at 3 attacks (STAB + coverage + wildcard) while a regular can
+        // reach 4 (STAB + 2nd attack + two wildcards) - a small built-in edge (~0.1 attacks) in regulars' favour.
+        // That makes a strict boss>=regular assert wrong-headed (the same cross-tier confound the accuracy lever
+        // above documents). What the boss-wildcard damaging lean must prevent is the wildcard stacking a SECOND
+        // non-damaging move on top of the reserved status one, which widens the gap sharply (the wildcard would fall
+        // from ~66% to ~39% damaging, ~0.3 fewer boss attacks). So PRINT both averages and assert only that the gap
+        // stays within a tolerance the reserved status slot explains but a missing/broken wildcard lean would not.
+        // Measured gaps with the lean are <=0.06 (SoulSilver boss even leads); without it they run ~0.3.
+        if (bossMonCount > 50 && regMonCount > 50) {
+            double bossAvg = (double) bossAttackMoveTotal / bossMonCount;
+            double regAvg = (double) regAttackMoveTotal / regMonCount;
+            System.out.printf("     offensive breadth: boss/imp avg %.2f attacks (n=%d) vs regular %.2f (n=%d)%n",
+                    bossAvg, bossMonCount, regAvg, regMonCount);
+            if (bossAvg < regAvg - BOSS_BREADTH_TOLERANCE) {
+                violations.add(String.format(
+                        "%s: boss/imp avg attacks (%.2f) trails regular (%.2f) by > %.2f - boss wildcard damaging lean "
+                                + "missing/broken (a second non-damaging move is stacking on the reserved status slot)",
+                        romName, bossAvg, regAvg, BOSS_BREADTH_TOLERANCE));
+            }
         }
         // Power-band guarantees (see TrainerMovesetRandomizer.applyPowerBandFilter). Over-tier picks are allowed but
         // must stay a minority - a broken gate would favour the strongest moves and push most picks over-tier.
