@@ -203,11 +203,22 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private static final double TEAM_MOVE_REPEAT_PENALTY = 0.35;
     private static final double TEAM_TYPE_REPEAT_PENALTY = 0.5;
 
+    // STAB is the most concentrated attack slot - type-locked, and carrying both the boss power lean and the ~9x
+    // category preference - so on a mono-type team (a Dragon or Ghost gym leader) the shared move penalty above is
+    // too weak to break a repeated STAB: the top move's base weight outruns 0.35^uses. This stronger exact-move
+    // penalty applies only when picking STAB, so the Nth repeat is demoted harder without touching the other slots
+    // or single-mon STAB quality. Tuning knob.
+    private static final double STAB_TEAM_MOVE_REPEAT_PENALTY = 0.20;
+
     private double teamRepeatWeight(Move mv, int level) {
+        return teamRepeatWeight(mv, level, TEAM_MOVE_REPEAT_PENALTY);
+    }
+
+    private double teamRepeatWeight(Move mv, int level, double moveRepeatPenalty) {
         if (teamUsage == null) {
             return 1.0;
         }
-        double weight = Math.pow(TEAM_MOVE_REPEAT_PENALTY, teamUsage.moveUses(mv.number));
+        double weight = Math.pow(moveRepeatPenalty, teamUsage.moveUses(mv.number));
         if (effectivePower(mv, level) > 0) {
             weight *= Math.pow(TEAM_TYPE_REPEAT_PENALTY, teamUsage.typeUses(mv.type));
         }
@@ -615,7 +626,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             return (bossTier ? powerSelectionWeight(ep) : 1.0) * categoryPreference(mv, profile)
                     * practicalValueWeight(mv, ability, exclude)
                     * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv)
-                    * teamRepeatWeight(mv, level)
+                    * teamRepeatWeight(mv, level, STAB_TEAM_MOVE_REPEAT_PENALTY)
                     * (bossTier ? accuracyWeight(mv) : 1.0);
         });
     }
