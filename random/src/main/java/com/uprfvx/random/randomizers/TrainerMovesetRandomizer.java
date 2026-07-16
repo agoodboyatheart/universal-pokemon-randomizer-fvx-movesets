@@ -941,7 +941,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 if (eligibleWildcards(working, pk, ability, picked, level).size() <= (4 - picked.size())) {
                     break;
                 }
-                working.remove(softAnti.get(j % softAnti.size()));
+                working.remove(softAnti.get(j));
             }
         }
     }
@@ -1350,7 +1350,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
         // Level-up Moves. These are the mon's OWN learnset moves - collected here so the hard power-band filter
         // below can exempt them (a level-up move is level-appropriate by definition, at any base power).
-        List<Move> ownLevelUpMoves = allLevelUpMoves.get(tp.getSpecies().getNumber())
+        List<Move> ownLevelUpMoves = allLevelUpMoves.getOrDefault(tp.getSpecies().getNumber(), List.of())
                 .stream()
                 .filter(ml -> (ml.level <= tp.getLevel() && ml.level != 0) || (ml.level == 0 && tp.getLevel() >= 30))
                 .map(ml -> moves.get(ml.move))
@@ -1371,7 +1371,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             }
             while (!preEvo.getEvolutionsTo().isEmpty()) {
                 preEvo = preEvo.getEvolutionsTo().get(0).getFrom();
-                moveSelectionPoolAtLevel.addAll(allLevelUpMoves.get(preEvo.getNumber())
+                moveSelectionPoolAtLevel.addAll(allLevelUpMoves.getOrDefault(preEvo.getNumber(), List.of())
                         .stream()
                         .filter(ml -> ml.level <= tp.getLevel())
                         .map(ml -> moves.get(ml.move))
