@@ -18,6 +18,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private Map<Species, boolean[]> allTMCompat, allTutorCompat;
     private List<Integer> allTMMoves, allTutorMoves;
     private Map<Integer, Integer> moveAvailability;   // move number -> # of species that can learn it (any source)
+    private TypeTable typeTable;   // cached once per run: romHandler.getTypeTable() rebuilds from ROM on every call
 
     private final boolean hasAbilities;
 
@@ -615,7 +616,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (stabType == null) {
             return null;
         }
-        TypeTable tt = romHandler.getTypeTable();
+        TypeTable tt = typeTable;
         if (!tt.getTypes().contains(stabType)) {
             return null;
         }
@@ -761,7 +762,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private static final double GENERIC_NEUTRAL_MOVE_PENALTY = 0.2;
 
     private double genericNeutralPenalty(Move mv) {
-        TypeTable tt = romHandler.getTypeTable();
+        TypeTable tt = typeTable;
         if (mv.type == null || !tt.getTypes().contains(mv.type)) {
             return 1.0;
         }
@@ -809,7 +810,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // Whether the Pokemon takes at least 2x damage (double or quadruple weakness) from the given attacking type.
     private boolean isWeakTo(Species pk, Type attackType) {
-        TypeTable tt = romHandler.getTypeTable();
+        TypeTable tt = typeTable;
         if (!tt.getTypes().contains(attackType)) {
             return false;
         }
@@ -1317,6 +1318,13 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
         if (allTutorMoves == null) {
             allTutorMoves = romHandler.getMoveTutorMoves();
+        }
+        // Type chart (cached like the move sources above): romHandler.getTypeTable() re-parses the ROM's type
+        // effectiveness bytes and builds a fresh TypeTable on EVERY call, so the per-candidate weight lambdas
+        // (genericNeutralPenalty, isWeakTo) would otherwise rebuild it thousands of times per run. It never
+        // changes during a run, so read it once here.
+        if (typeTable == null) {
+            typeTable = romHandler.getTypeTable();
         }
         // Availability tally (Batch 6): built once from the SAME cached maps - never re-calls the (uncached,
         // per-call-rebuilding) RomHandler getters. See availabilityWeight.
