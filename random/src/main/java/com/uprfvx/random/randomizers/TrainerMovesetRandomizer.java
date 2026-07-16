@@ -49,9 +49,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
             boolean doubles = isDoublesFormatBattle(t);
 
-            // Team-level authoring: track the moves/attacking-types already handed to EARLIER Pokemon on this
-            // same trainer, so the choosy slots can softly avoid repeating them (mainline teams feel authored
-            // through role variety, not by stacking the same coverage/status on every mon). Reset per trainer.
+            // Per-trainer memory of earlier teammates' moves/types, so choosy slots can avoid repeats.
             teamUsage = new TeamMoveUsage();
 
             for (TrainerPokemon tp : t.getPokemon()) {
@@ -1237,8 +1235,6 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
             return new ArrayList<>();
         }
-
-        // Remove hard ability anti-synergy moves
 
         if (hasAbilities) {
             List<Move> withoutHardAntiSynergy = new ArrayList<>(movesAtLevel);
