@@ -329,8 +329,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return Math.pow(effectivePower, POWER_SELECTION_EXPONENT);
     }
 
-    // Hard power-band filter (Batch 5). Where the shared levelTierWeight is a SOFT bias used by the species
-    // power-curve randomizer, the trainer side removes level-inappropriate attacking moves outright, so a
+    // Hard power-band filter (Batch 5). The trainer side removes level-inappropriate attacking moves outright, so a
     // level's movepool reads as authored rather than occasionally sprouting an over-level nuke. Bands reuse the
     // shared BP edges (TIER_LOW_MAX_BP 60 / TIER_MID_MAX_BP 80); only the level windows are trainer-specific:
     //   Lv < 15        -> Low only     (remove effective power > 60)

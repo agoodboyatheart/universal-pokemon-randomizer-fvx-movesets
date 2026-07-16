@@ -75,36 +75,12 @@ public abstract class Randomizer {
         return candidates.get(candidates.size() - 1);
     }
 
-    // Level->power-tier soft bias, shared by the trainer (Better Movesets) and species (power-curve)
-    // moveset randomizers. Moves fall into fixed BP tiers that "unlock" with level; below a tier's
-    // unlock level its moves get a soft, shrinking weight so a low-level mon still occasionally rolls
-    // one, rather than the old flat level*3 cutoff. Effective power is power * hitCount (0 for status).
-    protected static final double TIER_LOW_MAX_BP  = 60.0;  // <=60  = low  tier (always available)
+    // Shared BP tier edges: moves fall into fixed effective-power (power * hitCount, 0 for status) bands.
+    // Consumed by TrainerMovesetRandomizer.applyPowerBandFilter, which pairs these edges with its own
+    // trainer-specific level windows. Kept on the shared superclass so the species power-curve randomizer
+    // can reuse the same band edges when that feature is (re)built.
+    protected static final double TIER_LOW_MAX_BP  = 60.0;  // <=60  = low  tier
     protected static final double TIER_MID_MAX_BP  = 80.0;  // 61-80 = mid  tier
-    protected static final int    TIER_MID_UNLOCK  = 20;    // mid power starts appearing here
-    protected static final int    TIER_HIGH_UNLOCK = 35;    // high power (81+) starts appearing here
-    protected static final double TIER_SOFTNESS    = 0.8;   // per-level falloff below unlock (0.8^10 ~= 0.11)
-
-    /**
-     * Soft level-gate weight in (0,1] for a move of the given effective power on a mon of the given
-     * level: 1.0 once the mon's level reaches the move's tier unlock level, and a soft, shrinking
-     * fraction below it (so an under-level mon can still occasionally roll up a tier). Multiply an
-     * existing power-based selection weight by this to bias picks toward level-appropriate power.
-     */
-    protected static double levelTierWeight(int level, double effectivePower) {
-        int unlock;
-        if (effectivePower <= TIER_LOW_MAX_BP) {
-            unlock = 0;                 // low tier: always available
-        } else if (effectivePower <= TIER_MID_MAX_BP) {
-            unlock = TIER_MID_UNLOCK;   // mid tier
-        } else {
-            unlock = TIER_HIGH_UNLOCK;  // high tier
-        }
-        if (level >= unlock) {
-            return 1.0;
-        }
-        return Math.pow(TIER_SOFTNESS, unlock - level);
-    }
 
     protected CustomNamesSet getCustomNames() {
         // This is not in line with how most /data resources are loaded for randomization.

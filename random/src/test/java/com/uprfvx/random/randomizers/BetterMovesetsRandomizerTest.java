@@ -464,8 +464,10 @@ public class BetterMovesetsRandomizerTest {
                                     + " " + pk.getName());
                         }
                     }
-                    // Real damaging moves follow the shared soft level->power-tier bias (see
-                    // Randomizer.levelTierWeight): low (<=60 BP) always, mid (61-80) unlocks ~L20, high (81+) ~L35.
+                    // Real damaging moves are constrained by the trainer hard power-band filter
+                    // (TrainerMovesetRandomizer.applyPowerBandFilter). The tier ceiling below (low <=60 always,
+                    // mid 61-80 from ~L20, high 81+ from ~L35) is a deliberately lenient statistical guardrail -
+                    // looser than the real L15/L30 windows - so genuine over-tier spillover stays conservative.
                     // Over-tier picks are allowed but should be rare, so we tally rather than hard-fail here and
                     // assert the aggregate rates below. Moves learnable naturally by level-up are tier-exempt, as
                     // are power<=1 moves (status, gimmicks, fixed-constant / synthetic damage).
@@ -709,7 +711,7 @@ public class BetterMovesetsRandomizerTest {
                     bossRate * 100, bossLowAccAttackPicks, bossAttackPicks,
                     regRate * 100, regLowAccAttackPicks, regAttackPicks);
         }
-        // Soft level->power-tier guarantees (see Randomizer.levelTierWeight). Over-tier picks are allowed but
+        // Power-band guarantees (see TrainerMovesetRandomizer.applyPowerBandFilter). Over-tier picks are allowed but
         // must stay a minority - a broken gate would favour the strongest moves and push most picks over-tier.
         // A sub-L20 mon carrying a high-power (81+) move sits ~15 levels below that tier's unlock (weight ~3%),
         // so it should be genuinely rare. Thresholds are generous to avoid flaking on normal soft spillover.
