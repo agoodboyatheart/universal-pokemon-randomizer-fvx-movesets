@@ -404,7 +404,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // value depends on either is dead weight (or self-defeating) in its hands - which quietly LOWERS difficulty,
     // the opposite of this fork's goal. See project_memory/enemy-ai-move-limitations.md for the per-generation
     // reasoning. These are TRAINER-side only: the shared goodWeakMoves / goodStatusMoves lists still rate them for
-    // a human player (and the species learnset randomizer), so we do not touch those lists.
+    // a human player (and the species learnset randomizer), so we do not touch those lists. This is a SECOND ban
+    // philosophy layered beside GlobalConstants.bannedForDamagingMove (the ROM-wide hard-ban on random damaging
+    // pools used by the species / TM / tutor randomizers): the two overlap on several IDs (suckerPunch, focusPunch,
+    // futureSight, doomDesire, selfDestruct) but stay separate on purpose - that list governs random-pool
+    // eligibility, these tiers govern battle-AI usability. Keep them aligned by intent, do not merge them.
 
     // Tier 1 - HARD exclude: structurally unusable, stripped from the trainer move pool up front (see the strip in
     // randomizeTrainerMovesets) so they reach no slot at all. NB feint = 364 (the Protect-breaker), NOT feintAttack
@@ -527,7 +531,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // HP-proportional: Super Fang / Nature's Madness halve the target's HP; Endeavor drops it to the user's.
     // Their real output swings with current HP (Endeavor does nothing at full HP but a lot when the user is
     // hurt, which trainer mons often are mid-battle), so we rank them by a rough ~level proxy rather than
-    // excluding them.
+    // excluding them. NB: endeavor is also in AI_UNUSABLE_MOVES and so is hard-stripped from the pool before any
+    // ranking runs - its entry here is therefore inert for trainers, kept only to keep the group's meaning complete.
     private static final Set<Integer> HP_PROPORTIONAL_DAMAGE_MOVES = Set.of(
             MoveIDs.superFang, MoveIDs.naturesMadness, MoveIDs.endeavor);
 

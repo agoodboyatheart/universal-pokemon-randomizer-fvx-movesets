@@ -33,6 +33,12 @@ import java.util.stream.Stream;
 
 public class GlobalConstants {
 
+    // bannedForDamagingMove is the ROM-wide HARD ban on moves that must never enter a RANDOM damaging pool,
+    // consulted by the species learnset / TM / tutor randomizers (via Move.isGoodDamaging call sites). NOTE:
+    // TrainerMovesetRandomizer runs a SEPARATE, trainer-specific ban philosophy (AI_UNUSABLE_MOVES /
+    // AI_FLAWED_MOVES) keyed on what the in-game battle AI can actually use. The two lists overlap on several
+    // IDs (suckerPunch, focusPunch, futureSight, doomDesire, selfDestruct) but are intentionally NOT merged:
+    // this one governs random pool eligibility, those govern AI usability. Change each for its own reason.
     public static final boolean[] bannedRandomMoves = new boolean[827], bannedForDamagingMove = new boolean[827];
     static {
         bannedRandomMoves[MoveIDs.struggle] = true; //  self explanatory
