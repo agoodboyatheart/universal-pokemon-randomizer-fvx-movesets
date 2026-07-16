@@ -474,8 +474,8 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
 
         StringBuilder sb = new StringBuilder();
         appendTier(sb, romHandler, "BOSS", Trainer::isBoss);
-        appendTier(sb, romHandler, "IMPORTANT", Trainer::isImportant);
-        appendTier(sb, romHandler, "REGULAR", Trainer::isRegular);
+        appendTier(sb, romHandler, "IMP ", Trainer::isImportant);
+        appendTier(sb, romHandler, "REG ", Trainer::isRegular);
         return sb.toString().strip();
     }
 
@@ -486,7 +486,9 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
      * Appends an even spread of {@link #SAMPLE_PER_TIER} of {@code inTier}'s buffed trainer Pokemon to {@code sb}.
      * Only trainers the randomizer actually touches are considered ({@code inTier} holds AND
      * {@link Trainer#shouldNotGetBuffs()} is false). An empty tier is recorded with an explicit {@code (none)} marker
-     * so its absence is frozen rather than silently blank.
+     * so its absence is frozen rather than silently blank. {@code tierLabel} is the single source of truth for the
+     * per-line tag - every mon here matched {@code inTier}, so it is labelled by the tier it was collected under
+     * rather than re-derived per mon.
      */
     private static void appendTier(StringBuilder sb, RomHandler romHandler, String tierLabel,
                                    Predicate<Trainer> inTier) {
@@ -507,7 +509,7 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
             TierMon m = mons.get(idx);
             Species pk = m.pokemon().getSpecies();
             String moves = m.pokemon().isResetMoves() ? "RESET" : joinMoves(m.pokemon().getMoves());
-            sb.append(tierOf(m.trainer())).append(" L").append(m.pokemon().getLevel()).append(' ')
+            sb.append(tierLabel).append(" L").append(m.pokemon().getLevel()).append(' ')
                     .append(pk.getName()).append(" (").append(typeStr(pk)).append("): ")
                     .append(moves).append('\n');
         }
@@ -546,15 +548,5 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
     private static String typeStr(Species pk) {
         Type t2 = pk.getSecondaryType(false);
         return pk.getPrimaryType(false) + (t2 == null ? "" : "/" + t2);
-    }
-
-    private static String tierOf(Trainer tr) {
-        if (tr.isBoss()) {
-            return "BOSS";
-        }
-        if (tr.isImportant()) {
-            return "IMP ";
-        }
-        return "REG ";
     }
 }
