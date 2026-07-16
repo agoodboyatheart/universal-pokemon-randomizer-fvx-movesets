@@ -451,7 +451,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // (0 in most gens), NOT 100 - so they must be read as perfectly reliable, not as 0% accurate. Moves at or above
     // RELIABLE_ACCURACY are unpenalised; below it the weight falls off as (accuracy / RELIABLE_ACCURACY) raised to
     // ACCURACY_PENALTY_EXPONENT, so an 80% move keeps ~0.79 of its weight and a 50% move ~0.31. Tuning knobs.
-    private static final double RELIABLE_ACCURACY = 90.0;
+    private static final double RELIABLE_ACCURACY = GlobalConstants.RELIABLE_ACCURACY_THRESHOLD;
     private static final double ACCURACY_PENALTY_EXPONENT = 2.0;
 
     private double accuracyWeight(Move mv) {

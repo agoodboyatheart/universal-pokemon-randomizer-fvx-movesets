@@ -160,7 +160,8 @@ public class Move implements Comparable<Move> {
 
     public boolean isGoodDamaging(int perfectAccuracy) {
         return (power * hitCount) >= 2 * GlobalConstants.MIN_DAMAGING_MOVE_POWER
-                || ((power * hitCount) >= GlobalConstants.MIN_DAMAGING_MOVE_POWER && (hitratio >= 90 || hitratio == perfectAccuracy));
+                || ((power * hitCount) >= GlobalConstants.MIN_DAMAGING_MOVE_POWER
+                        && (hitratio >= GlobalConstants.RELIABLE_ACCURACY_THRESHOLD || hitratio == perfectAccuracy));
     }
 
     @Override

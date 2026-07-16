@@ -270,6 +270,12 @@ public class GlobalConstants {
 
     public static final int MIN_DAMAGING_MOVE_POWER = 50;
 
+    // Accuracy (0-100) at or above which a move is treated as "reliable" - no accuracy-based penalty.
+    // Single source of truth shared by Move.isGoodDamaging (a damaging move counts as good if reliable)
+    // and the trainer moveset randomizer's accuracyWeight difficulty lever. NOT the same as the accuracy
+    // bucketing in MoveDataRandomizer, which regenerates accuracy values and is deliberately left separate.
+    public static final int RELIABLE_ACCURACY_THRESHOLD = 90;
+
     public static final int HIGHEST_POKEMON_GEN = 9;
 
     // Eevee has 8 potential evolutions
