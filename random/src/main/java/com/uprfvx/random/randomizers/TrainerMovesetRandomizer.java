@@ -17,8 +17,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private Map<Integer, List<Integer>> allEggMoves;
     private Map<Species, boolean[]> allTMCompat, allTutorCompat;
     private List<Integer> allTMMoves, allTutorMoves;
-    private Map<Integer, Integer> moveAvailability;   // move number -> # of species that can learn it (any source)
-    private TypeTable typeTable;   // cached once per run: romHandler.getTypeTable() rebuilds from ROM on every call
+    // Move number -> number of species that can learn it (any source).
+    private Map<Integer, Integer> moveAvailability;
+    // Cached once per run: romHandler.getTypeTable() rebuilds from ROM on every call.
+    private TypeTable typeTable;
 
     private final boolean hasAbilities;
 
@@ -40,7 +42,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(t -> !t.shouldNotGetBuffs())
                 .collect(Collectors.toList());
 
-        // Reset the cross-trainer per-species move tally (Batch 8) once per run, before any trainer is built.
+        // Reset the cross-trainer per-species move tally once per run, before any trainer is built.
         speciesMoveUsage.clear();
 
         for (Trainer t : trainers) {
@@ -59,7 +61,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
                 Species pk = tp.getSpecies();
                 // The current species, so speciesRepeatWeight can consult the run-wide tally without threading
-                // the Species through every picker (Batch 8).
+                // the Species through every picker.
                 currentSpeciesNumber = pk.getNumber();
                 int ability = hasAbilities ? romHandler.getAbilityForTrainerPokemon(tp) : 0;
 
@@ -176,7 +178,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 for (Move mv : picked) {
                     teamUsage.record(mv, level);
                     // Also tally against this species' run-wide usage so later trainers' copies of the same
-                    // species are softly steered off the moves it has already been given (Batch 8).
+                    // species are softly steered off the moves it has already been given.
                     recordSpeciesMove(mv);
                 }
             }
@@ -184,11 +186,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
         changesMade = true;
     }
 
-    // ===== Role-based moveset construction (custom Better Movesets redesign) ==========================
+    // ===== Role-based moveset construction ===========================================================
     // Boss/Important: STAB + Coverage + Status + Wildcard. Regular: STAB + Coverage + Wildcard + Wildcard.
     // Any slot that cannot be filled falls back to the next-best damaging move, so every mon gets 4 moves.
 
-    // ===== Team-level authoring (Batch 4 Issue D) ====================================================
+    // ===== Team-level authoring ======================================================================
     // A soft, per-trainer memory of what earlier teammates were given. The choosy attack/status/wildcard
     // slots multiply their pick weights by teamRepeatWeight, so a trainer's team tends toward role variety
     // instead of stacking the same move or attacking type on several mons - closer to how mainline teams
@@ -214,7 +216,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return weight;
     }
 
-    // ===== Species-level authoring (Batch 8) =========================================================
+    // ===== Species-level authoring ===================================================================
     // teamRepeatWeight above stops one TEAM stacking the same move; it has no memory across trainers, so a
     // species still received its single best-available move on nearly every trainer it appeared on - e.g.
     // Electrode -> Signal Beam on 8/8 appearances, Ninjask -> X-Scissor on 6/6. That makes each species feel
@@ -230,7 +232,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private final Map<Integer, Map<Integer, Integer>> speciesMoveUsage = new HashMap<>();
     private int currentSpeciesNumber = -1;
 
-    // Geometric decay per prior use of this move on this species this run. The primary tuning knob for Batch 8 -
+    // Geometric decay per prior use of this move on this species this run. The primary tuning knob here -
     // calibrate against a fresh log so a high-appearance species' top move lands around 55-65% (moderate: keep
     // the signature common, not guaranteed), not below ~50% (which reads as random and erases species identity).
     private static final double SPECIES_MOVE_REPEAT_PENALTY = 0.6;
@@ -294,7 +296,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Regular second attack). ~9x gives a committed attacker a roughly 90% category lean. Tuning knob.
     private static final double CATEGORY_PREFERENCE_BONUS = 9.0;
 
-    // Availability normalization (Batch 6). The 100%-available pool (Batch 5) enters every learnable move into
+    // Availability normalization. The 100%-available pool enters every learnable move into
     // every eligible mon's pool, so a move learnable by half the dex (universal TMs like Double Team / Toxic /
     // Return, broad tutors like Signal Beam) lands in nearly every pool while a rare signature move lands in
     // almost none. Under a near-uniform pick, a move's population frequency ends up proportional to how many
@@ -305,7 +307,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     //
     // A move's cross-population frequency scales as availability^(1 - k). k = 0 disables it; k = 1 fully flattens
     // frequency (risking obscure-move flooding). k ~ 0.4 is a partial correction: a move in 400 pools still
-    // appears clearly more than one in 4 pools, it just no longer swamps it. The one exposed knob - tune vs logs.
+    // appears clearly more than one in 4 pools, it just does not swamp it. The one exposed knob - tune vs logs.
     private static final double AVAILABILITY_NORMALIZATION_EXPONENT = 0.4;
 
     // Down-weights a move by how many species can learn it (see AVAILABILITY_NORMALIZATION_EXPONENT). Mirrors
@@ -320,7 +322,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // in-band move is softly favoured. This exponent softens that power term so weaker same-band moves still
     // surface. 1.0 = power-proportional; 0.5 (square root) gives roughly a 55/45 split for a 60-vs-40 BP pair.
     // Applied only to the Boss STAB / coverage / fallback picks - Regular STAB and the Regular second attack are
-    // flat (no power term). Across-band level-appropriateness is now enforced by the hard power-band filter
+    // flat (no power term). Across-band level-appropriateness is enforced by the hard power-band filter
     // (applyPowerBandFilter), not by a soft weight. Tuning knob.
     private static final double POWER_SELECTION_EXPONENT = 0.5;
 
@@ -329,7 +331,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return Math.pow(effectivePower, POWER_SELECTION_EXPONENT);
     }
 
-    // Hard power-band filter (Batch 5). The trainer side removes level-inappropriate attacking moves outright, so a
+    // Hard power-band filter. The trainer side removes level-inappropriate attacking moves outright, so a
     // level's movepool reads as authored rather than occasionally sprouting an over-level nuke. Bands reuse the
     // shared BP edges (TIER_LOW_MAX_BP 60 / TIER_MID_MAX_BP 80); only the level windows are trainer-specific:
     //   Lv < 15        -> Low only     (remove effective power > 60)
@@ -341,14 +343,17 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // drop: a move learned early is not level-appropriate for a high-level mon, so a Lv45 mon does not keep its
     // Lv3 Water Gun / Leech Life as a STAB. From the Lv30+ Low-removal, priority/utility weak moves (goodWeakMoves)
     // are still kept, so a high-level mon can run Aqua Jet / Sucker Punch / Rapid Spin.
-    private static final int BAND_MID_UNLOCK_LEVEL = 15;   // Average band (61-80) becomes available here
-    private static final int BAND_HIGH_UNLOCK_LEVEL = 30;  // High band (81+) available AND Low band dropped here
+    // Average band (61-80) becomes available here.
+    private static final int BAND_MID_UNLOCK_LEVEL = 15;
+    // High band (81+) available AND Low band dropped here.
+    private static final int BAND_HIGH_UNLOCK_LEVEL = 30;
 
     private void applyPowerBandFilter(List<Move> pool, int level, Set<Integer> ownLevelUpMoveNumbers) {
         pool.removeIf(mv -> {
             double ep = effectivePower(mv, level);
             if (ep <= 0) {
-                return false; // status / gimmick / non-attacking: never banded
+                // Status / gimmick / non-attacking: never banded.
+                return false;
             }
             boolean ownLevelUp = ownLevelUpMoveNumbers.contains(mv.number);
             if (level < BAND_MID_UNLOCK_LEVEL) {
@@ -399,7 +404,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return 1.0;
     }
 
-    // Batch 7 - filtering moves the ROM battle AI structurally cannot use. The AI is a greedy single-turn scorer:
+    // Filtering moves the ROM battle AI structurally cannot use. The AI is a greedy single-turn scorer:
     // it can't predict what the player will do this turn and it never runs a multi-turn plan, so any move whose
     // value depends on either is dead weight (or self-defeating) in its hands - which quietly LOWERS difficulty,
     // the opposite of this fork's goal. See project_memory/enemy-ai-move-limitations.md for the per-generation
@@ -414,18 +419,22 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // randomizeTrainerMovesets) so they reach no slot at all. NB feint = 364 (the Protect-breaker), NOT feintAttack
     // = 185 (a fine 60-BP Dark move). suckerPunch / endeavor are in goodWeakMoves and destinyBond is in
     // goodStatusMoves; stripping here overrides those whitelists trainer-side without editing the shared lists.
+    // Each move's reason for being structurally unusable to the AI:
+    //  feint        - Protect-breaker; AI can't know the player will Protect
+    //  suckerPunch  - only works if the target attacks that turn - unpredictable
+    //  counter      - needs to predict a physical hit
+    //  mirrorCoat   - needs to predict a special hit
+    //  metalBurst   - needs to predict either
+    //  bide         - stores damage over 2-3 turns with no prediction
+    //  focusPunch   - fails if hit first; AI can't predict incoming damage
+    //  futureSight  - delayed damage with no lookahead to set it up
+    //  doomDesire   - delayed damage with no lookahead to set it up
+    //  endeavor     - value depends on relative-HP timing the AI can't model
+    //  destinyBond  - needs to bait the player's killing blow
     private static final Set<Integer> AI_UNUSABLE_MOVES = Set.of(
-            MoveIDs.feint,        // Protect-breaker; AI can't know the player will Protect
-            MoveIDs.suckerPunch,  // only works if the target attacks that turn - unpredictable
-            MoveIDs.counter,      // needs to predict a physical hit
-            MoveIDs.mirrorCoat,   // needs to predict a special hit
-            MoveIDs.metalBurst,   // needs to predict either
-            MoveIDs.bide,         // stores damage over 2-3 turns with no prediction
-            MoveIDs.focusPunch,   // fails if hit first; AI can't predict incoming damage
-            MoveIDs.futureSight,  // delayed damage with no lookahead to set it up
-            MoveIDs.doomDesire,   // delayed damage with no lookahead to set it up
-            MoveIDs.endeavor,     // value depends on relative-HP timing the AI can't model
-            MoveIDs.destinyBond); // needs to bait the player's killing blow
+            MoveIDs.feint, MoveIDs.suckerPunch, MoveIDs.counter, MoveIDs.mirrorCoat,
+            MoveIDs.metalBurst, MoveIDs.bide, MoveIDs.focusPunch, MoveIDs.futureSight,
+            MoveIDs.doomDesire, MoveIDs.endeavor, MoveIDs.destinyBond);
 
     // Tier 2 - WEIGHTED penalty: the AI CAN fire these, but usually to little effect (a self-KO it has no
     // self-faint awareness of, an item swap it can't value, a Perish/Belly-Drum plan it can't coordinate). Not
@@ -435,7 +444,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
             MoveIDs.explosion, MoveIDs.selfDestruct,
             MoveIDs.trick, MoveIDs.switcheroo,
             MoveIDs.perishSong, MoveIDs.bellyDrum);
-    private static final double AI_FLAWED_MOVE_WEIGHT_PENALTY = 0.15; // tuning knob (matches CHARGE penalty)
+    // Tuning knob (matches CHARGE penalty).
+    private static final double AI_FLAWED_MOVE_WEIGHT_PENALTY = 0.15;
 
     // Selection-weight multiplier that demotes the AI-flawed moves above; 1.0 for everything else. Multiplied into
     // every slot's weightedPick (STAB / coverage / regular-2nd / best-damaging / status / wildcard) so the penalty
@@ -444,7 +454,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return AI_FLAWED_MOVES.contains(mv.number) ? AI_FLAWED_MOVE_WEIGHT_PENALTY : 1.0;
     }
 
-    // Reliability as a difficulty lever (Batch 4 Issue E). For a Hardcore Nuzlocke the player fears variance, so a
+    // Reliability as a difficulty lever. For a Hardcore Nuzlocke the player fears variance, so a
     // boss that leans on reliable moves is scarier than one packing a flashy but coin-flip 70%-accuracy nuke. This
     // softly demotes low-accuracy moves so the Boss/Important CURATED slots (STAB, coverage, status) trend toward
     // dependable options; Regular second attacks and every tier's wildcards deliberately skip it, so lower tiers
@@ -579,13 +589,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
     }
 
     // Slot 1: a STAB attacking move. Level-appropriateness is already enforced by the hard power-band filter on
-    // the pool, so this slot no longer applies a level->power weight. Boss/Important trainers get a soft power
+    // the pool, so this slot applies no level->power weight. Boss/Important trainers get a soft power
     // lean (and the accuracy difficulty lever); Regular trainers pick flat across the available bands, so a weak
     // level-up STAB competes evenly with a universal TM. Both tiers nudge a committed attacker toward its category.
-    // teamRepeatWeight applies here too (Batch 8 follow-up): STAB was the one choosy slot omitting it, which let a
-    // mono-type team (a Ghost/Dragon gym leader) stack the identical STAB move on every mon - e.g. Ominous Wind on
-    // 4 of Morty's Ghosts. Its exact-move term breaks that; its type term self-cancels among same-type candidates,
-    // so a mono-type mon is still steered to a DIFFERENT move of its type, never off-type.
+    // teamRepeatWeight applies here too so a mono-type team (a Ghost/Dragon gym leader) cannot stack the identical
+    // STAB move on every mon. Its exact-move term breaks that; its type term self-cancels among same-type
+    // candidates, so a mono-type mon is still steered to a DIFFERENT move of its type, never off-type.
     private Move pickStabMove(Species pk, int ability, List<Move> pool, int level, AttackerProfile profile,
                               List<Move> exclude, boolean bossTier) {
         Type t1 = pk.getPrimaryType(false);
@@ -688,11 +697,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return false;
     }
 
-    // Slot 3: a non-redundant good status move, picked FLAT among the eligible candidates (Batch 5 / Q3). The
+    // Slot 3: a non-redundant good status move, picked FLAT among the eligible candidates. The
     // stat-boost gate lives in the candidate filter via isRedundantStatusMove: an Attack-only booster is only
     // eligible if a physical attack was already picked, a Sp.Atk-only booster only if a special attack was, based
-    // on the actually-picked attacks. Beyond that gate the choice is deliberately even - the old synergy bonus and
-    // the accuracy (reliability) lean are dropped for status, so boss status reads as varied rather than optimised.
+    // on the actually-picked attacks. Beyond that gate the choice is deliberately even - no synergy bonus and no
+    // accuracy (reliability) lean apply to status, so boss status reads as varied rather than optimised.
     private Move pickStatusMove(Species pk, int ability, List<Move> pool, List<Move> picked, int level) {
         List<Move> candidates = pool.stream()
                 .filter(mv -> !picked.contains(mv))
@@ -706,7 +715,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
         // Flat pick among eligible candidates, tempered by teamRepeatWeight so the team trends toward varied status
         // (status moves have effectivePower 0, so only the exact-move repeat tally applies here) and by
-        // availabilityWeight so universal status TMs (Toxic / Protect / Substitute / Double Team) no longer flood
+        // availabilityWeight so universal status TMs (Toxic / Protect / Substitute / Double Team) do not flood
         // the slot purely by being learnable by nearly the whole dex.
         return weightedPick(candidates, mv -> teamRepeatWeight(mv, level) * availabilityWeight(mv)
                 * aiUsabilityWeight(mv) * speciesRepeatWeight(mv));
@@ -870,10 +879,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
             working.add(mv);
         }
 
-        // Only the anti-synergy REMOVAL passes shape the wildcard pool now. The old additive biases (STAB /
-        // ability / stat / atk:spatk-ratio duplication) were dead weight: eligibleWildcards calls .distinct()
-        // before the weightedPick, so duplicate copies never changed the odds. Leaving the wildcard a
-        // near-uniform draw over the anti-synergy-trimmed pool is the intended "surprise" of the slot.
+        // Only the anti-synergy REMOVAL passes shape the wildcard pool. Additive synergy biases (STAB /
+        // ability / stat / atk:spatk-ratio duplication) would be dead weight here: eligibleWildcards calls
+        // .distinct() before the weightedPick, so duplicate copies never change the odds. A near-uniform
+        // draw over the anti-synergy-trimmed pool is the intended "surprise" of the slot.
         double softMoveAntiBias = 0.5;
 
         if (hasAbilities) {
@@ -1091,9 +1100,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 || mv.hasSpecificStatChange(StatChangeType.ALL, true));
     }
 
-    // Removal-only now: prunes moves that clash with the Pokemon's ability (soft ability anti-synergy). The
-    // former synergy-ADDITION passes were dropped - they only added duplicate copies that eligibleWildcards
-    // collapsed with .distinct() before the pick, so they never influenced anything.
+    // Removal only: prunes moves that clash with the Pokemon's ability (soft ability anti-synergy). A synergy-
+    // ADDITION pass would be pointless here - it could only add duplicate copies that eligibleWildcards collapses
+    // with .distinct() before the pick, so they never influence anything.
     private List<Move> updateMovesConsideringAbilitySynergies(TrainerPokemon tp, List<Move> movesAtLevel) {
         List<Move> softAbilityMoveAntiSynergyList = MoveSynergy.getSoftAbilityMoveAntiSynergy(
                 romHandler.getAbilityForTrainerPokemon(tp), movesAtLevel);
@@ -1107,8 +1116,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return movesAtLevel;
     }
 
-    // Removal-only now: prunes moves that clash with the Pokemon's stats (stat anti-synergy). The former
-    // synergy-ADDITION pass was dropped for the same reason as in the ability helper above.
+    // Removal only: prunes moves that clash with the Pokemon's stats (stat anti-synergy). A synergy-ADDITION
+    // pass would be pointless for the same reason as in the ability helper above.
     private List<Move> updateMovesConsideringStatSynergies(Species pk, List<Move> movesAtLevel) {
         List<Move> statAntiSynergyList = MoveSynergy.getStatMoveAntiSynergy(pk, movesAtLevel);
         List<Move> withoutStatAntiSynergy = new ArrayList<>(movesAtLevel);
@@ -1250,7 +1259,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // so a universal move's reach is measured the same way regardless of the power-band filter. Called once per run,
     // after the source caches are warm; cost is O(species x (learnset + TM + tutor)) - a few hundred thousand touches.
     private void buildMoveAvailability() {
-        Map<Integer, Set<Integer>> perSpecies = new HashMap<>();   // species number -> distinct learnable move numbers
+        // Species number -> distinct learnable move numbers.
+        Map<Integer, Set<Integer>> perSpecies = new HashMap<>();
 
         // Level-up moves (keyed by species number).
         for (Map.Entry<Integer, List<MoveLearnt>> e : allLevelUpMoves.entrySet()) {
@@ -1330,7 +1340,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (typeTable == null) {
             typeTable = romHandler.getTypeTable();
         }
-        // Availability tally (Batch 6): built once from the SAME cached maps - never re-calls the (uncached,
+        // Availability tally: built once from the SAME cached maps - never re-calls the (uncached,
         // per-call-rebuilding) RomHandler getters. See availabilityWeight.
         if (moveAvailability == null) {
             buildMoveAvailability();
@@ -1447,13 +1457,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
         banned.addAll(romHandler.getGameBreakingMoves());
         banned.addAll(romHandler.getIllegalMoves());
         banned.addAll(romHandler.getMovesBannedFromLevelup());
-        banned.add(MoveIDs.struggle); // not a selectable move
-        banned.add(MoveIDs.sketch);   // a trainer Smeargle re-Sketching Sketch is pointless
+        // Struggle is not a selectable move; a trainer Smeargle re-Sketching Sketch is pointless.
+        banned.add(MoveIDs.struggle);
+        banned.add(MoveIDs.sketch);
 
         List<Move> pool = new ArrayList<>();
         for (Move mv : romHandler.getMoves()) {
             if (mv == null) {
-                continue; // move list is indexed by number; index 0 is blank
+                // The move list is indexed by number; index 0 is blank.
+                continue;
             }
             if (banned.contains(mv.number)) {
                 continue;
