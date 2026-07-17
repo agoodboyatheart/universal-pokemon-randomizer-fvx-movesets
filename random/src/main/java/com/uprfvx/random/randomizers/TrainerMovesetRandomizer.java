@@ -299,7 +299,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // wildcard can still occasionally win (mirrors COVERAGE_SUPER_EFFECTIVE_BONUS). Regulars unaffected. Tuning knob.
     // Calibrated to 5.0 from a SoulSilver log: high-level bosses learn the full status suite, so their wildcard pool
     // is status-crowded and 3.0 left them modal 2 attacks; 5.0 lifts them toward the 3-attacks-plus-status target.
-    private static final double BOSS_WILDCARD_DAMAGING_BONUS = 5.0;
+    // Non-final so the calibration harness (MovesetProfileRandomizerTest) can sweep it in-process; treat it as a
+    // constant in production - nothing outside that test writes it.
+    static double bossWildcardDamagingBonus = 5.0;
     private static final int TRICK_ROOM_MAX_SPEED = 60;
 
     // Attacking-stat profile, from the (ability-adjusted) Attack:Sp.Atk ratio. Committed attackers prefer moves
@@ -959,7 +961,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             Move move = weightedPick(distinct,
                     mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level)
                             * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv)
-                            * (isBossTier && isAttackSlotEligible(mv, level) ? BOSS_WILDCARD_DAMAGING_BONUS : 1.0));
+                            * (isBossTier && isAttackSlotEligible(mv, level) ? bossWildcardDamagingBonus : 1.0));
             picked.add(move);
             if (picked.size() >= 4) {
                 break;
