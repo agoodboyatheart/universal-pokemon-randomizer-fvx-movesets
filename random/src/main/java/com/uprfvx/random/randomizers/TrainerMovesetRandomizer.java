@@ -297,7 +297,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // slot already guarantees one non-damaging move, so an un-biased wildcard stacks a second ~61% of the time and
     // drops bosses below regulars in attacks; this restores the 3-attacks-plus-status modal boss. Soft, so a status
     // wildcard can still occasionally win (mirrors COVERAGE_SUPER_EFFECTIVE_BONUS). Regulars unaffected. Tuning knob.
-    private static final double BOSS_WILDCARD_DAMAGING_BONUS = 3.0;
+    // Calibrated to 5.0 from a SoulSilver log: high-level bosses learn the full status suite, so their wildcard pool
+    // is status-crowded and 3.0 left them modal 2 attacks; 5.0 lifts them toward the 3-attacks-plus-status target.
+    private static final double BOSS_WILDCARD_DAMAGING_BONUS = 5.0;
     private static final int TRICK_ROOM_MAX_SPEED = 60;
 
     // Attacking-stat profile, from the (ability-adjusted) Attack:Sp.Atk ratio. Committed attackers prefer moves
