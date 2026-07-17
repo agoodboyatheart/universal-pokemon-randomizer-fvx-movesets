@@ -9,6 +9,8 @@ import com.uprfvx.romio.gamedata.Effectiveness;
 import com.uprfvx.romio.gamedata.GenRestrictions;
 import com.uprfvx.romio.gamedata.Move;
 import com.uprfvx.romio.gamedata.MoveCategory;
+import com.uprfvx.romio.gamedata.StatChangeMoveType;
+import com.uprfvx.romio.gamedata.StatChangeType;
 import com.uprfvx.romio.gamedata.MoveLearnt;
 import com.uprfvx.romio.gamedata.Species;
 import com.uprfvx.romio.gamedata.Trainer;
@@ -610,6 +612,15 @@ public class BetterMovesetsRandomizerTest {
                     if (movesThisMon.contains(MoveIDs.nightmare)) {
                         violations.add(romName + ": Nightmare without a sleep move on " + pk.getName());
                     }
+                }
+                // Baton Pass is pointless with nothing to pass, so it needs a self-boosting setup move.
+                boolean hasBoostToPass = movesThisMon.stream().anyMatch(id -> {
+                    Move m = allMoves.get(id);
+                    return m != null && m.statChangeMoveType == StatChangeMoveType.NO_DAMAGE_USER
+                            && Arrays.stream(m.statChanges).anyMatch(sc -> sc.type != StatChangeType.NONE && sc.stages > 0);
+                });
+                if (!hasBoostToPass && movesThisMon.contains(MoveIDs.batonPass)) {
+                    violations.add(romName + ": Baton Pass without a stat-boosting move on " + pk.getName());
                 }
                 // SolarBeam / Solar Blade skip the charge penalty only on a sun-guaranteed mon (sun-setter ability
                 // or a Sunny Day it also carries). Count picks that lack both - not a violation (the penalty just

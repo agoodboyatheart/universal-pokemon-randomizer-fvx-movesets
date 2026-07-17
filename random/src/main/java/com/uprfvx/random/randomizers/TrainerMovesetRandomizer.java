@@ -21,6 +21,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private Map<Integer, Integer> moveAvailability;
     // Cached once per run: romHandler.getTypeTable() rebuilds from ROM on every call.
     private TypeTable typeTable;
+    // Move numbers that raise one of the user's own stats - the enabler set for the Baton Pass dependency.
+    private Set<Integer> statBoostMoveNumbers;
 
     private final boolean hasAbilities;
 
@@ -1096,13 +1098,27 @@ public class TrainerMovesetRandomizer extends Randomizer {
     }
 
     // Removes enabler-dependent moves whose enabler is absent from the pool, so they can never claim a slot.
-    private static void stripUnsupportedDependentMoves(List<Move> pool) {
+    // Enablers for a dependent move. Most live in the static DEPENDENT_MOVE_ENABLERS map; Baton Pass is the
+    // inverse case (worthless with nothing to pass) and its enabler set - every self-boost move in the game - is
+    // computed per run, so it is resolved here rather than in the literal map. Null for a non-dependent move.
+    private Set<Integer> enablersFor(int moveNumber) {
+        if (moveNumber == MoveIDs.batonPass) {
+            return statBoostMoveNumbers;
+        }
+        return DEPENDENT_MOVE_ENABLERS.get(moveNumber);
+    }
+
+    private boolean isEnablerDependent(int moveNumber) {
+        return moveNumber == MoveIDs.batonPass || DEPENDENT_MOVE_ENABLERS.containsKey(moveNumber);
+    }
+
+    private void stripUnsupportedDependentMoves(List<Move> pool) {
         Set<Integer> present = new HashSet<>();
         for (Move mv : pool) {
             present.add(mv.number);
         }
         pool.removeIf(mv -> {
-            Set<Integer> enablers = DEPENDENT_MOVE_ENABLERS.get(mv.number);
+            Set<Integer> enablers = enablersFor(mv.number);
             return enablers != null && Collections.disjoint(present, enablers);
         });
     }
@@ -1116,14 +1132,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
             pickedNumbers.add(mv.number);
         }
         boolean removed = picked.removeIf(mv -> {
-            Set<Integer> enablers = DEPENDENT_MOVE_ENABLERS.get(mv.number);
+            Set<Integer> enablers = enablersFor(mv.number);
             return enablers != null && Collections.disjoint(pickedNumbers, enablers);
         });
         if (!removed) {
             return;
         }
         List<Move> backfillPool = distinctPool.stream()
-                .filter(mv -> !DEPENDENT_MOVE_ENABLERS.containsKey(mv.number))
+                .filter(mv -> !isEnablerDependent(mv.number))
                 .collect(Collectors.toList());
         Move fill;
         while (picked.size() < 4 && (fill = pickBestDamaging(backfillPool, picked, level, ability)) != null) {
@@ -1154,6 +1170,21 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return raisesOwnStat(mv) && (mv.hasSpecificStatChange(StatChangeType.SPECIAL_ATTACK, true)
                 || mv.hasSpecificStatChange(StatChangeType.SPECIAL, true)
                 || mv.hasSpecificStatChange(StatChangeType.ALL, true));
+    }
+
+    // A dedicated setup move that raises any of the user's own stats (Agility, Calm Mind, Iron Defense, Shell
+    // Smash...) - i.e. something Baton Pass can carry to a teammate. NO_DAMAGE_USER only: damaging riders
+    // (Power-Up Punch) are unreliable and self-debuffs (Close Combat) are not worth passing.
+    private static boolean raisesAnyUserStat(Move mv) {
+        if (mv.statChangeMoveType != StatChangeMoveType.NO_DAMAGE_USER) {
+            return false;
+        }
+        for (Move.StatChange sc : mv.statChanges) {
+            if (sc.type != StatChangeType.NONE && sc.stages > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Removal only: prunes moves that clash with the Pokemon's ability (soft ability anti-synergy). A synergy-
@@ -1400,6 +1431,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // per-call-rebuilding) RomHandler getters. See availabilityWeight.
         if (moveAvailability == null) {
             buildMoveAvailability();
+        }
+        // Enabler set for the Baton Pass dependency (see enablersFor): the moves worth passing to a teammate.
+        if (statBoostMoveNumbers == null) {
+            statBoostMoveNumbers = new HashSet<>();
+            for (Move mv : romHandler.getMoves()) {
+                if (mv != null && raisesAnyUserStat(mv)) {
+                    statBoostMoveNumbers.add(mv.number);
+                }
+            }
         }
     }
 
