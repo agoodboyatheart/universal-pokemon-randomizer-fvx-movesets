@@ -472,6 +472,16 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return AI_FLAWED_MOVES.contains(mv.number) ? AI_FLAWED_MOVE_WEIGHT_PENALTY : 1.0;
     }
 
+    private static final double BAD_STRONG_MOVE_WEIGHT_PENALTY = 0.35;
+
+    // Selection-weight multiplier that demotes GlobalConstants.badStrongMoves (strong attacks carrying a real
+    // drawback - recoil, self-KO, self-stat-drop, bad accuracy, recharge, multi-turn lock). Multiplied into every
+    // attacking slot's weightedPick so a clean move wins all else equal, but never removes the move: a mon whose
+    // only options are flawed still gets one, and the drawbacks stay authored surprises rather than bans.
+    private double badStrongMoveWeight(Move mv) {
+        return GlobalConstants.badStrongMoves.contains(mv.number) ? BAD_STRONG_MOVE_WEIGHT_PENALTY : 1.0;
+    }
+
     // Reliability as a difficulty lever. For a Hardcore Nuzlocke the player fears variance, so a
     // boss that leans on reliable moves is scarier than one packing a flashy but coin-flip 70%-accuracy nuke. This
     // softly demotes low-accuracy moves so the Boss/Important CURATED slots (STAB, coverage, status) trend toward
@@ -593,16 +603,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
             return false;
         }
         // Any real damaging move is eligible. Level-appropriateness is enforced SOLELY by the hard power-band filter
-        // (applyPowerBandFilter). Two upstream culls are deliberately NOT applied trainer-side:
-        //  - the isGoodDamaging / MIN_DAMAGING_MOVE_POWER (50) floor - it culled weak-but-level-appropriate STABs the
-        //    band filter already permits (gen-4 Leech Life 20 BP, Mega Drain 40, Fury Cutter), collapsing low-level
-        //    variety to the single move per type that cleared 50 BP (Bug -> Bug Bite);
-        //  - the badStrongMoves hard-ban - it barred legitimate staples (Mega Kick, Take Down, Thrash, Slam, Strength,
-        //    Uproar, Hyper Fang, Crush Claw, Dragon Rush...) from EVER filling an attack slot.
-        // Recoil / low-accuracy / charge / AI-flawed downsides are handled SOFTLY by the pick-slot weights
-        // (powerSelectionWeight, accuracyWeight, practicalValueWeight, aiUsabilityWeight) and by the up-front
-        // AI_UNUSABLE strip + enabler-dependency checks - not by a hard eligibility ban. (Do NOT edit the shared
-        // badStrongMoves list itself - the species moveset randomizer still relies on it.)
+        // (applyPowerBandFilter); the isGoodDamaging / MIN_DAMAGING_MOVE_POWER (50) floor is deliberately NOT applied
+        // here, as it culled weak-but-level-appropriate STABs the band filter already permits (gen-4 Leech Life 20 BP,
+        // Mega Drain 40, Fury Cutter), collapsing low-level variety to the one move per type that cleared 50 BP.
+        // Recoil / low-accuracy / charge / self-KO / AI-flawed downsides are handled SOFTLY by the pick-slot weights
+        // (powerSelectionWeight, accuracyWeight, practicalValueWeight, aiUsabilityWeight, badStrongMoveWeight) and by
+        // the up-front AI_UNUSABLE strip + enabler-dependency checks - never by a hard eligibility ban here.
         return effectivePower(mv, level) > 0;
     }
 
@@ -621,6 +627,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(mv -> !exclude.contains(mv))
                 .filter(mv -> mv.type == t1 || (t2 != null && mv.type == t2))
                 .filter(mv -> isAttackSlotEligible(mv, level))
+                // Fake Out only fires on the turn the user switches in; the AI can't build around that, so it is a
+                // dead pick as a mon's main STAB (still allowed elsewhere via goodWeakMoves).
+                .filter(mv -> mv.number != MoveIDs.fakeOut)
                 .collect(Collectors.toList());
         if (candidates.isEmpty()) {
             // No good-damaging STAB move at all: fall back to any damaging STAB. effectivePower > 0 guaranteed here.
@@ -634,7 +643,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             double ep = effectivePower(mv, level);
             return (bossTier ? powerSelectionWeight(ep) : 1.0) * categoryPreference(mv, profile)
                     * practicalValueWeight(mv, ability, exclude)
-                    * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv)
+                    * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv)
                     * teamRepeatWeight(mv, level, STAB_TEAM_MOVE_REPEAT_PENALTY)
                     * (bossTier ? accuracyWeight(mv) : 1.0);
         });
@@ -677,7 +686,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 weight *= COVERAGE_BLIND_SPOT_BONUS;
             }
             return weight * categoryPreference(mv, profile) * practicalValueWeight(mv, ability, exclude)
-                    * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv)
+                    * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv)
                     * teamRepeatWeight(mv, level) * accuracyWeight(mv);
         });
     }
@@ -751,7 +760,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         damaging = withoutDuplicateAttackingType(damaging, exclude, level);
         return weightedPick(damaging, mv ->
                 powerSelectionWeight(effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude)
-                        * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv));
+                        * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv));
     }
 
     // Slot 2 for Regular-tier trainers: a plain second attacking move. Unlike the boss coverage slot it does NOT
@@ -783,7 +792,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // otherwise flood this slot as flavourless filler. Both are demotions, not bans.
         return weightedPick(damaging, mv -> genericNeutralPenalty(mv) * categoryPreference(mv, profile)
                 * practicalValueWeight(mv, ability, exclude) * availabilityWeight(mv) * aiUsabilityWeight(mv)
-                * speciesRepeatWeight(mv) * teamRepeatWeight(mv, level));
+                * badStrongMoveWeight(mv) * speciesRepeatWeight(mv) * teamRepeatWeight(mv, level));
     }
 
     // Weight multiplier for the Regular second-attack slot: demotes "always-neutral" attacking moves - those whose
@@ -959,7 +968,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             // guard), so the boss-only lean broadens coverage rather than stacking a same-type attack.
             Move move = weightedPick(distinct,
                     mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level)
-                            * availabilityWeight(mv) * aiUsabilityWeight(mv) * speciesRepeatWeight(mv)
+                            * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv)
                             * (isBossTier && isAttackSlotEligible(mv, level) ? bossWildcardDamagingBonus : 1.0));
             picked.add(move);
             if (picked.size() >= 4) {

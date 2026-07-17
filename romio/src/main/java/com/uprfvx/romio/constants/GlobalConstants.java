@@ -240,15 +240,26 @@ public class GlobalConstants {
             MoveIDs.vitalThrow, MoveIDs.voltSwitch, MoveIDs.waterShuriken, MoveIDs.weatherBall
     );
 
-    // 75+ base power attacks that are nonetheless "usually useless" (recharge, bad accuracy/recoil, gimmicks).
+    // Strong attacks (mostly 75+ BP) carrying a real drawback: recoil, self-KO, self-stat-drop, bad accuracy,
+    // recharge, multi-turn lock, or a condition the AI can't set up. The trainer randomizer soft-weights these
+    // down (badStrongMoveWeight) so a clean move wins all else equal, without ever banning them.
     public static final List<Integer> badStrongMoves = Arrays.asList(
-            MoveIDs.belch, MoveIDs.burnUp, MoveIDs.crushClaw, MoveIDs.dragonRush, MoveIDs.dreamEater,
-            MoveIDs.eggBomb, MoveIDs.firePledge, MoveIDs.flyingPress, MoveIDs.futureSight, MoveIDs.grassPledge,
-            MoveIDs.hyperBeam, MoveIDs.hyperFang, MoveIDs.hyperspaceHole, MoveIDs.jawLock, MoveIDs.landsWrath,
-            MoveIDs.megaKick, MoveIDs.megaPunch, MoveIDs.mistyExplosion, MoveIDs.muddyWater, MoveIDs.nightDaze,
-            MoveIDs.pollenPuff, MoveIDs.rockClimb, MoveIDs.selfDestruct, MoveIDs.shellTrap, MoveIDs.skyUppercut,
-            MoveIDs.slam, MoveIDs.strength, MoveIDs.submission, MoveIDs.synchronoise, MoveIDs.takeDown,
-            MoveIDs.thrash, MoveIDs.uproar, MoveIDs.waterPledge
+            MoveIDs.beakBlast, MoveIDs.belch, MoveIDs.blastBurn, MoveIDs.blizzard, MoveIDs.blueFlare,
+            MoveIDs.boltStrike, MoveIDs.braveBird, MoveIDs.burnUp, MoveIDs.clangingScales, MoveIDs.closeCombat,
+            MoveIDs.crossChop, MoveIDs.doubleEdge, MoveIDs.dracoMeteor, MoveIDs.dragonAscent, MoveIDs.dragonRush,
+            MoveIDs.dreamEater, MoveIDs.dynamicPunch, MoveIDs.eggBomb, MoveIDs.eruption, MoveIDs.explosion,
+            MoveIDs.finalGambit, MoveIDs.fireBlast, MoveIDs.firePledge, MoveIDs.flareBlitz, MoveIDs.fleurCannon,
+            MoveIDs.focusBlast, MoveIDs.focusPunch, MoveIDs.frenzyPlant, MoveIDs.gigaImpact, MoveIDs.grassPledge,
+            MoveIDs.gunkShot, MoveIDs.hammerArm, MoveIDs.headCharge, MoveIDs.headSmash, MoveIDs.highJumpKick,
+            MoveIDs.hurricane, MoveIDs.hydroCannon, MoveIDs.hydroPump, MoveIDs.hyperBeam, MoveIDs.iceHammer,
+            MoveIDs.inferno, MoveIDs.ironTail, MoveIDs.jawLock, MoveIDs.jumpKick, MoveIDs.leafStorm,
+            MoveIDs.lightOfRuin, MoveIDs.magmaStorm, MoveIDs.megahorn, MoveIDs.megaKick, MoveIDs.megaPunch,
+            MoveIDs.mindBlown, MoveIDs.mistyExplosion, MoveIDs.outrage, MoveIDs.overheat, MoveIDs.petalDance,
+            MoveIDs.powerWhip, MoveIDs.precipiceBlades, MoveIDs.prismaticLaser, MoveIDs.psychoBoost, MoveIDs.roarOfTime,
+            MoveIDs.rockWrecker, MoveIDs.selfDestruct, MoveIDs.shellTrap, MoveIDs.slam, MoveIDs.stoneEdge,
+            MoveIDs.submission, MoveIDs.superpower, MoveIDs.synchronoise, MoveIDs.takeDown, MoveIDs.thrash,
+            MoveIDs.thunder, MoveIDs.uproar, MoveIDs.vCreate, MoveIDs.voltTackle, MoveIDs.waterPledge,
+            MoveIDs.waterSpout, MoveIDs.wildCharge, MoveIDs.woodHammer, MoveIDs.zapCannon
     );
 
     // Fixed-CONSTANT damage moves deal the same flat amount at every level (Dragon Rage always 40, SonicBoom
