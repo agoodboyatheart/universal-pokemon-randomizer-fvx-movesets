@@ -131,7 +131,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     // Slot 1: a STAB attacking move, base power scaled to the Pokemon's level.
                     Move stab = pickStabMove(pk, ability, distinctPool, level, profile, picked, isBossTier);
                     if (stab == null) {
-                        stab = pickBestDamaging(distinctPool, picked, level, ability);
+                        stab = pickBestDamaging(distinctPool, picked, level, ability, isBossTier);
                     }
                     if (stab != null) {
                         picked.add(stab);
@@ -148,7 +148,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                         secondAttack = pickRegularSecondAttack(distinctPool, picked, level, ability, profile);
                     }
                     if (secondAttack == null) {
-                        secondAttack = pickBestDamaging(distinctPool, picked, level, ability);
+                        secondAttack = pickBestDamaging(distinctPool, picked, level, ability, isBossTier);
                     }
                     if (secondAttack != null) {
                         picked.add(secondAttack);
@@ -158,7 +158,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     if (isBossTier) {
                         Move status = pickStatusMove(pk, ability, distinctPool, picked, level);
                         if (status == null) {
-                            status = pickBestDamaging(distinctPool, picked, level, ability);
+                            status = pickBestDamaging(distinctPool, picked, level, ability, isBossTier);
                         }
                         if (status != null) {
                             picked.add(status);
@@ -172,7 +172,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // Enabler-dependency guarantee across every slot: drop any dependent whose enabler did not make the
                 // final set (Snore/Sleep Talk without Rest, Spit Up/Swallow without Stockpile), then backfill with
                 // the next-best damaging move.
-                enforceEnablerDependencies(picked, distinctPool, level, ability);
+                enforceEnablerDependencies(picked, distinctPool, level, ability, isBossTier);
 
                 writeMoves(tp, picked);
 
@@ -360,44 +360,71 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return Math.pow(effectivePower, POWER_SELECTION_EXPONENT);
     }
 
-    // Hard power-band filter. The trainer side removes level-inappropriate attacking moves outright, so a
-    // level's movepool reads as authored rather than occasionally sprouting an over-level nuke. Bands reuse the
-    // shared BP edges (TIER_LOW_MAX_BP 60 / TIER_MID_MAX_BP 80); only the level windows are trainer-specific:
-    //   Lv < 15        -> Low only     (remove effective power > 60)
-    //   15 <= Lv < 30  -> Low + Avg    (remove effective power > 80)
-    //   Lv >= 30       -> Avg + High   (remove effective power <= 60, i.e. drop the now-weak Low band)
-    // Exemptions: status/gimmick moves (effectivePower 0) are never banded. The mon's OWN level-up moves are
-    // exempt from the low/mid-level caps ONLY where they EXCEED the cap - a signature move learned early stays
-    // usable (that is the whole point of the exemption). They are deliberately NOT exempt from the Lv30+ Low-band
-    // drop: a move learned early is not level-appropriate for a high-level mon, so a Lv45 mon does not keep its
-    // Lv3 Water Gun / Leech Life as a STAB. From the Lv30+ Low-removal, priority/utility weak moves (goodWeakMoves)
-    // are still kept, so a high-level mon can run Aqua Jet / Sucker Punch / Rapid Spin.
-    // Average band (61-80) becomes available here.
-    private static final int BAND_MID_UNLOCK_LEVEL = 15;
-    // High band (81+) available AND Low band dropped here.
-    private static final int BAND_HIGH_UNLOCK_LEVEL = 30;
+    // Continuous level-scaled power banding. One smooth curve, centerPower(level) - the effective power expected of
+    // a mon at that level - replaces the old fixed Lv15/Lv30 band breakpoints, so there is no fencepost cliff. Two
+    // rails key off it: a hard sliding CEILING (applyPowerBandFilter, pool stage) that removes over-level moves so a
+    // low-level mon can't sprout a nuke, and a soft sliding FLOOR (levelAppropriatenessWeight, pick stage) that
+    // DEMOTES rather than removes below-level moves. Nothing weak being deleted is what lets a thin / mono-type STAB
+    // pool always reach an alternative instead of collapsing onto its one strongest move.
+    // Curve: BASE at Lv1 rising linearly to MAX by the saturation level. Tuning knobs (calibrate with -Dbm.sweep).
+    private static final double LEVEL_POWER_BASE = 45.0;
+    private static final double LEVEL_POWER_MAX = 95.0;
+    private static final double LEVEL_POWER_SATURATION_LEVEL = 50.0;
 
+    private static double centerPower(int level) {
+        double t = Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
+        return LEVEL_POWER_BASE + (LEVEL_POWER_MAX - LEVEL_POWER_BASE) * t;
+    }
+
+    // A move is culled when its effective power exceeds centerPower * a level-scaled ceiling multiplier: tight at
+    // low level (a baby mon stays near its Low band, reproducing the old ~60 cap without a fencepost) widening to
+    // generous at high level, where premier nukes (Draco Meteor / Overheat 130) survive and only self-KO / gimmick
+    // 150+ moves fall outside. Floored at the old Low-band cap so a very-low-level mon's pool is never TIGHTER than
+    // the original system (a thinner pool would force the no-duplicate-attacking-type guard to relax more). Knobs.
+    private static final double POWER_CEILING_MULTIPLIER_LOW = 0.95;
+    private static final double POWER_CEILING_MULTIPLIER_HIGH = 1.63;
+
+    private static double powerCeiling(int level) {
+        double t = Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
+        double mult = POWER_CEILING_MULTIPLIER_LOW + (POWER_CEILING_MULTIPLIER_HIGH - POWER_CEILING_MULTIPLIER_LOW) * t;
+        return Math.max(TIER_LOW_MAX_BP, centerPower(level) * mult);
+    }
+
+    // Below centerPower * this fraction a move starts losing pick weight; the falloff exponent is tier-scaled so
+    // Boss/Important lean firmly to level-appropriate power while Regular trainers keep weaker, more surprising
+    // moves in play (matching their deliberately dumbed-down role).
+    private static final double POWER_FLOOR_FRACTION = 0.75;
+    private static final double POWER_FLOOR_EXPONENT_BOSS = 2.0;
+    private static final double POWER_FLOOR_EXPONENT_REGULAR = 0.8;
+
+    // Hard sliding ceiling (pool stage): remove attacking moves too strong for the mon's level. Status / gimmick
+    // moves (effective power 0) and the mon's own level-up moves (a signature move learned early) are exempt.
+    // Below-level weakness is handled softly by levelAppropriatenessWeight, so nothing weak is removed here.
     private void applyPowerBandFilter(List<Move> pool, int level, Set<Integer> ownLevelUpMoveNumbers) {
+        double ceiling = powerCeiling(level);
         pool.removeIf(mv -> {
             double ep = effectivePower(mv, level);
-            if (ep <= 0) {
-                // Status / gimmick / non-attacking: never banded.
+            if (ep <= 0 || ownLevelUpMoveNumbers.contains(mv.number)) {
                 return false;
             }
-            boolean ownLevelUp = ownLevelUpMoveNumbers.contains(mv.number);
-            if (level < BAND_MID_UNLOCK_LEVEL) {
-                // Lv<15: keep Low only. Exempt own level-up moves that EXCEED the cap (a signature move learned
-                // early is level-appropriate for that mon).
-                return ep > TIER_LOW_MAX_BP && !ownLevelUp;
-            }
-            if (level < BAND_HIGH_UNLOCK_LEVEL) {
-                return ep > TIER_MID_MAX_BP && !ownLevelUp;
-            }
-            // Lv >= 30: drop the now-weak Low band. The own-level-up exemption does NOT apply to this drop - a
-            // move learned early is not level-appropriate for a high-level mon. Only priority/utility weak moves
-            // (goodWeakMoves) survive.
-            return ep <= TIER_LOW_MAX_BP && !GlobalConstants.goodWeakMoves.contains(mv.number);
+            return ep > ceiling;
         });
+    }
+
+    // Soft sliding floor (pick stage): demote, never remove, moves weaker than the mon's level warrants. 1.0 at or
+    // above the floor; below it the weight falls off with a tier-scaled exponent. Priority / utility weak moves
+    // (goodWeakMoves) and status / gimmick moves (effective power 0) are exempt, so Aqua Jet / Sucker Punch / Rapid
+    // Spin keep full weight at any level.
+    private static double levelAppropriatenessWeight(Move mv, int level, boolean bossTier) {
+        double ep = effectivePower(mv, level);
+        if (ep <= 0 || GlobalConstants.goodWeakMoves.contains(mv.number)) {
+            return 1.0;
+        }
+        double floor = centerPower(level) * POWER_FLOOR_FRACTION;
+        if (ep >= floor) {
+            return 1.0;
+        }
+        return Math.pow(ep / floor, bossTier ? POWER_FLOOR_EXPONENT_BOSS : POWER_FLOOR_EXPONENT_REGULAR);
     }
 
     // A move's nominal base power is a poor proxy for its practical value in a trainer battle: charge moves waste
@@ -626,20 +653,21 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (effectivePower(mv, level) <= 0) {
             return false;
         }
-        // Any real damaging move is eligible. Level-appropriateness is enforced SOLELY by the hard power-band filter
-        // (applyPowerBandFilter); the isGoodDamaging / MIN_DAMAGING_MOVE_POWER (50) floor is deliberately NOT applied
-        // here, as it culled weak-but-level-appropriate STABs the band filter already permits (gen-4 Leech Life 20 BP,
-        // Mega Drain 40, Fury Cutter), collapsing low-level variety to the one move per type that cleared 50 BP.
+        // Any real damaging move is eligible. Over-level moves are removed by the hard ceiling (applyPowerBandFilter)
+        // and below-level ones demoted softly by levelAppropriatenessWeight; the isGoodDamaging / MIN_DAMAGING_MOVE_POWER
+        // (50) floor is deliberately NOT applied here, as it culled weak-but-level-appropriate STABs (gen-4 Leech Life
+        // 20 BP, Mega Drain 40, Fury Cutter), collapsing low-level variety to the one move per type that cleared 50 BP.
         // Recoil / low-accuracy / charge / self-KO / AI-flawed downsides are handled SOFTLY by the pick-slot weights
-        // (powerSelectionWeight, accuracyWeight, practicalValueWeight, aiUsabilityWeight, badStrongMoveWeight) and by
-        // the up-front AI_UNUSABLE strip + enabler-dependency checks - never by a hard eligibility ban here.
+        // (powerSelectionWeight, accuracyWeight, practicalValueWeight, aiUsabilityWeight, badStrongMoveWeight,
+        // levelAppropriatenessWeight) and by the up-front AI_UNUSABLE strip + enabler-dependency checks - never by a
+        // hard eligibility ban here.
         return effectivePower(mv, level) > 0;
     }
 
-    // Slot 1: a STAB attacking move. Level-appropriateness is already enforced by the hard power-band filter on
-    // the pool, so this slot applies no level->power weight. Boss/Important trainers get a soft power
-    // lean (and the accuracy difficulty lever); Regular trainers pick flat across the available bands, so a weak
-    // level-up STAB competes evenly with a universal TM. Both tiers nudge a committed attacker toward its category.
+    // Slot 1: a STAB attacking move. Over-level moves are already removed by the hard ceiling; levelAppropriatenessWeight
+    // then softly demotes below-level ones (firmer for bosses). Boss/Important also get a soft power lean toward the
+    // stronger in-band move (and the accuracy difficulty lever); Regular trainers pick flat across power otherwise, so
+    // a weak level-up STAB still competes with a universal TM. Both tiers nudge a committed attacker toward its category.
     // teamRepeatWeight applies here too so a mono-type team (a Ghost/Dragon gym leader) cannot stack the identical
     // STAB move on every mon. Its exact-move term breaks that; its type term self-cancels among same-type
     // candidates, so a mono-type mon is still steered to a DIFFERENT move of its type, never off-type.
@@ -669,6 +697,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     * practicalValueWeight(mv, ability, exclude)
                     * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv)
                     * teamRepeatWeight(mv, level, STAB_TEAM_MOVE_REPEAT_PENALTY)
+                    * levelAppropriatenessWeight(mv, level, bossTier)
                     * (bossTier ? accuracyWeight(mv) : 1.0);
         });
     }
@@ -711,7 +740,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             }
             return weight * categoryPreference(mv, profile) * practicalValueWeight(mv, ability, exclude)
                     * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv)
-                    * teamRepeatWeight(mv, level) * accuracyWeight(mv);
+                    * teamRepeatWeight(mv, level) * levelAppropriatenessWeight(mv, level, true) * accuracyWeight(mv);
         });
     }
 
@@ -772,9 +801,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 * aiUsabilityWeight(mv) * speciesRepeatWeight(mv));
     }
 
-    // Global fallback for any unfillable slot: a damaging move softly weighted toward stronger picks. Level-
-    // appropriateness is already handled by the hard power-band filter on the pool, so no level->power term here.
-    private Move pickBestDamaging(List<Move> pool, List<Move> exclude, int level, int ability) {
+    // Global fallback for any unfillable slot: a damaging move softly weighted toward stronger picks, with the hard
+    // ceiling (pool) and the tier-scaled levelAppropriatenessWeight keeping it level-appropriate.
+    private Move pickBestDamaging(List<Move> pool, List<Move> exclude, int level, int ability, boolean bossTier) {
         List<Move> damaging = pool.stream()
                 .filter(mv -> !exclude.contains(mv))
                 .filter(mv -> effectivePower(mv, level) > 0)
@@ -784,14 +813,16 @@ public class TrainerMovesetRandomizer extends Randomizer {
         damaging = withoutDuplicateAttackingType(damaging, exclude, level);
         return weightedPick(damaging, mv ->
                 powerSelectionWeight(effectivePower(mv, level)) * practicalValueWeight(mv, ability, exclude)
-                        * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv));
+                        * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv)
+                        * levelAppropriatenessWeight(mv, level, bossTier));
     }
 
     // Slot 2 for Regular-tier trainers: a plain second attacking move. Unlike the boss coverage slot it does NOT
     // hole-target super-effective types, and it is NOT power-weighted toward the strongest option - the flat draw
     // is deliberate. Power-weighting let one ubiquitous high-BP TM (e.g. Secret Power in Gen 3) dominate this slot
-    // across the whole cast, which reads as "optimal", not "authored". Level-appropriateness is enforced by the
-    // hard power-band filter on the pool. A committed attacker is still nudged toward its category (phys/special
+    // across the whole cast, which reads as "optimal", not "authored". Over-level moves are removed by the hard
+    // ceiling; below-level ones are only gently demoted here (levelAppropriatenessWeight, Regular exponent), so weak
+    // surprises still surface. A committed attacker is still nudged toward its category (phys/special
     // lean), the generic-neutral penalty demotes always-neutral filler, the practical-value discount keeps
     // charge/recharge moves rare, and the no-duplicate-attacking-type guard still applies.
     private Move pickRegularSecondAttack(List<Move> pool, List<Move> exclude, int level, int ability,
@@ -816,7 +847,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // otherwise flood this slot as flavourless filler. Both are demotions, not bans.
         return weightedPick(damaging, mv -> genericNeutralPenalty(mv) * categoryPreference(mv, profile)
                 * practicalValueWeight(mv, ability, exclude) * availabilityWeight(mv) * aiUsabilityWeight(mv)
-                * badStrongMoveWeight(mv) * speciesRepeatWeight(mv) * teamRepeatWeight(mv, level));
+                * badStrongMoveWeight(mv) * speciesRepeatWeight(mv) * teamRepeatWeight(mv, level)
+                * levelAppropriatenessWeight(mv, level, false));
     }
 
     // Weight multiplier for the Regular second-attack slot: demotes "always-neutral" attacking moves - those whose
@@ -981,7 +1013,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             Move move = weightedPick(distinct,
                     mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level)
                             * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv)
-                            * ohkoWeight(mv)
+                            * ohkoWeight(mv) * levelAppropriatenessWeight(mv, level, isBossTier)
                             * (isBossTier && isAttackSlotEligible(mv, level) ? bossWildcardDamagingBonus : 1.0));
             picked.add(move);
             if (picked.size() >= 4) {
@@ -1151,7 +1183,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Final cross-slot guarantee: drop any dependent whose enabler did not make the chosen set, then backfill to
     // four with the next-best damaging move. The backfill pool excludes every dependent, or pickBestDamaging could
     // re-select the move just removed (Snore and Spit Up are themselves valid damaging moves).
-    private void enforceEnablerDependencies(List<Move> picked, List<Move> distinctPool, int level, int ability) {
+    private void enforceEnablerDependencies(List<Move> picked, List<Move> distinctPool, int level, int ability,
+                                            boolean bossTier) {
         Set<Integer> pickedNumbers = new HashSet<>();
         for (Move mv : picked) {
             pickedNumbers.add(mv.number);
@@ -1167,7 +1200,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(mv -> !isEnablerDependent(mv.number))
                 .collect(Collectors.toList());
         Move fill;
-        while (picked.size() < 4 && (fill = pickBestDamaging(backfillPool, picked, level, ability)) != null) {
+        while (picked.size() < 4 && (fill = pickBestDamaging(backfillPool, picked, level, ability, bossTier)) != null) {
             picked.add(fill);
         }
     }
@@ -1547,8 +1580,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
             }
         }
 
-        // Hard power-band filter: remove level-inappropriate attacking moves outright (the mon's own level-up
-        // moves, status/gimmick moves, and - at high level - priority weak moves are exempt; see the method doc).
+        // Hard sliding ceiling: remove over-level attacking moves outright (status/gimmick and the mon's own
+        // level-up moves exempt). Below-level weakness is handled softly at pick time; see the method doc.
         applyPowerBandFilter(moveSelectionPoolAtLevel, tp.getLevel(), ownLevelUpMoveNumbers);
 
         // Mutable: the caller's up-front removeIf strips narrow this pool in place.
@@ -1558,9 +1591,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
     /**
      * Builds the candidate move pool for a trainer Smeargle: the full usable move universe (Sketch can
      * copy anything). Excludes only mechanically-unusable / banned moves, then applies the same hard
-     * power-band filter every other mon's pool gets, so a low-level Smeargle still only draws level-
+     * over-level ceiling every other mon's pool gets, so a low-level Smeargle still only draws level-
      * appropriate attacks. Sketched moves are not learnset moves, so none are exempt as "own level-up"
-     * moves (the priority/status exemptions still apply via the filter). Everything downstream
+     * moves (the status/gimmick exemption still applies via the filter; below-level demotion happens at
+     * pick time like every mon). Everything downstream
      * (trimMoveList, role slots, redundancy) runs on this list unchanged, so Smeargle goes through the
      * identical checks and balances as every other mon.
      */

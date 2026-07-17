@@ -82,12 +82,11 @@ public abstract class Randomizer {
         return candidates.get(n - 1);
     }
 
-    // Shared BP tier edges: moves fall into fixed effective-power (power * hitCount, 0 for status) bands.
-    // Consumed by TrainerMovesetRandomizer.applyPowerBandFilter, which pairs these edges with its own
-    // trainer-specific level windows. Kept on the shared superclass so the species power-curve randomizer
-    // can reuse the same band edges when that feature is (re)built.
-    protected static final double TIER_LOW_MAX_BP  = 60.0;  // <=60  = low  tier
-    protected static final double TIER_MID_MAX_BP  = 80.0;  // 61-80 = mid  tier
+    // Shared BP tier edges: moves fall into fixed effective-power (power * hitCount, 0 for status) bands. Kept on
+    // the shared superclass so the species power-curve randomizer can reuse them when that feature is (re)built.
+    // The trainer path no longer uses fixed edges - it scales power by level continuously (see centerPower).
+    protected static final double TIER_LOW_MAX_BP  = 60.0;
+    protected static final double TIER_MID_MAX_BP  = 80.0;
 
     protected CustomNamesSet getCustomNames() {
         // This is not in line with how most /data resources are loaded for randomization.
