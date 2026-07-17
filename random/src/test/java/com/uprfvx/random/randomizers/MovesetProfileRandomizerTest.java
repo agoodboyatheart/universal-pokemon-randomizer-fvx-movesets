@@ -74,6 +74,7 @@ public class MovesetProfileRandomizerTest {
             System.out.printf("%n== %s (gen %d) ==%n", game[0], rom.generationOfPokemon());
             p.printSummary("  ");
             p.printBossByBand("  ");
+            p.printThinPoolBosses("  ");
         }
         assumeTrue(loaded > 0, "No loadable ROM found in " + ROMS_PATH);
     }
@@ -182,6 +183,11 @@ public class MovesetProfileRandomizerTest {
         private final Tally boss = new Tally();
         private final Tally reg = new Tally();
         private final Tally[] bossBands = {new Tally(), new Tally(), new Tally(), new Tally()};
+        // Content of the two non-attack slots on bosses that stopped at exactly 2 attacks - is the slot the
+        // wildcard "wasted" filled with authored utility or filler? Split by band, plus a run total.
+        private final ThinBoss thinBoss = new ThinBoss();
+        private final ThinBoss[] thinBossBands = {new ThinBoss(), new ThinBoss(), new ThinBoss(), new ThinBoss()};
+        private int bossUnder2; // bosses that could not even field 2 attacks (genuinely starved pools)
         private static final String[] BAND_LABELS = {"Lv1-15", "Lv16-30", "Lv31-45", "Lv46+"};
 
         void add(boolean isBoss, int level, int attacks, int distinctTypes, int useful, int junk) {
@@ -189,6 +195,12 @@ public class MovesetProfileRandomizerTest {
             t.add(attacks, distinctTypes, useful, junk);
             if (isBoss) {
                 bossBands[bandIndex(level)].add(attacks, distinctTypes, useful, junk);
+                if (attacks == 2) {
+                    thinBoss.add(useful, junk, distinctTypes);
+                    thinBossBands[bandIndex(level)].add(useful, junk, distinctTypes);
+                } else if (attacks < 2) {
+                    bossUnder2++;
+                }
             }
         }
 
@@ -198,6 +210,11 @@ public class MovesetProfileRandomizerTest {
             for (int i = 0; i < bossBands.length; i++) {
                 bossBands[i].merge(other.bossBands[i]);
             }
+            thinBoss.merge(other.thinBoss);
+            for (int i = 0; i < thinBossBands.length; i++) {
+                thinBossBands[i].merge(other.thinBossBands[i]);
+            }
+            bossUnder2 += other.bossUnder2;
         }
 
         void printSummary(String indent) {
@@ -209,6 +226,20 @@ public class MovesetProfileRandomizerTest {
             for (int i = 0; i < bossBands.length; i++) {
                 if (bossBands[i].n > 0) {
                     System.out.println(indent + "boss " + BAND_LABELS[i] + " " + bossBands[i].summary());
+                }
+            }
+        }
+
+        // What fills the two non-attack slots of modal-2 bosses: high useful-status / low junk = the "wasted"
+        // slot is already authored (accept as authentic); meaningful junk = a pool-aware fix (R2) is warranted.
+        // single-atk-type% is a black-box proxy for how often the no-duplicate-attacking-type guard was relevant
+        // (a mono-attacking-type boss is the case a same-type-3rd relaxation would target). Report-only.
+        void printThinPoolBosses(String indent) {
+            System.out.println(indent + "modal-2 boss slots " + thinBoss.summary()
+                    + (bossUnder2 > 0 ? "  [+" + bossUnder2 + " boss(es) under 2 attacks]" : ""));
+            for (int i = 0; i < thinBossBands.length; i++) {
+                if (thinBossBands[i].n > 0) {
+                    System.out.println(indent + "  " + BAND_LABELS[i] + " " + thinBossBands[i].summary());
                 }
             }
         }
@@ -267,6 +298,39 @@ public class MovesetProfileRandomizerTest {
             return String.format("(n=%d): avg atk %.2f, avg types %.2f, useful-status %.2f, junk %.2f | %s",
                     n, (double) sumAttacks / n, (double) sumTypes / n,
                     (double) sumUseful / n, (double) sumJunk / n, String.join(", ", dist));
+        }
+    }
+
+    // Non-attack-slot content of bosses that stopped at exactly 2 attacks (2 attacks + 2 non-attack slots).
+    private static final class ThinBoss {
+        private int n;
+        private int sumUseful;
+        private int sumJunk;
+        private int singleAtkType; // modal-2 bosses whose two attacks share a single attacking type
+
+        void add(int useful, int junk, int distinctAtkTypes) {
+            n++;
+            sumUseful += useful;
+            sumJunk += junk;
+            if (distinctAtkTypes <= 1) {
+                singleAtkType++;
+            }
+        }
+
+        void merge(ThinBoss other) {
+            n += other.n;
+            sumUseful += other.sumUseful;
+            sumJunk += other.sumJunk;
+            singleAtkType += other.singleAtkType;
+        }
+
+        String summary() {
+            if (n == 0) {
+                return "(none)";
+            }
+            return String.format("(n=%d): useful-status %.2f, junk-status %.2f, single-atk-type %d%%",
+                    n, (double) sumUseful / n, (double) sumJunk / n,
+                    Math.round(100.0 * singleAtkType / n));
         }
     }
 }
