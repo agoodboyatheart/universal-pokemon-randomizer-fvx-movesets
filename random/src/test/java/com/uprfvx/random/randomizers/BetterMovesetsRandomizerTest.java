@@ -126,6 +126,13 @@ public class BetterMovesetsRandomizerTest {
     private static final double AI_FLAWED_MOVE_MAX_RATE = 0.05;
     private static final double AI_FLAWED_MOVE_MAX_RATE_GEN1 = 0.13;
 
+    // OHKO moves: mirrors TrainerMovesetRandomizer.OHKO_MOVES. Soft-penalised (ohkoWeight), not banned, so they
+    // stay a rare surprise - a 30%-accuracy instant KO should never be a staple. Checked against a soft ceiling
+    // like the AI-flawed block; trips only if ohkoWeight is missing/broken.
+    private static final Set<Integer> OHKO_MOVES = Set.of(
+            MoveIDs.fissure, MoveIDs.hornDrill, MoveIDs.guillotine, MoveIDs.sheerCold);
+    private static final double OHKO_MOVE_MAX_RATE = 0.05;
+
     // No-duplicate-attacking-type guard: a mon should almost never carry two attacking moves of the same type.
     // The guard is best-effort (it relaxes when avoiding a duplicate would leave a slot unfillable, and the
     // "<=4 distinct candidates" shortcut takes moves unguarded), so genuinely mono-type / tiny movepools can
@@ -362,6 +369,7 @@ public class BetterMovesetsRandomizerTest {
         int rechargeUses = 0;        // times a recharge move (Hyper Beam, Giga Impact) was picked - now penalised
         int aiUnusableUses = 0;      // times an AI-unusable move (Feint, Counter, ...) was picked - must stay 0
         int aiFlawedUses = 0;        // times an AI-flawed move (Explosion, Trick, ...) was picked - now penalised
+        int ohkoUses = 0;            // times an OHKO move (Fissure, Sheer Cold, ...) was picked - now penalised
         int solarOnNonSun = 0;       // SolarBeam / Solar Blade picks on a mon that cannot guarantee sun (info only)
         int doublesFormatMons = 0;   // mons in a genuine double/multi battle (ALWAYS multi-battle status)
         int doublesMoveUsesInDoubles = 0; // doubles-support moves kept on those double/multi-battle mons
@@ -435,6 +443,9 @@ public class BetterMovesetsRandomizerTest {
                     }
                     if (AI_FLAWED_MOVES.contains(moveID)) {
                         aiFlawedUses++;
+                    }
+                    if (OHKO_MOVES.contains(moveID)) {
+                        ohkoUses++;
                     }
                     // For a committed attacker, how often its damaging moves match its preferred category.
                     MoveCategory cat = allMoves.get(moveID).category;
@@ -723,6 +734,21 @@ public class BetterMovesetsRandomizerTest {
                     violations.add(String.format("%s: AI-flawed move '%s' too common (%.1f%% of mons > %.0f%% cap)"
                                     + " - aiUsabilityWeight penalty not biasing",
                             romName, allMoves.get(e.getKey()).name, rate * 100, flawedCap * 100));
+                }
+            }
+        }
+        // OHKO moves are soft-penalised, not banned, so they stay rare - checked against a soft ceiling.
+        System.out.printf("     ohko: %d OHKO pick(s) across %d Pokemon%n", ohkoUses, tpCount);
+        if (tpCount > 100) {
+            for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
+                if (!OHKO_MOVES.contains(e.getKey())) {
+                    continue;
+                }
+                double rate = (double) e.getValue() / tpCount;
+                if (rate > OHKO_MOVE_MAX_RATE) {
+                    violations.add(String.format("%s: OHKO move '%s' too common (%.1f%% of mons > %.0f%% cap)"
+                                    + " - ohkoWeight penalty not biasing",
+                            romName, allMoves.get(e.getKey()).name, rate * 100, OHKO_MOVE_MAX_RATE * 100));
                 }
             }
         }

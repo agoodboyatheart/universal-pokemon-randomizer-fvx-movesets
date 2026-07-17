@@ -492,6 +492,18 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return GlobalConstants.badStrongMoves.contains(mv.number) ? BAD_STRONG_MOVE_WEIGHT_PENALTY : 1.0;
     }
 
+    private static final double OHKO_MOVE_WEIGHT_PENALTY = 0.15;
+
+    // OHKO moves store power 0, so effectivePower reads them as non-attacking and they can only surface in the
+    // wildcard slot. A 30%-accuracy instant KO on a boss is unfair variance rather than authored challenge, so it
+    // is demoted to a rare surprise. Trainer-specific, kept local beside the AI_UNUSABLE / AI_FLAWED tiers.
+    private static final Set<Integer> OHKO_MOVES = Set.of(
+            MoveIDs.fissure, MoveIDs.hornDrill, MoveIDs.guillotine, MoveIDs.sheerCold);
+
+    private double ohkoWeight(Move mv) {
+        return OHKO_MOVES.contains(mv.number) ? OHKO_MOVE_WEIGHT_PENALTY : 1.0;
+    }
+
     // Reliability as a difficulty lever. For a Hardcore Nuzlocke the player fears variance, so a
     // boss that leans on reliable moves is scarier than one packing a flashy but coin-flip 70%-accuracy nuke. This
     // softly demotes low-accuracy moves so the Boss/Important CURATED slots (STAB, coverage, status) trend toward
@@ -958,32 +970,6 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 picked.addAll(distinct);
                 break;
             }
-            // On the last slot, drop moves that need a partner move we did not pick (e.g. Spit Up).
-            if (slotsLeft == 1) {
-                for (Move dependent : new ArrayList<>(distinct)) {
-                    if (!GlobalConstants.requiresOtherMove.contains(dependent.number)) {
-                        continue;
-                    }
-                    boolean hasRequired = false;
-                    for (Move required : MoveSynergy.requiresOtherMove(dependent, working)) {
-                        if (picked.contains(required)) {
-                            hasRequired = true;
-                            break;
-                        }
-                    }
-                    if (!hasRequired) {
-                        working.removeAll(Collections.singletonList(dependent));
-                    }
-                }
-                distinct = eligibleWildcards(working, pk, ability, picked, level);
-                if (distinct.isEmpty()) {
-                    break;
-                }
-                if (distinct.size() <= slotsLeft) {
-                    picked.addAll(distinct);
-                    break;
-                }
-            }
 
             // A light practical-value discount so charge/recharge moves are rarer wildcards too; normal moves
             // keep equal odds (weightedPick is uniform when weights match), preserving the wildcard's surprise.
@@ -991,9 +977,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
             // teamRepeatWeight then softly steers away from moves/attacking-types earlier teammates already used.
             // A boss damaging pick here is always a distinct third attacking type (eligibleWildcards ran the no-dup
             // guard), so the boss-only lean broadens coverage rather than stacking a same-type attack.
+            // ohkoWeight applies only here: the wildcard is the sole slot an OHKO move (effectivePower 0) can reach.
             Move move = weightedPick(distinct,
                     mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level)
                             * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv)
+                            * ohkoWeight(mv)
                             * (isBossTier && isAttackSlotEligible(mv, level) ? bossWildcardDamagingBonus : 1.0));
             picked.add(move);
             if (picked.size() >= 4) {
@@ -1343,20 +1331,6 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // Outrage + Dragon Pulse, every Ground to Earthquake) and forced the same STAB onto multiple teammates.
         // Level-appropriateness is already enforced by the hard power-band filter, and move quality by
         // isAttackSlotEligible + the pick-slot weights, so the cull only cost intra-team variety without adding value.
-
-        List<Move> requiresOtherMove = movesAtLevel
-                .stream()
-                .filter(mv -> GlobalConstants.requiresOtherMove.contains(mv.number)).collect(Collectors.toList());
-
-        for (Move dependentMove : requiresOtherMove) {
-            if (MoveSynergy.requiresOtherMove(dependentMove, movesAtLevel).isEmpty()) {
-                movesAtLevel.remove(dependentMove);
-            }
-        }
-
-        if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
-            return new ArrayList<>();
-        }
 
         if (hasAbilities) {
             List<Move> withoutHardAntiSynergy = new ArrayList<>(movesAtLevel);
