@@ -176,8 +176,7 @@ public class GlobalConstants {
     );
 
     public static final List<Integer> uselessMoves = Arrays.asList(
-            MoveIDs.splash, MoveIDs.celebrate, MoveIDs.holdHands, MoveIDs.teleport,
-            MoveIDs.reflectType       // the AI does not know how to use this move properly
+            MoveIDs.splash, MoveIDs.celebrate, MoveIDs.holdHands, MoveIDs.teleport, MoveIDs.happyHour
     );
 
     public static final List<Integer> requiresOtherMove = Arrays.asList(
@@ -187,46 +186,58 @@ public class GlobalConstants {
     // --- Pokemon Showdown teambuilder move-viability lists -------------------------------------------------
     // Source: smogon/pokemon-showdown-client, play.pokemonshowdown.com/src/battle-dex-search.ts
     //         (BattleMoveSearch.moveIsNotUseless + its GOOD_/BAD_ constants). MIT-licensed, GPL-compatible.
-    // These mirror how Showdown splits a Pokemon's movepool into "Moves" vs "Usually useless moves".
-    // Gen 8/9 (and Legends/Let's-Go-only) moves from the originals are omitted, as this randomizer's ROM
-    // handlers only reach Gen 7, so those move IDs can never appear in a supported ROM.
+    // These start from how Showdown splits a Pokemon's movepool into "Moves" vs "Usually useless moves", then are
+    // curated for this fork's trainer randomizer (weighting moves by whether the ROM battle AI can exploit them),
+    // so they diverge from the Showdown originals in places. Gen 8/9 (and Legends/Let's-Go-only) moves from the
+    // originals are omitted, as this randomizer's ROM handlers only reach Gen 7, so those IDs never appear.
 
     // Status moves considered worth running (everything else in the Status category is "usually useless").
     public static final List<Integer> goodStatusMoves = Arrays.asList(
-            MoveIDs.acidArmor, MoveIDs.agility, MoveIDs.aromatherapy, MoveIDs.auroraVeil, MoveIDs.autotomize,
-            MoveIDs.banefulBunker, MoveIDs.batonPass, MoveIDs.bellyDrum, MoveIDs.bulkUp, MoveIDs.calmMind,
-            MoveIDs.clangorousSoul, MoveIDs.coil, MoveIDs.cottonGuard, MoveIDs.courtChange, MoveIDs.curse,
-            MoveIDs.defog, MoveIDs.destinyBond, MoveIDs.detect, MoveIDs.disable, MoveIDs.dragonDance,
-            MoveIDs.encore, MoveIDs.extremeEvoboost, MoveIDs.geomancy, MoveIDs.glare, MoveIDs.haze,
+            MoveIDs.acidArmor, MoveIDs.agility, MoveIDs.amnesia, MoveIDs.aquaRing, MoveIDs.aromatherapy,
+            MoveIDs.auroraVeil, MoveIDs.autotomize, MoveIDs.banefulBunker, MoveIDs.batonPass, MoveIDs.bulkUp,
+            MoveIDs.calmMind, MoveIDs.charm, MoveIDs.clangorousSoul, MoveIDs.coil, MoveIDs.confuseRay,
+            MoveIDs.cosmicPower, MoveIDs.cottonGuard, MoveIDs.cottonSpore, MoveIDs.courtChange, MoveIDs.curse,
+            MoveIDs.darkVoid, MoveIDs.defendOrder, MoveIDs.defog, MoveIDs.detect, MoveIDs.disable,
+            MoveIDs.dragonDance, MoveIDs.encore, MoveIDs.extremeEvoboost, MoveIDs.featherDance, MoveIDs.geomancy,
+            MoveIDs.glare, MoveIDs.grassWhistle, MoveIDs.growth, MoveIDs.hail, MoveIDs.haze,
             MoveIDs.healBell, MoveIDs.healingWish, MoveIDs.healOrder, MoveIDs.heartSwap, MoveIDs.honeClaws,
-            MoveIDs.kingsShield, MoveIDs.leechSeed, MoveIDs.lightScreen, MoveIDs.lovelyKiss, MoveIDs.lunarDance,
-            MoveIDs.magicCoat, MoveIDs.maxGuard, MoveIDs.memento, MoveIDs.milkDrink, MoveIDs.moonlight,
-            MoveIDs.morningSun, MoveIDs.nastyPlot, MoveIDs.noRetreat, MoveIDs.obstruct,
-            MoveIDs.painSplit, MoveIDs.partingShot, MoveIDs.perishSong, MoveIDs.protect, MoveIDs.quiverDance,
-            MoveIDs.recover, MoveIDs.reflect, MoveIDs.reflectType, MoveIDs.rest, MoveIDs.roar,
-            MoveIDs.rockPolish, MoveIDs.roost, MoveIDs.shellSmash, MoveIDs.shiftGear, MoveIDs.shoreUp,
-            MoveIDs.slackOff, MoveIDs.sleepPowder, MoveIDs.sleepTalk, MoveIDs.softBoiled, MoveIDs.spikes,
-            MoveIDs.spikyShield, MoveIDs.spore, MoveIDs.stealthRock, MoveIDs.stickyWeb, MoveIDs.strengthSap,
-            MoveIDs.substitute, MoveIDs.switcheroo, MoveIDs.swordsDance, MoveIDs.synthesis, MoveIDs.tailGlow,
-            MoveIDs.tailwind, MoveIDs.taunt, MoveIDs.thunderWave, MoveIDs.toxic, MoveIDs.transform,
-            MoveIDs.trick, MoveIDs.whirlwind, MoveIDs.willOWisp, MoveIDs.wish, MoveIDs.yawn
+            MoveIDs.hypnosis, MoveIDs.ironDefense, MoveIDs.kingsShield, MoveIDs.leechSeed, MoveIDs.lightScreen,
+            MoveIDs.lovelyKiss, MoveIDs.lunarDance, MoveIDs.magicCoat, MoveIDs.maxGuard, MoveIDs.memento,
+            MoveIDs.milkDrink, MoveIDs.moonlight, MoveIDs.morningSun, MoveIDs.nastyPlot, MoveIDs.nobleRoar,
+            MoveIDs.noRetreat, MoveIDs.obstruct, MoveIDs.painSplit, MoveIDs.partingShot, MoveIDs.poisonPowder,
+            MoveIDs.protect, MoveIDs.quiverDance, MoveIDs.rainDance, MoveIDs.recover, MoveIDs.reflect,
+            MoveIDs.reflectType, MoveIDs.rest, MoveIDs.roar, MoveIDs.rockPolish, MoveIDs.roost,
+            MoveIDs.safeguard, MoveIDs.sandstorm, MoveIDs.scaryFace, MoveIDs.shellSmash, MoveIDs.shiftGear,
+            MoveIDs.shoreUp, MoveIDs.sing, MoveIDs.slackOff, MoveIDs.sleepPowder, MoveIDs.sleepTalk,
+            MoveIDs.softBoiled, MoveIDs.spikes, MoveIDs.spikyShield, MoveIDs.spore, MoveIDs.stealthRock,
+            MoveIDs.stickyWeb, MoveIDs.strengthSap, MoveIDs.stunSpore, MoveIDs.substitute, MoveIDs.sunnyDay,
+            MoveIDs.swordsDance, MoveIDs.synthesis, MoveIDs.tailGlow, MoveIDs.tailwind, MoveIDs.taunt,
+            MoveIDs.thunderWave, MoveIDs.toxic, MoveIDs.toxicSpikes, MoveIDs.toxicThread, MoveIDs.transform,
+            MoveIDs.whirlwind, MoveIDs.willOWisp, MoveIDs.wish, MoveIDs.workUp, MoveIDs.yawn
     );
 
     // Sub-75 base power attacks that are still worth running (utility/priority/pivot/etc.).
     public static final List<Integer> goodWeakMoves = Arrays.asList(
-            MoveIDs.accelerock, MoveIDs.acrobatics, MoveIDs.aquaJet, MoveIDs.avalanche, MoveIDs.bonemerang,
-            MoveIDs.bouncyBubble, MoveIDs.bulletPunch, MoveIDs.buzzyBuzz, MoveIDs.circleThrow, MoveIDs.clearSmog,
-            MoveIDs.doubleIronBash, MoveIDs.dragonDarts, MoveIDs.dragonTail, MoveIDs.drainingKiss, MoveIDs.endeavor,
-            MoveIDs.facade, MoveIDs.fakeOut, MoveIDs.fireFang, MoveIDs.flipTurn, MoveIDs.freezeDry,
-            MoveIDs.frustration, MoveIDs.gearGrind,
-            MoveIDs.gigaDrain, MoveIDs.grassKnot, MoveIDs.gyroBall, MoveIDs.iceFang, MoveIDs.iceShard,
-            MoveIDs.icicleSpear, MoveIDs.knockOff, MoveIDs.lowKick, MoveIDs.machPunch, MoveIDs.naturesMadness,
-            MoveIDs.nightShade, MoveIDs.nuzzle, MoveIDs.pikaPapow, MoveIDs.psychoCut, MoveIDs.pursuit,
-            MoveIDs.quickAttack, MoveIDs.rapidSpin, MoveIDs.rockBlast, MoveIDs.scorchingSands, MoveIDs.seismicToss,
-            MoveIDs.shadowClaw, MoveIDs.shadowSneak, MoveIDs.sizzlySlide, MoveIDs.storedPower, MoveIDs.stormThrow,
-            MoveIDs.suckerPunch, MoveIDs.superFang, MoveIDs.surgingStrikes, MoveIDs.tailSlap, MoveIDs.tripleAxel,
-            MoveIDs.uTurn, MoveIDs.vacuumWave, MoveIDs.veeveeVolley, MoveIDs.voltSwitch, MoveIDs.waterShuriken,
-            MoveIDs.weatherBall, MoveIDs.returnTheMoveNotTheKeyword
+            MoveIDs.accelerock, MoveIDs.acidSpray, MoveIDs.acrobatics, MoveIDs.aerialAce, MoveIDs.airSlash,
+            MoveIDs.ancientPower, MoveIDs.aquaJet, MoveIDs.assurance, MoveIDs.avalanche, MoveIDs.bonemerang,
+            MoveIDs.bouncyBubble, MoveIDs.brine, MoveIDs.bugBite, MoveIDs.bulldoze, MoveIDs.bulletPunch,
+            MoveIDs.buzzyBuzz, MoveIDs.chargeBeam, MoveIDs.circleThrow, MoveIDs.clearSmog, MoveIDs.covet,
+            MoveIDs.doubleIronBash, MoveIDs.dragonBreath, MoveIDs.dragonDarts, MoveIDs.dragonTail, MoveIDs.drainingKiss,
+            MoveIDs.drainPunch, MoveIDs.electroweb, MoveIDs.endeavor, MoveIDs.extremeSpeed, MoveIDs.facade,
+            MoveIDs.fakeOut, MoveIDs.fellStinger, MoveIDs.fireFang, MoveIDs.flameCharge, MoveIDs.flipTurn,
+            MoveIDs.freezeDry, MoveIDs.frustration, MoveIDs.gearGrind, MoveIDs.gigaDrain, MoveIDs.glaciate,
+            MoveIDs.grassKnot, MoveIDs.gyroBall, MoveIDs.hex, MoveIDs.hornLeech, MoveIDs.iceFang,
+            MoveIDs.iceShard, MoveIDs.icicleSpear, MoveIDs.icyWind, MoveIDs.knockOff, MoveIDs.lowKick,
+            MoveIDs.lowSweep, MoveIDs.machPunch, MoveIDs.megaDrain, MoveIDs.mudShot, MoveIDs.naturesMadness,
+            MoveIDs.nightShade, MoveIDs.nuzzle, MoveIDs.parabolicCharge, MoveIDs.pikaPapow, MoveIDs.poisonFang,
+            MoveIDs.powerTrip, MoveIDs.powerUpPunch, MoveIDs.psychoCut, MoveIDs.pursuit, MoveIDs.quickAttack,
+            MoveIDs.rapidSpin, MoveIDs.returnTheMoveNotTheKeyword, MoveIDs.revenge, MoveIDs.rockBlast, MoveIDs.rockSlide,
+            MoveIDs.rockTomb, MoveIDs.scorchingSands, MoveIDs.seismicToss, MoveIDs.shadowClaw, MoveIDs.shadowSneak,
+            MoveIDs.sizzlySlide, MoveIDs.sludge, MoveIDs.smackDown, MoveIDs.smartStrike, MoveIDs.snarl,
+            MoveIDs.storedPower, MoveIDs.stormThrow, MoveIDs.struggleBug, MoveIDs.suckerPunch, MoveIDs.superFang,
+            MoveIDs.surgingStrikes, MoveIDs.tailSlap, MoveIDs.thief, MoveIDs.thunderFang, MoveIDs.tripleAxel,
+            MoveIDs.tropKick, MoveIDs.uTurn, MoveIDs.vacuumWave, MoveIDs.veeveeVolley, MoveIDs.venoshock,
+            MoveIDs.vitalThrow, MoveIDs.voltSwitch, MoveIDs.waterShuriken, MoveIDs.weatherBall
     );
 
     // 75+ base power attacks that are nonetheless "usually useless" (recharge, bad accuracy/recoil, gimmicks).

@@ -107,18 +107,22 @@ public class BetterMovesetsRandomizerTest {
     // pool up front. NB feint = 364 (Protect-breaker), NOT feintAttack. These must NEVER appear on a buffed mon.
     private static final Set<Integer> AI_UNUSABLE_MOVES = Set.of(
             MoveIDs.feint, MoveIDs.suckerPunch, MoveIDs.counter, MoveIDs.mirrorCoat, MoveIDs.metalBurst,
-            MoveIDs.bide, MoveIDs.focusPunch, MoveIDs.futureSight, MoveIDs.doomDesire, MoveIDs.endeavor,
-            MoveIDs.destinyBond);
+            MoveIDs.bide, MoveIDs.fling, MoveIDs.naturalGift, MoveIDs.lastResort);
 
     // Mirrors TrainerMovesetRandomizer.AI_FLAWED_MOVES: the AI can fire these but usually to little effect, so they
     // are heavily weight-penalised (never banned). Should stay rare, checked against a generous soft ceiling.
     private static final Set<Integer> AI_FLAWED_MOVES = Set.of(
             MoveIDs.explosion, MoveIDs.selfDestruct, MoveIDs.trick, MoveIDs.switcheroo,
-            MoveIDs.perishSong, MoveIDs.bellyDrum);
+            MoveIDs.perishSong, MoveIDs.bellyDrum, MoveIDs.destinyBond, MoveIDs.endeavor,
+            MoveIDs.doomDesire, MoveIDs.futureSight, MoveIDs.present, MoveIDs.rage,
+            MoveIDs.beatUp, MoveIDs.punishment, MoveIDs.finalGambit);
 
     // An AI-flawed move is a heavy-penalty rare surprise, not a staple. Generous ceiling (trips only if the
     // aiUsabilityWeight penalty is missing/broken). Soft, sampled; gated on a decent sample size like the others.
+    // Gen 1's tiny movepools concentrate near-ubiquitous flawed moves (Rage ~11%) even under the penalty, so it
+    // gets a higher cap like the other gen-1 carve-outs below.
     private static final double AI_FLAWED_MOVE_MAX_RATE = 0.05;
+    private static final double AI_FLAWED_MOVE_MAX_RATE_GEN1 = 0.13;
 
     // No-duplicate-attacking-type guard: a mon should almost never carry two attacking moves of the same type.
     // The guard is best-effort (it relaxes when avoiding a duplicate would leave a slot unfillable, and the
@@ -696,10 +700,11 @@ public class BetterMovesetsRandomizerTest {
                     continue;
                 }
                 double rate = (double) e.getValue() / tpCount;
-                if (rate > AI_FLAWED_MOVE_MAX_RATE) {
+                double flawedCap = gen == 1 ? AI_FLAWED_MOVE_MAX_RATE_GEN1 : AI_FLAWED_MOVE_MAX_RATE;
+                if (rate > flawedCap) {
                     violations.add(String.format("%s: AI-flawed move '%s' too common (%.1f%% of mons > %.0f%% cap)"
                                     + " - aiUsabilityWeight penalty not biasing",
-                            romName, allMoves.get(e.getKey()).name, rate * 100, AI_FLAWED_MOVE_MAX_RATE * 100));
+                            romName, allMoves.get(e.getKey()).name, rate * 100, flawedCap * 100));
                 }
             }
         }

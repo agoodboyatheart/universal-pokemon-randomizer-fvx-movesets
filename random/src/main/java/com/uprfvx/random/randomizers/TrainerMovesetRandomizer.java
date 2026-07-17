@@ -428,41 +428,40 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // value depends on either is dead weight (or self-defeating) in its hands - which quietly LOWERS difficulty,
     // the opposite of this fork's goal. See project_memory/enemy-ai-move-limitations.md for the per-generation
     // reasoning. These are TRAINER-side only: the shared goodWeakMoves / goodStatusMoves lists still rate them for
-    // a human player (and the species learnset randomizer), so we do not touch those lists. This is a SECOND ban
+    // a human player, so membership there is a viability signal, not a battle-AI-usability one. This is a SECOND ban
     // philosophy layered beside GlobalConstants.bannedForDamagingMove (the ROM-wide hard-ban on random damaging
-    // pools used by the species / TM / tutor randomizers): the two overlap on several IDs (suckerPunch, focusPunch,
-    // futureSight, doomDesire, selfDestruct) but stay separate on purpose - that list governs random-pool
-    // eligibility, these tiers govern battle-AI usability. Keep them aligned by intent, do not merge them.
+    // pools used by the species / TM / tutor randomizers): the two overlap on several IDs (suckerPunch, futureSight,
+    // selfDestruct) but stay separate on purpose - that list governs random-pool eligibility, these tiers govern
+    // battle-AI usability. Keep them aligned by intent, do not merge them.
 
     // Tier 1 - HARD exclude: structurally unusable, stripped from the trainer move pool up front (see the strip in
     // randomizeTrainerMovesets) so they reach no slot at all. NB feint = 364 (the Protect-breaker), NOT feintAttack
-    // = 185 (a fine 60-BP Dark move). suckerPunch / endeavor are in goodWeakMoves and destinyBond is in
-    // goodStatusMoves; stripping here overrides those whitelists trainer-side without editing the shared lists.
-    // Each move's reason for being structurally unusable to the AI:
+    // = 185 (a fine 60-BP Dark move). suckerPunch is in goodWeakMoves; stripping here overrides that whitelist
+    // trainer-side without editing the shared list. Each move's reason for being structurally unusable to the AI:
     //  feint        - Protect-breaker; AI can't know the player will Protect
     //  suckerPunch  - only works if the target attacks that turn - unpredictable
     //  counter      - needs to predict a physical hit
     //  mirrorCoat   - needs to predict a special hit
     //  metalBurst   - needs to predict either
     //  bide         - stores damage over 2-3 turns with no prediction
-    //  focusPunch   - fails if hit first; AI can't predict incoming damage
-    //  futureSight  - delayed damage with no lookahead to set it up
-    //  doomDesire   - delayed damage with no lookahead to set it up
-    //  endeavor     - value depends on relative-HP timing the AI can't model
-    //  destinyBond  - needs to bait the player's killing blow
+    //  fling        - fails unless the user holds a usable item, which the AI can't guarantee
+    //  naturalGift  - fails unless the user holds a Berry, which the AI can't guarantee
+    //  lastResort   - unusable until all of the mon's other moves have been used
     private static final Set<Integer> AI_UNUSABLE_MOVES = Set.of(
             MoveIDs.feint, MoveIDs.suckerPunch, MoveIDs.counter, MoveIDs.mirrorCoat,
-            MoveIDs.metalBurst, MoveIDs.bide, MoveIDs.focusPunch, MoveIDs.futureSight,
-            MoveIDs.doomDesire, MoveIDs.endeavor, MoveIDs.destinyBond);
+            MoveIDs.metalBurst, MoveIDs.bide, MoveIDs.fling, MoveIDs.naturalGift,
+            MoveIDs.lastResort);
 
     // Tier 2 - WEIGHTED penalty: the AI CAN fire these, but usually to little effect (a self-KO it has no
-    // self-faint awareness of, an item swap it can't value, a Perish/Belly-Drum plan it can't coordinate). Not
-    // banned - kept as rare surprises via a heavy weight penalty, per the "authored, surprising, not optimal"
-    // goal. (Two-turn PURE_CHARGE_MOVES are already demoted by practicalValueWeight, so they are not repeated.)
+    // self-faint awareness of, an item swap it can't value, delayed / relative-HP damage it can't time, a
+    // Perish/Belly-Drum plan it can't coordinate). Unlike Tier 1 these never outright fail on use, so they are
+    // discouraged not banned - kept as rare surprises via a heavy weight penalty, per the "authored, surprising,
+    // not optimal" goal. (Two-turn PURE_CHARGE_MOVES are already demoted by practicalValueWeight, not repeated.)
     private static final Set<Integer> AI_FLAWED_MOVES = Set.of(
-            MoveIDs.explosion, MoveIDs.selfDestruct,
-            MoveIDs.trick, MoveIDs.switcheroo,
-            MoveIDs.perishSong, MoveIDs.bellyDrum);
+            MoveIDs.explosion, MoveIDs.selfDestruct, MoveIDs.trick, MoveIDs.switcheroo,
+            MoveIDs.perishSong, MoveIDs.bellyDrum, MoveIDs.destinyBond, MoveIDs.endeavor,
+            MoveIDs.doomDesire, MoveIDs.futureSight, MoveIDs.present, MoveIDs.rage,
+            MoveIDs.beatUp, MoveIDs.punishment, MoveIDs.finalGambit);
     // Tuning knob (matches CHARGE penalty).
     private static final double AI_FLAWED_MOVE_WEIGHT_PENALTY = 0.15;
 
