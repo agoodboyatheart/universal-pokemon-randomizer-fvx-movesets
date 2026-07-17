@@ -485,7 +485,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private static final double BAD_STRONG_MOVE_WEIGHT_PENALTY = 0.35;
 
     // Selection-weight multiplier that demotes GlobalConstants.badStrongMoves (strong attacks carrying a real
-    // drawback - recoil, self-KO, self-stat-drop, bad accuracy, recharge, multi-turn lock). Multiplied into every
+    // drawback - self-KO, bad accuracy, recharge, multi-turn lock). Multiplied into every
     // attacking slot's weightedPick so a clean move wins all else equal, but never removes the move: a mon whose
     // only options are flawed still gets one, and the drawbacks stay authored surprises rather than bans.
     private double badStrongMoveWeight(Move mv) {
