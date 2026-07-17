@@ -67,6 +67,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // cannot slip in via a small movepool or the trim / fallback paths that skip the per-slot gate.
                 movesAtLevel.removeIf(mv -> isSituationalStatusRedundant(mv, pk, ability));
 
+                // Same up-front strip for the base-Speed-scaled attacks (Electro Ball on slow mons, Gyro Ball on
+                // fast mons), which are near-powerless the wrong side of the speed curve.
+                movesAtLevel.removeIf(mv -> isSpeedMismatchedVariableMove(mv, pk));
+
                 // AI-unusable moves (Feint, Counter, Focus Punch, ...): the ROM battle AI is a greedy single-turn
                 // scorer that can't predict the player or run a multi-turn plan, so these are dead weight in its
                 // hands. Strip them before any slot logic - one removal here closes ALL three doors they enter by
@@ -303,6 +307,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // constant in production - nothing outside that test writes it.
     static double bossWildcardDamagingBonus = 5.0;
     private static final int TRICK_ROOM_MAX_SPEED = 60;
+    // Electro Ball rewards outspeeding the target; Gyro Ball rewards being slower. Base Speed is the proxy for
+    // "does this mon sit the right side of the curve" (the opponent is unknown at assignment time).
+    private static final int ELECTRO_BALL_MIN_SPEED = 90;
+    private static final int GYRO_BALL_MAX_SPEED = 60;
 
     // Attacking-stat profile, from the (ability-adjusted) Attack:Sp.Atk ratio. Committed attackers prefer moves
     // of their stronger category in the STAB and coverage slots; mixed attackers have no preference.
@@ -846,6 +854,19 @@ public class TrainerMovesetRandomizer extends Randomizer {
             default:
                 return false;
         }
+    }
+
+    // Electro Ball's power grows the more the user outspeeds the target; Gyro Ball's grows the slower the user
+    // is. Each is dead weight on a mon whose base Speed sits the wrong side of the curve, so strip it up front by
+    // base-Speed proxy - the damaging-move analogue of the Trick Room slow-only gate.
+    private boolean isSpeedMismatchedVariableMove(Move mv, Species pk) {
+        if (mv.number == MoveIDs.electroBall) {
+            return pk.getSpeed() < ELECTRO_BALL_MIN_SPEED;
+        }
+        if (mv.number == MoveIDs.gyroBall) {
+            return pk.getSpeed() > GYRO_BALL_MAX_SPEED;
+        }
+        return false;
     }
 
     // Whether the Pokemon takes at least 2x damage (double or quadruple weakness) from the given attacking type.

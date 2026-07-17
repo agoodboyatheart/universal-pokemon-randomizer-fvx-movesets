@@ -464,6 +464,13 @@ public class BetterMovesetsRandomizerTest {
                     if (moveID == MoveIDs.trickRoom && pk.getSpeed() > 60) {
                         violations.add(romName + ": Trick Room on fast " + pk.getName() + " (spe " + pk.getSpeed() + ")");
                     }
+                    // Electro Ball wants a fast user, Gyro Ball a slow one (base-Speed gate mirrors the source).
+                    if (moveID == MoveIDs.electroBall && pk.getSpeed() < 90) {
+                        violations.add(romName + ": Electro Ball on slow " + pk.getName() + " (spe " + pk.getSpeed() + ")");
+                    }
+                    if (moveID == MoveIDs.gyroBall && pk.getSpeed() > 60) {
+                        violations.add(romName + ": Gyro Ball on fast " + pk.getName() + " (spe " + pk.getSpeed() + ")");
+                    }
                     // Water Sport / Mud Sport only halve incoming Fire / Electric damage, so they belong solely on
                     // mons that actually fear that type (2x+ weakness).
                     if (moveID == MoveIDs.waterSport && !isWeakTo(romHandler, pk, Type.FIRE)) {
