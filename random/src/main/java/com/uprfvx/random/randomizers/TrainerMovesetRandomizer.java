@@ -106,7 +106,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     continue;
                 }
 
-                movesAtLevel = trimMoveList(tp, movesAtLevel, doubles);
+                movesAtLevel = trimMoveList(tp, movesAtLevel, doubles, ability);
 
                 if (movesAtLevel.isEmpty()) {
                     // trimMoveList already wrote a small (<=4) moveset directly into tp; nothing more to build.
@@ -114,7 +114,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 }
 
                 int level = tp.getLevel();
-                AttackerProfile profile = classifyAttacker(tp, pk);
+                AttackerProfile profile = classifyAttacker(pk, ability);
                 // Boss & Important trainers get the full curated structure: STAB + optimized coverage + status +
                 // wildcard. Regular trainers are deliberately "dumbed down" so the tier gap reads like the mainline
                 // games - they get a guaranteed STAB, a plain (non-optimized) second attacking move, and two
@@ -574,6 +574,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // the damaging fallback. We give them a synthetic "effective power" so they can compete: for a low-level
     // (or already-damaged) mon, damage equal to the user's level (or a chunk of the target's HP) can
     // out-damage its real STAB.
+    // Deliberately a curated subset of GlobalConstants.noPowerNonStatusMoves - only these two shapes get a
+    // synthetic power; the rest of that list stays wildcard-only, so keep them in step by intent, not by deriving.
     // Level-based: deal damage equal to the user's level.
     private static final Set<Integer> LEVEL_DAMAGE_MOVES = Set.of(MoveIDs.seismicToss, MoveIDs.nightShade);
     // HP-proportional: Super Fang / Nature's Madness halve the target's HP; Endeavor drops it to the user's.
@@ -937,7 +939,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         double softMoveAntiBias = 0.5;
 
         if (hasAbilities) {
-            working = updateMovesConsideringAbilitySynergies(tp, working);
+            working = updateMovesConsideringAbilitySynergies(ability, working);
         }
         working = updateMovesConsideringStatSynergies(pk, working);
 
@@ -1005,7 +1007,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
             Collections.shuffle(softAnti, random);
             int softAntiCount = (int) (softMoveAntiBias * softAnti.size());
             for (int j = 0; j < softAntiCount; j++) {
-                if (eligibleWildcards(working, pk, ability, picked, level).size() <= (4 - picked.size())) {
+                int needed = 4 - picked.size();
+                if (countEligibleWildcards(working, pk, ability, picked, level, needed) <= needed) {
                     break;
                 }
                 working.remove(softAnti.get(j));
@@ -1039,6 +1042,40 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .distinct()
                 .collect(Collectors.toList());
         return withoutDuplicateAttackingType(distinct, picked, level);
+    }
+
+    // Size of eligibleWildcards(...) without materialising its intermediate lists, with an early-out once the
+    // count is known to exceed `cap`. The soft-anti loop only needs to compare the size against the slots left,
+    // and recomputes it after every removal, so this runs in the hot path. Mirrors eligibleWildcards exactly,
+    // including its no-duplicate-attacking-type fallback (no eligible attack left -> the unfiltered distinct set).
+    private int countEligibleWildcards(List<Move> working, Species pk, int ability, List<Move> picked, int level,
+                                       int cap) {
+        Set<Type> used = usedAttackingTypes(picked, level);
+        Set<Move> seen = new HashSet<>();
+        int distinctCount = 0;
+        int filteredCount = 0;
+        for (Move mv : working) {
+            if (picked.contains(mv)) {
+                continue;
+            }
+            if (mv.category == MoveCategory.STATUS && isRedundantStatusMove(mv, pk, ability, picked)) {
+                continue;
+            }
+            if (!seen.add(mv)) {
+                continue;
+            }
+            distinctCount++;
+            if (used.isEmpty() || effectivePower(mv, level) <= 0 || !used.contains(mv.type)) {
+                filteredCount++;
+                if (filteredCount > cap) {
+                    return filteredCount;
+                }
+            }
+        }
+        if (used.isEmpty()) {
+            return distinctCount;
+        }
+        return filteredCount == 0 ? distinctCount : filteredCount;
     }
 
     // The attacking types already covered by the picked moves, used by the no-duplicate-attacking-type guard.
@@ -1190,9 +1227,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Removal only: prunes moves that clash with the Pokemon's ability (soft ability anti-synergy). A synergy-
     // ADDITION pass would be pointless here - it could only add duplicate copies that eligibleWildcards collapses
     // with .distinct() before the pick, so they never influence anything.
-    private List<Move> updateMovesConsideringAbilitySynergies(TrainerPokemon tp, List<Move> movesAtLevel) {
+    private List<Move> updateMovesConsideringAbilitySynergies(int ability, List<Move> movesAtLevel) {
         List<Move> softAbilityMoveAntiSynergyList = MoveSynergy.getSoftAbilityMoveAntiSynergy(
-                romHandler.getAbilityForTrainerPokemon(tp), movesAtLevel);
+                ability, movesAtLevel);
         List<Move> withoutSoftAntiSynergy = new ArrayList<>(movesAtLevel);
         for (Move mv : softAbilityMoveAntiSynergyList) {
             withoutSoftAntiSynergy.remove(mv);
@@ -1219,8 +1256,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // Classify the Pokemon as a physical, special or mixed attacker from its (ability-adjusted) Attack:Sp.Atk
     // ratio. Only a clear lean (>= ATTACKER_COMMIT_RATIO either way) commits; anything near 1:1 stays mixed.
-    private AttackerProfile classifyAttacker(TrainerPokemon tp, Species pk) {
-        double ratio = getAtkSpatkRatio(tp, pk);
+    private AttackerProfile classifyAttacker(Species pk, int ability) {
+        double ratio = getAtkSpatkRatio(pk, ability);
         if (ratio >= ATTACKER_COMMIT_RATIO) {
             return AttackerProfile.PHYSICAL;
         }
@@ -1241,11 +1278,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return 1.0;
     }
 
-    private double getAtkSpatkRatio(TrainerPokemon tp, Species pk) {
+    private double getAtkSpatkRatio(Species pk, int ability) {
         int spatk = romHandler.generationOfPokemon() == 1 ? pk.getSpecial() : pk.getSpatk();
         double atkSpatkRatio = (double) pk.getAttack() / (double) spatk;
         if (hasAbilities) {
-            switch (romHandler.getAbilityForTrainerPokemon(tp)) {
+            switch (ability) {
                 case AbilityIDs.hugePower:
                 case AbilityIDs.purePower:
                     atkSpatkRatio *= 2;
@@ -1285,7 +1322,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return true;
     }
 
-    private List<Move> trimMoveList(TrainerPokemon tp, List<Move> movesAtLevel, boolean isDoubleBattle) {
+    private List<Move> trimMoveList(TrainerPokemon tp, List<Move> movesAtLevel, boolean isDoubleBattle, int ability) {
         if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
             return new ArrayList<>();
         }
@@ -1324,7 +1361,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (hasAbilities) {
             List<Move> withoutHardAntiSynergy = new ArrayList<>(movesAtLevel);
             withoutHardAntiSynergy.removeAll(MoveSynergy.getHardAbilityMoveAntiSynergy(
-                    romHandler.getAbilityForTrainerPokemon(tp),
+                    ability,
                     movesAtLevel));
 
             if (!withoutHardAntiSynergy.isEmpty()) {
@@ -1492,20 +1529,24 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // TM Moves (100% availability - every TM the species can learn enters the pool; the hard power-band
         // filter below removes the level-inappropriate ones).
         boolean[] tmCompat = allTMCompat.get(tp.getSpecies());
-        for (int i = 0; i < allTMMoves.size(); i++) {
-            int tmMove = allTMMoves.get(i);
-            if (tmCompat[i + 1]) {
-                moveSelectionPoolAtLevel.add(moves.get(tmMove));
+        if (tmCompat != null) {
+            for (int i = 0; i < allTMMoves.size(); i++) {
+                int tmMove = allTMMoves.get(i);
+                if (tmCompat[i + 1]) {
+                    moveSelectionPoolAtLevel.add(moves.get(tmMove));
+                }
             }
         }
 
         // Move Tutor Moves (100% availability, same as TMs).
         if (romHandler.hasMoveTutors()) {
             boolean[] tutorCompat = allTutorCompat.get(tp.getSpecies());
-            for (int i = 0; i < allTutorMoves.size(); i++) {
-                int tutorMove = allTutorMoves.get(i);
-                if (tutorCompat[i + 1]) {
-                    moveSelectionPoolAtLevel.add(moves.get(tutorMove));
+            if (tutorCompat != null) {
+                for (int i = 0; i < allTutorMoves.size(); i++) {
+                    int tutorMove = allTutorMoves.get(i);
+                    if (tutorCompat[i + 1]) {
+                        moveSelectionPoolAtLevel.add(moves.get(tutorMove));
+                    }
                 }
             }
         }
@@ -1536,7 +1577,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // moves, status/gimmick moves, and - at high level - priority weak moves are exempt; see the method doc).
         applyPowerBandFilter(moveSelectionPoolAtLevel, tp.getLevel(), ownLevelUpMoveNumbers);
 
-        return moveSelectionPoolAtLevel.stream().distinct().collect(Collectors.toList());
+        // Mutable: the caller's up-front removeIf strips narrow this pool in place.
+        return moveSelectionPoolAtLevel.stream().distinct().collect(Collectors.toCollection(ArrayList::new));
     }
 
     /**
@@ -1569,6 +1611,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             pool.add(mv);
         }
         applyPowerBandFilter(pool, tp.getLevel(), Collections.emptySet());
-        return pool.stream().distinct().collect(Collectors.toList());
+        // Mutable: shares the caller's in-place removeIf strips with the ordinary pool.
+        return pool.stream().distinct().collect(Collectors.toCollection(ArrayList::new));
     }
 }
