@@ -75,6 +75,7 @@ public class MovesetProfileRandomizerTest {
             p.printSummary("  ");
             p.printBossByBand("  ");
             p.printThinPoolBosses("  ");
+            p.printAceVsTeam("  ");
         }
         assumeTrue(loaded > 0, "No loadable ROM found in " + ROMS_PATH);
     }
@@ -124,6 +125,7 @@ public class MovesetProfileRandomizerTest {
         Profile p = new Profile();
         for (Trainer tr : rom.getTrainers()) {
             boolean boss = tr.isBoss() || tr.isImportant();
+            List<MonProfile> team = new ArrayList<>();
             for (TrainerPokemon tp : tr.getPokemon()) {
                 Set<Integer> moves = new HashSet<>();
                 for (int id : tp.getMoves()) {
@@ -137,11 +139,15 @@ public class MovesetProfileRandomizerTest {
                 int attacks = 0;
                 int useful = 0;
                 int junk = 0;
+                int attackPower = 0;
                 Set<Type> attackTypes = new HashSet<>();
                 for (int id : moves) {
                     Move mv = allMoves.get(id);
                     if (isAttack(mv, id)) {
                         attacks++;
+                        if (mv.power > 1) {
+                            attackPower += mv.power; // proportional/fixed-damage attacks store no readable power
+                        }
                         if (mv.type != null) {
                             attackTypes.add(mv.type);
                         }
@@ -154,7 +160,9 @@ public class MovesetProfileRandomizerTest {
                     }
                 }
                 p.add(boss, tp.getLevel(), attacks, attackTypes.size(), useful, junk);
+                team.add(new MonProfile(tp.getLevel(), attacks, attackTypes.size(), attackPower));
             }
+            p.addTeam(boss, team);
         }
         return p;
     }
@@ -188,6 +196,7 @@ public class MovesetProfileRandomizerTest {
         private final ThinBoss thinBoss = new ThinBoss();
         private final ThinBoss[] thinBossBands = {new ThinBoss(), new ThinBoss(), new ThinBoss(), new ThinBoss()};
         private int bossUnder2; // bosses that could not even field 2 attacks (genuinely starved pools)
+        private final AceCompare aceCompare = new AceCompare();
         private static final String[] BAND_LABELS = {"Lv1-15", "Lv16-30", "Lv31-45", "Lv46+"};
 
         void add(boolean isBoss, int level, int attacks, int distinctTypes, int useful, int junk) {
@@ -204,6 +213,13 @@ public class MovesetProfileRandomizerTest {
             }
         }
 
+        // Feed a fully-profiled team into the ace-vs-teammates comparison (boss/important tier, 2+ profiled mons).
+        void addTeam(boolean isBoss, List<MonProfile> team) {
+            if (isBoss && team.size() >= 2) {
+                aceCompare.add(team);
+            }
+        }
+
         void merge(Profile other) {
             boss.merge(other.boss);
             reg.merge(other.reg);
@@ -215,6 +231,7 @@ public class MovesetProfileRandomizerTest {
                 thinBossBands[i].merge(other.thinBossBands[i]);
             }
             bossUnder2 += other.bossUnder2;
+            aceCompare.merge(other.aceCompare);
         }
 
         void printSummary(String indent) {
@@ -244,6 +261,13 @@ public class MovesetProfileRandomizerTest {
             }
         }
 
+        // After the ace-first assignment order, the highest-level mon should carry AT LEAST the attacking
+        // variety/power of its lower-level teammates (which now absorb the team-repeat demotion). ace >= rest
+        // confirms the fix; ace < rest is the pre-fix bug (the ace got the dupe scraps). Report-only.
+        void printAceVsTeam(String indent) {
+            System.out.println(indent + "ACE vs teammates " + aceCompare.summary());
+        }
+
         private static int bandIndex(int level) {
             if (level <= 15) {
                 return 0;
@@ -255,6 +279,77 @@ public class MovesetProfileRandomizerTest {
                 return 2;
             }
             return 3;
+        }
+    }
+
+    // One mon's attacking profile within a team, for the ace-vs-teammates comparison. attackPower is the summed
+    // base power of its real-power attacking moves only (proportional/fixed-damage attacks add variety but no
+    // readable power, so they are excluded from the power figure).
+    private record MonProfile(int level, int attacks, int distinctTypes, int attackPower) {
+    }
+
+    // Aggregates, across boss/important teams, the highest-level mon (the ace) against the mean of its lower-level
+    // teammates, to confirm the ace-first assignment order gives the ace the premium/varied picks rather than the
+    // duplicate scraps. Per team the ace is the (first) max-level mon; any equal-level mons count as teammates.
+    private static final class AceCompare {
+        private int teams;
+        private double aceTypes;
+        private double restTypes;
+        private double aceAttacks;
+        private double restAttacks;
+        private double acePower;
+        private double restPower;
+
+        void add(List<MonProfile> team) {
+            MonProfile ace = team.get(0);
+            for (MonProfile m : team) {
+                if (m.level() > ace.level()) {
+                    ace = m;
+                }
+            }
+            int restCount = 0;
+            double rTypes = 0;
+            double rAttacks = 0;
+            double rPower = 0;
+            for (MonProfile m : team) {
+                if (m == ace) {
+                    continue; // reference identity - excludes exactly the ace, even if a teammate ties its stats
+                }
+                restCount++;
+                rTypes += m.distinctTypes();
+                rAttacks += m.attacks();
+                rPower += m.attackPower();
+            }
+            if (restCount == 0) {
+                return; // whole team shared the top level and the ace was the only element - nothing to compare
+            }
+            teams++;
+            aceTypes += ace.distinctTypes();
+            aceAttacks += ace.attacks();
+            acePower += ace.attackPower();
+            restTypes += rTypes / restCount;
+            restAttacks += rAttacks / restCount;
+            restPower += rPower / restCount;
+        }
+
+        void merge(AceCompare other) {
+            teams += other.teams;
+            aceTypes += other.aceTypes;
+            restTypes += other.restTypes;
+            aceAttacks += other.aceAttacks;
+            restAttacks += other.restAttacks;
+            acePower += other.acePower;
+            restPower += other.restPower;
+        }
+
+        String summary() {
+            if (teams == 0) {
+                return "(no multi-mon boss teams)";
+            }
+            return String.format("(teams=%d): atk-types ace %.2f vs rest %.2f | attacks ace %.2f vs rest %.2f "
+                            + "| atk-power ace %.0f vs rest %.0f",
+                    teams, aceTypes / teams, restTypes / teams, aceAttacks / teams, restAttacks / teams,
+                    acePower / teams, restPower / teams);
         }
     }
 

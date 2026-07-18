@@ -54,7 +54,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
             // Per-trainer memory of earlier teammates' moves/types, so choosy slots can avoid repeats.
             teamUsage = new TeamMoveUsage();
 
-            for (TrainerPokemon tp : t.getPokemon()) {
+            // Assign moves strongest-mon-first so a trainer's ace sees the full, unpenalised pool before
+            // the per-team duplicate demotion (teamUsage) accumulates; lower-level teammates absorb the
+            // repeats instead. Stable sort keeps native roster order for equal levels. We iterate a copy and
+            // mutate each tp in place (writeMoves / setResetMoves), so the trainer's actual team order is
+            // unchanged - only the assignment order shifts.
+            List<TrainerPokemon> assignmentOrder = new ArrayList<>(t.getPokemon());
+            assignmentOrder.sort(Comparator.comparingInt(TrainerPokemon::getLevel).reversed());
+
+            for (TrainerPokemon tp : assignmentOrder) {
                 tp.setResetMoves(false);
 
                 List<Move> movesAtLevel = getMoveSelectionPoolAtLevel(tp, isCyclicEvolutions);
