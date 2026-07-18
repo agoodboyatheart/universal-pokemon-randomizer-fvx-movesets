@@ -13,11 +13,14 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -85,7 +88,6 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
      */
     private static final Map<String, String> EXPECTED = new LinkedHashMap<>();
     static {
-
         // Frozen with SEED on the local ROM dumps; re-bless with -Dgolden.record=true (see class doc).
         EXPECTED.put("Red", """
         BOSS L45 RHYHORN (GROUND/ROCK): 89,31,164,126
@@ -431,13 +433,12 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
         String actual = canonicalBlock(romHandler, gameName);
 
         if (Boolean.getBoolean("golden.record")) {
-            System.out.println("\nEXPECTED.put(\"" + gameName + "\", \"\"\"\n" + actual + "\n\"\"\");");
+            printPasteReadyBlock(gameName, actual);
             return;
         }
         String expected = EXPECTED.get(gameName);
         if (expected == null) {
-            // Not frozen yet - print the paste-ready block, then skip (rather than fail) this case.
-            System.out.println("\nEXPECTED.put(\"" + gameName + "\", \"\"\"\n" + actual + "\n\"\"\");");
+            printPasteReadyBlock(gameName, actual);
             assumeTrue(false, "No frozen snapshot for " + gameName
                     + " - run with -Dgolden.record=true and paste the printed block into EXPECTED.");
         }
@@ -522,11 +523,7 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
      */
     private static int[] evenSpread(int size, int sample) {
         if (size <= sample) {
-            int[] all = new int[size];
-            for (int i = 0; i < size; i++) {
-                all[i] = i;
-            }
-            return all;
+            return IntStream.range(0, size).toArray();
         }
         int[] idx = new int[sample];
         for (int i = 0; i < sample; i++) {
@@ -536,14 +533,12 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
     }
 
     private static String joinMoves(int[] moves) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < moves.length; i++) {
-            if (i > 0) {
-                sb.append(',');
-            }
-            sb.append(moves[i]);
-        }
-        return sb.toString();
+        return Arrays.stream(moves).mapToObj(Integer::toString).collect(Collectors.joining(","));
+    }
+
+    /** Prints the paste-ready {@code EXPECTED.put(...)} block for the re-bless workflow (see class doc). */
+    private static void printPasteReadyBlock(String gameName, String actual) {
+        System.out.println("\nEXPECTED.put(\"" + gameName + "\", \"\"\"\n" + actual + "\n\"\"\");");
     }
 
     private static String typeStr(Species pk) {

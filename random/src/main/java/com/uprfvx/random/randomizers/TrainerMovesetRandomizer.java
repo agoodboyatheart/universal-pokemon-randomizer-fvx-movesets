@@ -690,7 +690,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // (powerSelectionWeight, accuracyWeight, practicalValueWeight, aiUsabilityWeight, badStrongMoveWeight,
         // levelAppropriatenessWeight) and by the up-front AI_UNUSABLE strip + enabler-dependency checks - never by a
         // hard eligibility ban here.
-        return effectivePower(mv, level) > 0;
+        return true;
     }
 
     // Slot 1: a STAB attacking move. Over-level moves are already removed by the hard ceiling; levelAppropriatenessWeight
@@ -1306,34 +1306,25 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return false;
     }
 
-    // Removal only: prunes moves that clash with the Pokemon's ability (soft ability anti-synergy). A synergy-
-    // ADDITION pass would be pointless here - it could only add duplicate copies that eligibleWildcards collapses
-    // with .distinct() before the pick, so they never influence anything.
+    // Removal only: prunes moves that clash with the Pokemon's ability (soft ability anti-synergy).
     private List<Move> updateMovesConsideringAbilitySynergies(int ability, List<Move> movesAtLevel) {
-        List<Move> softAbilityMoveAntiSynergyList = MoveSynergy.getSoftAbilityMoveAntiSynergy(
-                ability, movesAtLevel);
-        List<Move> withoutSoftAntiSynergy = new ArrayList<>(movesAtLevel);
-        for (Move mv : softAbilityMoveAntiSynergyList) {
-            withoutSoftAntiSynergy.remove(mv);
-        }
-        if (!withoutSoftAntiSynergy.isEmpty()) {
-            movesAtLevel = withoutSoftAntiSynergy;
-        }
-        return movesAtLevel;
+        return removeAntiSynergyMoves(movesAtLevel, MoveSynergy.getSoftAbilityMoveAntiSynergy(ability, movesAtLevel));
     }
 
-    // Removal only: prunes moves that clash with the Pokemon's stats (stat anti-synergy). A synergy-ADDITION
-    // pass would be pointless for the same reason as in the ability helper above.
+    // Removal only: prunes moves that clash with the Pokemon's stats (stat anti-synergy).
     private List<Move> updateMovesConsideringStatSynergies(Species pk, List<Move> movesAtLevel) {
-        List<Move> statAntiSynergyList = MoveSynergy.getStatMoveAntiSynergy(pk, movesAtLevel);
-        List<Move> withoutStatAntiSynergy = new ArrayList<>(movesAtLevel);
-        for (Move mv : statAntiSynergyList) {
-            withoutStatAntiSynergy.remove(mv);
+        return removeAntiSynergyMoves(movesAtLevel, MoveSynergy.getStatMoveAntiSynergy(pk, movesAtLevel));
+    }
+
+    // Drops the anti-synergy moves from the pool, but never returns an empty pool (keeps the original if pruning
+    // would clear it). Removal only - a synergy-ADDITION pass would be pointless here, as it could only add
+    // duplicate copies that eligibleWildcards collapses with .distinct() before the pick.
+    private List<Move> removeAntiSynergyMoves(List<Move> movesAtLevel, List<Move> antiSynergy) {
+        List<Move> pruned = new ArrayList<>(movesAtLevel);
+        for (Move mv : antiSynergy) {
+            pruned.remove(mv);
         }
-        if (!withoutStatAntiSynergy.isEmpty()) {
-            movesAtLevel = withoutStatAntiSynergy;
-        }
-        return movesAtLevel;
+        return pruned.isEmpty() ? movesAtLevel : pruned;
     }
 
     // Classify the Pokemon as a physical, special or mixed attacker from its (ability-adjusted) Attack:Sp.Atk
@@ -1449,7 +1440,6 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // so a universal move's reach is measured the same way regardless of the power-band filter. Called once per run,
     // after the source caches are warm; cost is O(species x (learnset + TM + tutor)) - a few hundred thousand touches.
     private void buildMoveAvailability() {
-        // Species number -> distinct learnable move numbers.
         Map<Integer, Set<Integer>> perSpecies = new HashMap<>();
 
         // Level-up moves (keyed by species number).
@@ -1570,7 +1560,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(ml -> (ml.level <= tp.getLevel() && ml.level != 0) || (ml.level == 0 && tp.getLevel() >= 30))
                 .map(ml -> moves.get(ml.move))
                 .distinct()
-                .toList();
+                .collect(Collectors.toList());
         Set<Integer> ownLevelUpMoveNumbers = ownLevelUpMoves.stream()
                 .map(mv -> mv.number).collect(Collectors.toSet());
         List<Move> moveSelectionPoolAtLevel = new ArrayList<>(ownLevelUpMoves);
@@ -1590,7 +1580,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                         .stream()
                         .filter(ml -> ml.level <= tp.getLevel())
                         .map(ml -> moves.get(ml.move))
-                        .distinct().toList());
+                        .distinct().collect(Collectors.toList()));
             }
         }
 
@@ -1637,7 +1627,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 moveSelectionPoolAtLevel.addAll(allEggMoves.get(firstEvo.getNumber())
                         .stream()
                         .map(moves::get)
-                        .toList());
+                        .collect(Collectors.toList()));
             }
         }
 

@@ -20,6 +20,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.DoubleConsumer;
+import java.util.function.DoubleSupplier;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -84,49 +87,41 @@ public class MovesetProfileRandomizerTest {
 
     @Test
     public void sweepBossWildcardBonus() {
-        String spec = System.getProperty("bm.sweep");
-        assumeTrue(spec != null && !spec.isBlank(),
-                "sweep skipped - pass -Dbm.sweep=<comma-separated bonus values> to calibrate");
-        assumeTrue(ROMS_PATH != null, "romsPath not set (run via the testROMs task)");
-
-        double original = TrainerMovesetRandomizer.bossWildcardDamagingBonus;
-        try {
-            for (String token : spec.split(",")) {
-                double bonus = Double.parseDouble(token.trim());
-                TrainerMovesetRandomizer.bossWildcardDamagingBonus = bonus;
-                Profile combined = new Profile();
-                int loaded = 0;
-                for (String[] game : GAMES) {
-                    RomHandler rom = tryLoad(game[0], game[1]);
-                    if (rom == null) {
-                        continue;
-                    }
-                    loaded++;
-                    combined.merge(computeProfile(rom));
-                }
-                System.out.printf("%n### sweep bossWildcardDamagingBonus=%.1f (across %d ROM(s)) ###%n",
-                        bonus, loaded);
-                combined.printSummary("  ");
-                combined.printBossByBand("  ");
-            }
-        } finally {
-            TrainerMovesetRandomizer.bossWildcardDamagingBonus = original;
-        }
+        sweep("bm.sweep",
+                "sweep skipped - pass -Dbm.sweep=<comma-separated bonus values> to calibrate",
+                v -> TrainerMovesetRandomizer.bossWildcardDamagingBonus = v,
+                () -> TrainerMovesetRandomizer.bossWildcardDamagingBonus,
+                "bossWildcardDamagingBonus=%.1f",
+                combined -> combined.printBossByBand("  "));
     }
 
-    // Calibrates the boss STAB much-weaker cull margin (BOSS_STAB_MAX_POWER_GAP). A large value (e.g. 999) = off.
-    // <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepStabGap" -Dbm.stabgap=999,50,40,30,20 }</pre>
+    /**
+     * Calibrates the boss STAB much-weaker cull margin ({@link TrainerMovesetRandomizer#BOSS_STAB_MAX_POWER_GAP});
+     * a large value (e.g. 999) effectively disables the cull.
+     * <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepStabGap" -Dbm.stabgap=999,50,40,30,20 }</pre>
+     */
     @Test
     public void sweepStabGap() {
-        String spec = System.getProperty("bm.stabgap");
-        assumeTrue(spec != null && !spec.isBlank(),
-                "sweep skipped - pass -Dbm.stabgap=<comma-separated BP margins> to calibrate");
+        sweep("bm.stabgap",
+                "sweep skipped - pass -Dbm.stabgap=<comma-separated BP margins> to calibrate",
+                v -> TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP = v,
+                () -> TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP,
+                "BOSS_STAB_MAX_POWER_GAP=%.0f",
+                combined -> combined.printWeakStab("  "));
+    }
+
+    // Re-runs the whole profile once per comma-separated value in the -D<prop> spec, temporarily setting a tuning
+    // knob to each so the labelled tables can be compared without a rebuild. The original knob value is restored.
+    private void sweep(String prop, String skipHint, DoubleConsumer knobSetter, DoubleSupplier knobGetter,
+                       String label, Consumer<Profile> extraTable) {
+        String spec = System.getProperty(prop);
+        assumeTrue(spec != null && !spec.isBlank(), skipHint);
         assumeTrue(ROMS_PATH != null, "romsPath not set (run via the testROMs task)");
 
-        double original = TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP;
+        double original = knobGetter.getAsDouble();
         try {
             for (String token : spec.split(",")) {
-                TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP = Double.parseDouble(token.trim());
+                knobSetter.accept(Double.parseDouble(token.trim()));
                 Profile combined = new Profile();
                 int loaded = 0;
                 for (String[] game : GAMES) {
@@ -137,13 +132,13 @@ public class MovesetProfileRandomizerTest {
                     loaded++;
                     combined.merge(computeProfile(rom));
                 }
-                System.out.printf("%n### sweep BOSS_STAB_MAX_POWER_GAP=%.0f (across %d ROM(s)) ###%n",
-                        TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP, loaded);
+                System.out.printf("%n### sweep " + label + " (across %d ROM(s)) ###%n",
+                        knobGetter.getAsDouble(), loaded);
                 combined.printSummary("  ");
-                combined.printWeakStab("  ");
+                extraTable.accept(combined);
             }
         } finally {
-            TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP = original;
+            knobSetter.accept(original);
         }
     }
 
@@ -363,8 +358,7 @@ public class MovesetProfileRandomizerTest {
     // One mon's attacking profile within a team, for the ace-vs-teammates comparison. attackPower is the summed
     // base power of its real-power attacking moves only (proportional/fixed-damage attacks add variety but no
     // readable power, so they are excluded from the power figure).
-    private record MonProfile(int level, int attacks, int distinctTypes, int attackPower) {
-    }
+    private record MonProfile(int level, int attacks, int distinctTypes, int attackPower) {}
 
     // Aggregates, across boss/important teams, the highest-level mon (the ace) against the mean of its lower-level
     // teammates, to confirm the ace-first assignment order gives the ace the premium/varied picks rather than the

@@ -32,6 +32,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.IntPredicate;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -343,22 +346,12 @@ public class BetterMovesetsRandomizerTest {
     }
 
     private static List<Integer> nonZeroMoves(int[] moves) {
-        List<Integer> result = new ArrayList<>();
-        for (int id : moves) {
-            if (id != 0) {
-                result.add(id);
-            }
-        }
-        return result;
+        return Arrays.stream(moves).filter(id -> id != 0).boxed().collect(Collectors.toList());
     }
 
     private static String moveNames(RomHandler romHandler, List<Integer> moveIDs) {
         List<Move> allMoves = romHandler.getMoves();
-        StringBuilder sb = new StringBuilder();
-        for (int id : moveIDs) {
-            sb.append(allMoves.get(id).name).append(' ');
-        }
-        return sb.toString().trim();
+        return moveIDs.stream().map(id -> allMoves.get(id).name).collect(Collectors.joining(" "));
     }
 
     private List<String> checkOneRom(RomHandler romHandler, String romName) {
@@ -673,42 +666,7 @@ public class BetterMovesetsRandomizerTest {
                         teamNonStabRepeats++;
                     }
                 }
-                // Sleep Talk and Snore are useless without Rest, so they may only appear alongside it.
-                if (!movesThisMon.contains(MoveIDs.rest)) {
-                    if (movesThisMon.contains(MoveIDs.sleepTalk)) {
-                        violations.add(romName + ": Sleep Talk without Rest on " + pk.getName());
-                    }
-                    if (movesThisMon.contains(MoveIDs.snore)) {
-                        violations.add(romName + ": Snore without Rest on " + pk.getName());
-                    }
-                }
-                // Spit Up and Swallow consume Stockpile counters, so they may only appear alongside Stockpile.
-                if (!movesThisMon.contains(MoveIDs.stockpile)) {
-                    if (movesThisMon.contains(MoveIDs.spitUp)) {
-                        violations.add(romName + ": Spit Up without Stockpile on " + pk.getName());
-                    }
-                    if (movesThisMon.contains(MoveIDs.swallow)) {
-                        violations.add(romName + ": Swallow without Stockpile on " + pk.getName());
-                    }
-                }
-                // Dream Eater and Nightmare only work on a sleeping target, so they need a sleep-inducing move.
-                if (Collections.disjoint(movesThisMon, SLEEP_INDUCING_MOVES)) {
-                    if (movesThisMon.contains(MoveIDs.dreamEater)) {
-                        violations.add(romName + ": Dream Eater without a sleep move on " + pk.getName());
-                    }
-                    if (movesThisMon.contains(MoveIDs.nightmare)) {
-                        violations.add(romName + ": Nightmare without a sleep move on " + pk.getName());
-                    }
-                }
-                // Baton Pass is pointless with nothing to pass, so it needs a self-boosting setup move.
-                boolean hasBoostToPass = movesThisMon.stream().anyMatch(id -> {
-                    Move m = allMoves.get(id);
-                    return m != null && m.statChangeMoveType == StatChangeMoveType.NO_DAMAGE_USER
-                            && Arrays.stream(m.statChanges).anyMatch(sc -> sc.type != StatChangeType.NONE && sc.stages > 0);
-                });
-                if (!hasBoostToPass && movesThisMon.contains(MoveIDs.batonPass)) {
-                    violations.add(romName + ": Baton Pass without a stat-boosting move on " + pk.getName());
-                }
+                checkEnablerDependencies(movesThisMon, allMoves, pk, romName, violations);
                 // SolarBeam / Solar Blade skip the charge penalty only on a sun-guaranteed mon (sun-setter ability
                 // or a Sunny Day it also carries). Count picks that lack both - not a violation (the penalty just
                 // makes them rare wildcards, it does not ban them), but tracked as evidence the exemption is scoped.
@@ -740,10 +698,9 @@ public class BetterMovesetsRandomizerTest {
             }
         }
 
-        int finalTp = tpCount;
         double ubiquitousCap = gen == 1 ? UBIQUITOUS_RATE_GEN1 : UBIQUITOUS_RATE;
         for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
-            double rate = (double) e.getValue() / (double) finalTp;
+            double rate = (double) e.getValue() / (double) tpCount;
             if (rate >= ubiquitousCap) {
                 violations.add(String.format("%s: '%s' is ubiquitous (%.1f%% of mons)",
                         romName, allMoves.get(e.getKey()).name, rate * 100));
@@ -772,19 +729,13 @@ public class BetterMovesetsRandomizerTest {
         // is looser than a hard per-appearance ban (the moves stay legal rare surprises) but catches a missing or
         // broken practical-value weight, which would let a flawed strong move flood the slots again.
         if (tpCount > 100) {
-            for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
-                int id = e.getKey();
-                boolean flawed = PURE_CHARGE_MOVES.contains(id) || allMoves.get(id).isRechargeMove;
-                if (!flawed) {
-                    continue;
-                }
-                double rate = (double) e.getValue() / tpCount;
-                if (rate > FLAWED_STRONG_MOVE_MAX_RATE) {
-                    violations.add(String.format("%s: flawed strong move '%s' too common (%.1f%% of mons > %.0f%% cap)"
+            checkRateCap(moveCounts, tpCount, allMoves,
+                    id -> PURE_CHARGE_MOVES.contains(id) || allMoves.get(id).isRechargeMove,
+                    FLAWED_STRONG_MOVE_MAX_RATE,
+                    (mv, rate) -> String.format("%s: flawed strong move '%s' too common (%.1f%% of mons > %.0f%% cap)"
                                     + " - practical-value penalty not biasing",
-                            romName, allMoves.get(id).name, rate * 100, FLAWED_STRONG_MOVE_MAX_RATE * 100));
-                }
-            }
+                            romName, mv.name, rate * 100, FLAWED_STRONG_MOVE_MAX_RATE * 100),
+                    violations);
         }
         // Batch 7 - AI move usability. AI-unusable moves are stripped from the pool up front, so they must NEVER
         // appear on a buffed mon (a HARD invariant, checked at any sample size). AI-flawed moves are only heavily
@@ -800,33 +751,25 @@ public class BetterMovesetsRandomizerTest {
             }
         }
         if (tpCount > 100) {
-            for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
-                if (!AI_FLAWED_MOVES.contains(e.getKey())) {
-                    continue;
-                }
-                double rate = (double) e.getValue() / tpCount;
-                double flawedCap = gen == 1 ? AI_FLAWED_MOVE_MAX_RATE_GEN1 : AI_FLAWED_MOVE_MAX_RATE;
-                if (rate > flawedCap) {
-                    violations.add(String.format("%s: AI-flawed move '%s' too common (%.1f%% of mons > %.0f%% cap)"
+            double flawedCap = gen == 1 ? AI_FLAWED_MOVE_MAX_RATE_GEN1 : AI_FLAWED_MOVE_MAX_RATE;
+            checkRateCap(moveCounts, tpCount, allMoves,
+                    id -> AI_FLAWED_MOVES.contains(id),
+                    flawedCap,
+                    (mv, rate) -> String.format("%s: AI-flawed move '%s' too common (%.1f%% of mons > %.0f%% cap)"
                                     + " - aiUsabilityWeight penalty not biasing",
-                            romName, allMoves.get(e.getKey()).name, rate * 100, flawedCap * 100));
-                }
-            }
+                            romName, mv.name, rate * 100, flawedCap * 100),
+                    violations);
         }
         // OHKO moves are soft-penalised, not banned, so they stay rare - checked against a soft ceiling.
         System.out.printf("     ohko: %d OHKO pick(s) across %d Pokemon%n", ohkoUses, tpCount);
         if (tpCount > 100) {
-            for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
-                if (!OHKO_MOVES.contains(e.getKey())) {
-                    continue;
-                }
-                double rate = (double) e.getValue() / tpCount;
-                if (rate > OHKO_MOVE_MAX_RATE) {
-                    violations.add(String.format("%s: OHKO move '%s' too common (%.1f%% of mons > %.0f%% cap)"
+            checkRateCap(moveCounts, tpCount, allMoves,
+                    id -> OHKO_MOVES.contains(id),
+                    OHKO_MOVE_MAX_RATE,
+                    (mv, rate) -> String.format("%s: OHKO move '%s' too common (%.1f%% of mons > %.0f%% cap)"
                                     + " - ohkoWeight penalty not biasing",
-                            romName, allMoves.get(e.getKey()).name, rate * 100, OHKO_MOVE_MAX_RATE * 100));
-                }
-            }
+                            romName, mv.name, rate * 100, OHKO_MOVE_MAX_RATE * 100),
+                    violations);
         }
         // STAB-slot exclusion (Action 2): a type-matching synthetic/delayed move in the STAB slot should be near-zero
         // (only the rare pickBestDamaging fallback or a tiny <=4 pool). A spike means the STAB filter is missing/broken.
@@ -937,6 +880,64 @@ public class BetterMovesetsRandomizerTest {
             }
         }
         return violations;
+    }
+
+    // Soft ceiling over the whole-ROM pick tally: flags any move matching `applies` that lands on more than `cap`
+    // of the ROM's trainer Pokemon. The caller guards on a minimum sample size; `violation` builds the message from
+    // the offending move and its measured rate.
+    private void checkRateCap(Map<Integer, Integer> moveCounts, int tpCount, List<Move> allMoves,
+                              IntPredicate applies, double cap, BiFunction<Move, Double, String> violation,
+                              List<String> violations) {
+        for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
+            if (!applies.test(e.getKey())) {
+                continue;
+            }
+            double rate = (double) e.getValue() / tpCount;
+            if (rate > cap) {
+                violations.add(violation.apply(allMoves.get(e.getKey()), rate));
+            }
+        }
+    }
+
+    // Enabler-dependent moves are useless without a partner move, so flag any that appears without it.
+    private void checkEnablerDependencies(Set<Integer> movesThisMon, List<Move> allMoves, Species pk, String romName,
+                                          List<String> violations) {
+        // Sleep Talk and Snore are useless without Rest, so they may only appear alongside it.
+        if (!movesThisMon.contains(MoveIDs.rest)) {
+            if (movesThisMon.contains(MoveIDs.sleepTalk)) {
+                violations.add(romName + ": Sleep Talk without Rest on " + pk.getName());
+            }
+            if (movesThisMon.contains(MoveIDs.snore)) {
+                violations.add(romName + ": Snore without Rest on " + pk.getName());
+            }
+        }
+        // Spit Up and Swallow consume Stockpile counters, so they may only appear alongside Stockpile.
+        if (!movesThisMon.contains(MoveIDs.stockpile)) {
+            if (movesThisMon.contains(MoveIDs.spitUp)) {
+                violations.add(romName + ": Spit Up without Stockpile on " + pk.getName());
+            }
+            if (movesThisMon.contains(MoveIDs.swallow)) {
+                violations.add(romName + ": Swallow without Stockpile on " + pk.getName());
+            }
+        }
+        // Dream Eater and Nightmare only work on a sleeping target, so they need a sleep-inducing move.
+        if (Collections.disjoint(movesThisMon, SLEEP_INDUCING_MOVES)) {
+            if (movesThisMon.contains(MoveIDs.dreamEater)) {
+                violations.add(romName + ": Dream Eater without a sleep move on " + pk.getName());
+            }
+            if (movesThisMon.contains(MoveIDs.nightmare)) {
+                violations.add(romName + ": Nightmare without a sleep move on " + pk.getName());
+            }
+        }
+        // Baton Pass is pointless with nothing to pass, so it needs a self-boosting setup move.
+        boolean hasBoostToPass = movesThisMon.stream().anyMatch(id -> {
+            Move m = allMoves.get(id);
+            return m != null && m.statChangeMoveType == StatChangeMoveType.NO_DAMAGE_USER
+                    && Arrays.stream(m.statChanges).anyMatch(sc -> sc.type != StatChangeType.NONE && sc.stages > 0);
+        });
+        if (!hasBoostToPass && movesThisMon.contains(MoveIDs.batonPass)) {
+            violations.add(romName + ": Baton Pass without a stat-boosting move on " + pk.getName());
+        }
     }
 
     // Returns a violation description if this weather move is redundant on the Pokemon, else null.
