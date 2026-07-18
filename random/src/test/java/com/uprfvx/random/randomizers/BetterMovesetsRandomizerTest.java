@@ -77,6 +77,10 @@ public class BetterMovesetsRandomizerTest {
     private static final Set<Integer> SYNTHETIC_DAMAGE_MOVES = Set.of(
             MoveIDs.seismicToss, MoveIDs.nightShade, MoveIDs.superFang, MoveIDs.naturesMadness, MoveIDs.endeavor);
 
+    // Delayed typeless hits: mirrors TrainerMovesetRandomizer.DELAYED_TYPELESS_STAB_MOVES. Barred from the STAB
+    // slot along with the synthetic-damage moves above (none earns STAB or type effectiveness there).
+    private static final Set<Integer> DELAYED_TYPELESS_STAB_MOVES = Set.of(MoveIDs.futureSight, MoveIDs.doomDesire);
+
     // Doubles-only support moves: mirrors TrainerMovesetRandomizer.DOUBLES_ONLY_MOVES. Combined with UPR's
     // doubleBattleMoves, these must never appear on a single-battle mon, but are kept for genuine doubles.
     private static final Set<Integer> DOUBLES_ONLY_MOVES = Set.of(
@@ -174,6 +178,21 @@ public class BetterMovesetsRandomizerTest {
     // gives regulars a small structural edge (~0.1); this tolerance covers it with margin, but a wildcard reverting
     // to a flat ~39%-damaging draw (a second non-damaging move stacking on the status one) trails by ~0.3 and trips.
     private static final double BOSS_BREADTH_TOLERANCE = 0.20;
+
+    // STAB-slot exclusion of type-independent-damage moves: fixed/proportional moves (Seismic Toss, Night Shade,
+    // ...) and delayed typeless hits (Future Sight, Doom Desire) earn no STAB or type effectiveness, so they are
+    // barred from the guaranteed STAB slot (slot 0). They stay legitimate elsewhere - Future Sight is a real
+    // 120-power Psychic coverage move in gen 5+ - so we inspect ONLY slot 0 and only when it type-matches (a
+    // would-be STAB). Post-fix it reaches slot 0 only via the rare pickBestDamaging fallback or a tiny (<=4) pool,
+    // so the rate is near-zero unless the STAB filter breaks (which would flood every mon's STAB slot with these).
+    private static final double STAB_SLOT_SYNTHETIC_MAX_RATE = 0.01;
+
+    // Exclusive-category stat-boost gate: a single-stat status booster (Swords Dance, Nasty Plot, Curse-for-non-
+    // Ghost, ...) is wasted when the mon also carries an opposite-category attack, so the status/wildcard gate blocks
+    // it against the already-picked attacks. A soft ceiling, not a hard zero: a later wildcard can still draw a
+    // contradicting attack after the booster was slotted, so a few slip through - but the gate keeps them rare, and
+    // the rate would jump to the unfiltered baseline if it were removed.
+    private static final double MISMATCHED_BOOSTER_MAX_RATE = 0.05;
 
     @Test
     public void inspectBetterMovesets() {
@@ -394,6 +413,8 @@ public class BetterMovesetsRandomizerTest {
         int bossAttackMoveTotal = 0;      // total attacking moves across those mons
         int regMonCount = 0;              // regular-tier mons that received a moveset
         int regAttackMoveTotal = 0;       // total attacking moves across those mons
+        int stabSlotSyntheticUses = 0; // mons whose STAB slot (slot 0) is a type-matching synthetic/delayed move (now barred)
+        int mismatchedBoosterMons = 0;        // mons with a single-stat status booster + an opposite-category attack
 
         for (Trainer tr : romHandler.getTrainers()) {
             boolean printThis = printed < SAMPLE_MOVESETS_PER_ROM;
@@ -582,6 +603,61 @@ public class BetterMovesetsRandomizerTest {
                                 + ") carries 2+ same-type attacks");
                     }
                 }
+                // STAB-slot exclusion (Action 2): the STAB slot is the first move picked (slot 0; enabler-dependency
+                // cleanup preserves order and never removes a damaging STAB). It must not be a type-independent-damage
+                // move (fixed / proportional / delayed typeless) that type-matches - that is the would-be STAB the slot
+                // now bars. The same move as OFF-type coverage/wildcard is legitimate and not counted.
+                int stabSlotMoveId = tp.getMoves()[0];
+                if (stabSlotMoveId != 0) {
+                    boolean typeIndependent = SYNTHETIC_DAMAGE_MOVES.contains(stabSlotMoveId)
+                            || DELAYED_TYPELESS_STAB_MOVES.contains(stabSlotMoveId);
+                    Type stabSlotType = allMoves.get(stabSlotMoveId).type;
+                    if (typeIndependent && stabSlotType != null && hasType(pk, stabSlotType)) {
+                        stabSlotSyntheticUses++;
+                        if (printThis) {
+                            System.out.println("     [synthetic STAB slot] " + allMoves.get(stabSlotMoveId).name
+                                    + " on " + pk.getName() + " (" + typeStr(pk) + ")");
+                        }
+                    }
+                }
+                // Exclusive-category stat-boost gate (Action 1): only STATUS-category self-boosters are gated (a
+                // damaging rider like Charge Beam is deliberately not), so classify those and flag a mon that also
+                // carries an opposite-category attack - the waste the gate blocks.
+                boolean hasPhysAttack = false;
+                boolean hasSpecAttack = false;
+                boolean atkOnlyBooster = false;
+                boolean spatkOnlyBooster = false;
+                for (int moveID : movesThisMon) {
+                    Move m = allMoves.get(moveID);
+                    boolean attacking = m.power > 1 || SYNTHETIC_DAMAGE_MOVES.contains(moveID);
+                    if (attacking && m.category == MoveCategory.PHYSICAL) {
+                        hasPhysAttack = true;
+                    }
+                    if (attacking && m.category == MoveCategory.SPECIAL) {
+                        hasSpecAttack = true;
+                    }
+                    if (m.category == MoveCategory.STATUS
+                            && m.statChangeMoveType == StatChangeMoveType.NO_DAMAGE_USER) {
+                        boolean bAtk = Arrays.stream(m.statChanges).anyMatch(sc -> sc.stages > 0
+                                && (sc.type == StatChangeType.ATTACK || sc.type == StatChangeType.ALL));
+                        boolean bSpatk = Arrays.stream(m.statChanges).anyMatch(sc -> sc.stages > 0
+                                && (sc.type == StatChangeType.SPECIAL_ATTACK || sc.type == StatChangeType.SPECIAL
+                                        || sc.type == StatChangeType.ALL));
+                        if (bAtk && !bSpatk) {
+                            atkOnlyBooster = true;
+                        }
+                        if (bSpatk && !bAtk) {
+                            spatkOnlyBooster = true;
+                        }
+                    }
+                }
+                if ((atkOnlyBooster && hasSpecAttack) || (spatkOnlyBooster && hasPhysAttack)) {
+                    mismatchedBoosterMons++;
+                    if (printThis) {
+                        System.out.println("     [mismatched booster] " + pk.getName()
+                                + " carries a single-stat booster with an opposite-category attack");
+                    }
+                }
                 // Team-level authoring: record this mon's non-STAB moves against the trainer's running tally, so a
                 // move a later teammate repeats registers as a repeat. STAB moves (type matches one of the mon's
                 // types) are exempt, matching the randomizer's penalty scope.
@@ -750,6 +826,33 @@ public class BetterMovesetsRandomizerTest {
                                     + " - ohkoWeight penalty not biasing",
                             romName, allMoves.get(e.getKey()).name, rate * 100, OHKO_MOVE_MAX_RATE * 100));
                 }
+            }
+        }
+        // STAB-slot exclusion (Action 2): a type-matching synthetic/delayed move in the STAB slot should be near-zero
+        // (only the rare pickBestDamaging fallback or a tiny <=4 pool). A spike means the STAB filter is missing/broken.
+        System.out.printf("     stab-slot exclusion: %d synthetic/delayed STAB-slot pick(s) across %d Pokemon%n",
+                stabSlotSyntheticUses, tpCount);
+        if (tpCount > 100) {
+            double rate = (double) stabSlotSyntheticUses / tpCount;
+            if (rate > STAB_SLOT_SYNTHETIC_MAX_RATE) {
+                violations.add(String.format(
+                        "%s: %.1f%% of mons have a type-matching synthetic/delayed move in the STAB slot (%d/%d > %.0f%% "
+                                + "cap) - STAB-slot exclusion missing/broken",
+                        romName, rate * 100, stabSlotSyntheticUses, tpCount, STAB_SLOT_SYNTHETIC_MAX_RATE * 100));
+            }
+        }
+        // Exclusive-category stat-boost gate (Action 1): a single-stat booster paired with an opposite-category
+        // attack should be rare (only when a later wildcard adds the contradicting attack). A spike means the gate
+        // is missing/broken (boosters landing on mixed sets at the unfiltered rate).
+        System.out.printf("     stat-boost gate: %d mon(s) with a mismatched single-stat booster across %d Pokemon%n",
+                mismatchedBoosterMons, tpCount);
+        if (tpCount > 100) {
+            double rate = (double) mismatchedBoosterMons / tpCount;
+            if (rate > MISMATCHED_BOOSTER_MAX_RATE) {
+                violations.add(String.format(
+                        "%s: %.1f%% of mons carry a single-stat booster with an opposite-category attack (%d/%d > %.0f%% "
+                                + "cap) - exclusive-category stat-boost gate missing/broken",
+                        romName, rate * 100, mismatchedBoosterMons, tpCount, MISMATCHED_BOOSTER_MAX_RATE * 100));
             }
         }
         // No-duplicate-attacking-type guard: with the guard in place, carrying two attacks of one type should be

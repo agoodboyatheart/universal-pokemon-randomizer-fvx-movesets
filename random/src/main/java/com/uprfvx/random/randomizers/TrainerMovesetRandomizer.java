@@ -628,10 +628,13 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // HP-proportional: Super Fang / Nature's Madness halve the target's HP; Endeavor drops it to the user's.
     // Their real output swings with current HP (Endeavor does nothing at full HP but a lot when the user is
     // hurt, which trainer mons often are mid-battle), so we rank them by a rough ~level proxy rather than
-    // excluding them. NB: endeavor is also in AI_UNUSABLE_MOVES and so is hard-stripped from the pool before any
-    // ranking runs - its entry here is therefore inert for trainers, kept only to keep the group's meaning complete.
+    // excluding them.
     private static final Set<Integer> HP_PROPORTIONAL_DAMAGE_MOVES = Set.of(
             MoveIDs.superFang, MoveIDs.naturesMadness, MoveIDs.endeavor);
+
+    // Delayed hits that land two turns later: typeless before gen 5, and even after a poor fit for a mon's one
+    // guaranteed STAB slot. Kept out of that slot only (still available as surprise picks elsewhere).
+    private static final Set<Integer> DELAYED_TYPELESS_STAB_MOVES = Set.of(MoveIDs.futureSight, MoveIDs.doomDesire);
 
     // The damage a move actually deals, expressed on the same scale as power*hitCount so it can be ranked.
     // Returns 0 for status moves and for the many other power<=1 moves we deliberately leave wildcard-only
@@ -651,6 +654,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     private static boolean isSyntheticDamageMove(Move mv) {
         return LEVEL_DAMAGE_MOVES.contains(mv.number) || HP_PROPORTIONAL_DAMAGE_MOVES.contains(mv.number);
+    }
+
+    // A move that must never fill the type-locked STAB slot: its damage ignores type (fixed / HP-proportional) or
+    // is delayed and typeless, so it earns neither STAB nor super-effectiveness there. Allowed in other slots.
+    private static boolean isStabSlotIneligible(Move mv) {
+        return isSyntheticDamageMove(mv) || DELAYED_TYPELESS_STAB_MOVES.contains(mv.number);
     }
 
     // A move that can fill an attacking slot (STAB or coverage): a real, level-appropriate damaging move.
@@ -687,6 +696,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(mv -> !exclude.contains(mv))
                 .filter(mv -> mv.type == t1 || (t2 != null && mv.type == t2))
                 .filter(mv -> isAttackSlotEligible(mv, level))
+                .filter(mv -> !isStabSlotIneligible(mv))
                 // Fake Out only fires on the turn the user switches in; the AI can't build around that, so it is a
                 // dead pick as a mon's main STAB (still allowed elsewhere via goodWeakMoves).
                 .filter(mv -> mv.number != MoveIDs.fakeOut)
@@ -696,8 +706,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
             candidates = pool.stream()
                     .filter(mv -> !exclude.contains(mv))
                     .filter(mv -> effectivePower(mv, level) > 0)
+                    .filter(mv -> !isStabSlotIneligible(mv))
                     .filter(mv -> mv.type == t1 || (t2 != null && mv.type == t2))
                     .collect(Collectors.toList());
+        }
+        // Soft ability anti-synergy shapes the deliberate slots too, not just wildcards: a weather/aura mon should
+        // not be steered into a STAB the ability undercuts (Drizzle -> Fire, Drought -> Water, Misty Surge -> Dragon).
+        if (hasAbilities) {
+            candidates = updateMovesConsideringAbilitySynergies(ability, candidates);
         }
         return weightedPick(candidates, mv -> {
             double ep = effectivePower(mv, level);
@@ -734,6 +750,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .collect(Collectors.toList());
         if (eligible.isEmpty()) {
             return null;
+        }
+        if (hasAbilities) {
+            eligible = updateMovesConsideringAbilitySynergies(ability, eligible);
         }
         // Strongly prefer super-effective coverage, but as a weight (not a hard gate): a neutral coverage move can
         // still occasionally win, so bosses read as authored rather than perfectly optimized.
@@ -786,9 +805,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     }
 
     // Slot 3: a non-redundant good status move, picked FLAT among the eligible candidates. The
-    // stat-boost gate lives in the candidate filter via isRedundantStatusMove: an Attack-only booster is only
-    // eligible if a physical attack was already picked, a Sp.Atk-only booster only if a special attack was, based
-    // on the actually-picked attacks. Beyond that gate the choice is deliberately even - no synergy bonus and no
+    // stat-boost gate lives in the candidate filter via isRedundantStatusMove: an Attack-only booster is eligible
+    // only if every attack already picked is physical, a Sp.Atk-only booster only if every one is special, so a
+    // mixed set gets neither. Beyond that gate the choice is deliberately even - no synergy bonus and no
     // accuracy (reliability) lean apply to status, so boss status reads as varied rather than optimised.
     private Move pickStatusMove(Species pk, int ability, List<Move> pool, List<Move> picked, int level) {
         List<Move> candidates = pool.stream()
@@ -849,6 +868,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     .collect(Collectors.toList());
         }
         damaging = withoutDuplicateAttackingType(damaging, exclude, level);
+        if (hasAbilities) {
+            damaging = updateMovesConsideringAbilitySynergies(ability, damaging);
+        }
         // Flat power (no powerSelectionWeight), so a 40 BP move competes evenly with a 70 BP one - variety over
         // optimisation. The generic-neutral penalty demotes always-neutral universal TMs (Normal-type Secret
         // Power, Facade, Return - learnable by nearly the whole dex, super-effective against nothing) which would
@@ -941,15 +963,16 @@ public class TrainerMovesetRandomizer extends Randomizer {
             return true;
         }
 
-        // Stat-boost gate (inclusive): an Attack-only booster needs >=1 physical move already picked;
-        // a Sp.Atk-only booster needs >=1 special move. Boosters raising both are never gated.
+        // Stat-boost gate (exclusive): a single-stat booster is wasted unless every attack picked shares its
+        // category, so a mixed set (both a physical and a special attack) gets neither booster. Boosters
+        // raising both stats are never gated.
         boolean boostsAtk = raisesUserAttack(mv);
         boolean boostsSpAtk = raisesUserSpecialAttack(mv);
         if (boostsAtk && !boostsSpAtk) {
-            return !hasCategory(picked, MoveCategory.PHYSICAL);
+            return !hasCategory(picked, MoveCategory.PHYSICAL) || hasCategory(picked, MoveCategory.SPECIAL);
         }
         if (boostsSpAtk && !boostsAtk) {
-            return !hasCategory(picked, MoveCategory.SPECIAL);
+            return !hasCategory(picked, MoveCategory.SPECIAL) || hasCategory(picked, MoveCategory.PHYSICAL);
         }
         return false;
     }
