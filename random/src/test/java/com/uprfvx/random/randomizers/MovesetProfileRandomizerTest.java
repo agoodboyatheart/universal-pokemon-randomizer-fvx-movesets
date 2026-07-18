@@ -6,6 +6,7 @@ import com.uprfvx.romio.constants.MoveIDs;
 import com.uprfvx.romio.gamedata.GenRestrictions;
 import com.uprfvx.romio.gamedata.Move;
 import com.uprfvx.romio.gamedata.MoveCategory;
+import com.uprfvx.romio.gamedata.Species;
 import com.uprfvx.romio.gamedata.Trainer;
 import com.uprfvx.romio.gamedata.TrainerPokemon;
 import com.uprfvx.romio.gamedata.Type;
@@ -76,6 +77,7 @@ public class MovesetProfileRandomizerTest {
             p.printBossByBand("  ");
             p.printThinPoolBosses("  ");
             p.printAceVsTeam("  ");
+            p.printWeakStab("  ");
         }
         assumeTrue(loaded > 0, "No loadable ROM found in " + ROMS_PATH);
     }
@@ -112,6 +114,39 @@ public class MovesetProfileRandomizerTest {
         }
     }
 
+    // Calibrates the boss STAB much-weaker cull margin (BOSS_STAB_MAX_POWER_GAP). A large value (e.g. 999) = off.
+    // <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepStabGap" -Dbm.stabgap=999,50,40,30,20 }</pre>
+    @Test
+    public void sweepStabGap() {
+        String spec = System.getProperty("bm.stabgap");
+        assumeTrue(spec != null && !spec.isBlank(),
+                "sweep skipped - pass -Dbm.stabgap=<comma-separated BP margins> to calibrate");
+        assumeTrue(ROMS_PATH != null, "romsPath not set (run via the testROMs task)");
+
+        double original = TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP;
+        try {
+            for (String token : spec.split(",")) {
+                TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP = Double.parseDouble(token.trim());
+                Profile combined = new Profile();
+                int loaded = 0;
+                for (String[] game : GAMES) {
+                    RomHandler rom = tryLoad(game[0], game[1]);
+                    if (rom == null) {
+                        continue;
+                    }
+                    loaded++;
+                    combined.merge(computeProfile(rom));
+                }
+                System.out.printf("%n### sweep BOSS_STAB_MAX_POWER_GAP=%.0f (across %d ROM(s)) ###%n",
+                        TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP, loaded);
+                combined.printSummary("  ");
+                combined.printWeakStab("  ");
+            }
+        } finally {
+            TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP = original;
+        }
+    }
+
     // Runs Better Movesets over one ROM and tallies the attack/status profile by tier and boss level band.
     private Profile computeProfile(RomHandler rom) {
         rom.getRestrictedSpeciesService().setRestrictions(new GenRestrictions());
@@ -136,10 +171,14 @@ public class MovesetProfileRandomizerTest {
                 if (moves.isEmpty()) {
                     continue; // moveless / reset mon skipped the slot logic - no authored profile
                 }
+                Species sp = tp.getSpecies();
+                Type stabType1 = sp.getPrimaryType(false);
+                Type stabType2 = sp.getSecondaryType(false);
                 int attacks = 0;
                 int useful = 0;
                 int junk = 0;
                 int attackPower = 0;
+                double bestStabPower = 0; // strongest same-type readable-power attack this mon carries (its STAB slot)
                 Set<Type> attackTypes = new HashSet<>();
                 for (int id : moves) {
                     Move mv = allMoves.get(id);
@@ -147,6 +186,9 @@ public class MovesetProfileRandomizerTest {
                         attacks++;
                         if (mv.power > 1) {
                             attackPower += mv.power; // proportional/fixed-damage attacks store no readable power
+                            if (mv.type == stabType1 || (stabType2 != null && mv.type == stabType2)) {
+                                bestStabPower = Math.max(bestStabPower, mv.power * mv.hitCount);
+                            }
                         }
                         if (mv.type != null) {
                             attackTypes.add(mv.type);
@@ -160,6 +202,12 @@ public class MovesetProfileRandomizerTest {
                     }
                 }
                 p.add(boss, tp.getLevel(), attacks, attackTypes.size(), useful, junk);
+                if (bestStabPower > 0) {
+                    // Fixed 0.75-of-centerPower yardstick (the original shared floor) so the weak-STAB rate stays
+                    // comparable as the tunable boss fraction/exponent are swept - it is a stable ruler, not the knob.
+                    double weakThreshold = TrainerMovesetRandomizer.centerPower(tp.getLevel()) * 0.75;
+                    p.addStab(boss, tp.getLevel(), bestStabPower < weakThreshold);
+                }
                 team.add(new MonProfile(tp.getLevel(), attacks, attackTypes.size(), attackPower));
             }
             p.addTeam(boss, team);
@@ -197,6 +245,10 @@ public class MovesetProfileRandomizerTest {
         private final ThinBoss[] thinBossBands = {new ThinBoss(), new ThinBoss(), new ThinBoss(), new ThinBoss()};
         private int bossUnder2; // bosses that could not even field 2 attacks (genuinely starved pools)
         private final AceCompare aceCompare = new AceCompare();
+        // Weak-STAB tracking: how often a mon's strongest same-type attack falls below the level-appropriate floor.
+        private final StabTally bossStab = new StabTally();
+        private final StabTally regStab = new StabTally();
+        private final StabTally[] bossStabBands = {new StabTally(), new StabTally(), new StabTally(), new StabTally()};
         private static final String[] BAND_LABELS = {"Lv1-15", "Lv16-30", "Lv31-45", "Lv46+"};
 
         void add(boolean isBoss, int level, int attacks, int distinctTypes, int useful, int junk) {
@@ -210,6 +262,15 @@ public class MovesetProfileRandomizerTest {
                 } else if (attacks < 2) {
                     bossUnder2++;
                 }
+            }
+        }
+
+        // Record whether a mon's strongest same-type attack (its STAB slot) sits below the level-appropriate floor.
+        // A high boss rate is the "weak STAB on a high-level boss" symptom; regulars are expected to run higher.
+        void addStab(boolean isBoss, int level, boolean weak) {
+            (isBoss ? bossStab : regStab).add(weak);
+            if (isBoss) {
+                bossStabBands[bandIndex(level)].add(weak);
             }
         }
 
@@ -232,6 +293,11 @@ public class MovesetProfileRandomizerTest {
             }
             bossUnder2 += other.bossUnder2;
             aceCompare.merge(other.aceCompare);
+            bossStab.merge(other.bossStab);
+            regStab.merge(other.regStab);
+            for (int i = 0; i < bossStabBands.length; i++) {
+                bossStabBands[i].merge(other.bossStabBands[i]);
+            }
         }
 
         void printSummary(String indent) {
@@ -266,6 +332,18 @@ public class MovesetProfileRandomizerTest {
         // confirms the fix; ace < rest is the pre-fix bug (the ace got the dupe scraps). Report-only.
         void printAceVsTeam(String indent) {
             System.out.println(indent + "ACE vs teammates " + aceCompare.summary());
+        }
+
+        // Weak-STAB rate: share of mons whose strongest same-type attack is below the level floor (a Lv49 boss on
+        // Mud Shot with Earthquake available). Boss is the calibration target; regular is the intended-loose contrast.
+        void printWeakStab(String indent) {
+            System.out.println(indent + "BOSS/IMP weak-STAB " + bossStab.summary());
+            System.out.println(indent + "REGULAR  weak-STAB " + regStab.summary());
+            for (int i = 0; i < bossStabBands.length; i++) {
+                if (bossStabBands[i].n > 0) {
+                    System.out.println(indent + "  boss " + BAND_LABELS[i] + " " + bossStabBands[i].summary());
+                }
+            }
         }
 
         private static int bandIndex(int level) {
@@ -350,6 +428,32 @@ public class MovesetProfileRandomizerTest {
                             + "| atk-power ace %.0f vs rest %.0f",
                     teams, aceTypes / teams, restTypes / teams, aceAttacks / teams, restAttacks / teams,
                     acePower / teams, restPower / teams);
+        }
+    }
+
+    // Weak-STAB counts for one tier/band: mons carrying >=1 readable-power same-type attack, and how many of those
+    // have their strongest such attack below a fixed 0.75-of-centerPower yardstick.
+    private static final class StabTally {
+        private int n;
+        private int weak;
+
+        void add(boolean isWeak) {
+            n++;
+            if (isWeak) {
+                weak++;
+            }
+        }
+
+        void merge(StabTally other) {
+            n += other.n;
+            weak += other.weak;
+        }
+
+        String summary() {
+            if (n == 0) {
+                return "(n=0)";
+            }
+            return String.format("%d%% (n=%d)", Math.round(100.0 * weak / n), n);
         }
     }
 

@@ -379,7 +379,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private static final double LEVEL_POWER_MAX = 95.0;
     private static final double LEVEL_POWER_SATURATION_LEVEL = 50.0;
 
-    private static double centerPower(int level) {
+    static double centerPower(int level) {
         double t = Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
         return LEVEL_POWER_BASE + (LEVEL_POWER_MAX - LEVEL_POWER_BASE) * t;
     }
@@ -404,6 +404,18 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private static final double POWER_FLOOR_FRACTION = 0.75;
     private static final double POWER_FLOOR_EXPONENT_BOSS = 2.0;
     private static final double POWER_FLOOR_EXPONENT_REGULAR = 0.8;
+
+    // Boss STAB "much-weaker" cull margin (BP). A boss's STAB slot draws from many same-type moves, most of them weak
+    // (a Water mon: Water Gun/Bubble/Bubblebeam/Water Pulse/Brine/Octazooka vs just Surf/Hydro Pump), so proportional
+    // weightedPick lands on SOME weak move ~1/3 of the time no matter how the per-move soft weights are set - it is a
+    // candidate-mass problem, not a weight problem (verified: neutralising any one soft weight moves the rate <=2pp).
+    // So for bosses only we CULL same-type STABs more than this many BP below the pool's strongest STAB before the
+    // pick, deleting the weak mass. It fires only when a strong STAB exists, so a thin / mono-type pool with only weak
+    // options is untouched (no pool-collapse); the surviving strong STABs are still spread across a team by the
+    // team/species repeat penalties (no mono-type re-stacking). goodWeakMoves are already excluded from the STAB pick
+    // (see pickStabMove), so this margin only culls plain damaging STABs too weak for the pool (Water Gun 40 vs Surf
+    // 90). Regular trainers keep the full loose pool. Non-final so the calibration harness can sweep it in-process.
+    static double BOSS_STAB_MAX_POWER_GAP = 30.0;
 
     // Hard sliding ceiling (pool stage): remove attacking moves too strong for the mon's level. Status / gimmick
     // moves (effective power 0) and the mon's own level-up moves (a signature move learned early) are exempt.
@@ -697,8 +709,13 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 .filter(mv -> mv.type == t1 || (t2 != null && mv.type == t2))
                 .filter(mv -> isAttackSlotEligible(mv, level))
                 .filter(mv -> !isStabSlotIneligible(mv))
+                // goodWeakMoves (priority chip / utility, e.g. Aqua Jet / Rapid Spin) are reserved for the coverage
+                // and wildcard slots - they are not a mon's main same-type attack. Excluding them here also stops the
+                // large low-BP goodWeak set from swamping the STAB pick. The fallback below still lets one through if
+                // the mon has NO other damaging STAB (a genuinely starved low-level pool), so it keeps its identity.
+                .filter(mv -> !GlobalConstants.goodWeakMoves.contains(mv.number))
                 // Fake Out only fires on the turn the user switches in; the AI can't build around that, so it is a
-                // dead pick as a mon's main STAB (still allowed elsewhere via goodWeakMoves).
+                // dead pick as a mon's main STAB (still allowed elsewhere).
                 .filter(mv -> mv.number != MoveIDs.fakeOut)
                 .collect(Collectors.toList());
         if (candidates.isEmpty()) {
@@ -714,6 +731,19 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // not be steered into a STAB the ability undercuts (Drizzle -> Fire, Drought -> Water, Misty Surge -> Dragon).
         if (hasAbilities) {
             candidates = updateMovesConsideringAbilitySynergies(ability, candidates);
+        }
+        // Boss-only: drop STABs far weaker than the pool's best so the weak candidate mass cannot capture the pick.
+        // Fires only when a strong STAB exists (the best move always survives, so the list never empties). Regulars
+        // keep the full pool. See BOSS_STAB_MAX_POWER_GAP.
+        if (bossTier && candidates.size() > 1) {
+            double best = candidates.stream().mapToDouble(mv -> effectivePower(mv, level)).max().orElse(0);
+            double cut = best - BOSS_STAB_MAX_POWER_GAP;
+            List<Move> strong = candidates.stream()
+                    .filter(mv -> effectivePower(mv, level) >= cut)
+                    .collect(Collectors.toList());
+            if (!strong.isEmpty()) {
+                candidates = strong;
+            }
         }
         return weightedPick(candidates, mv -> {
             double ep = effectivePower(mv, level);

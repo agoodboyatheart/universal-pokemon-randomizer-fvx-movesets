@@ -255,6 +255,8 @@ tasks.register<Test>("testROMs") {
     System.getProperty("golden.record")?.let { systemProperty("golden.record", it) }
     // Forward -Dbm.sweep so the moveset-profile harness's tuning-knob sweep list reaches the forked test JVM.
     System.getProperty("bm.sweep")?.let { systemProperty("bm.sweep", it) }
+    // Forward -Dbm.stabgap so the harness's boss-STAB cull-margin sweep reaches the forked test JVM.
+    System.getProperty("bm.stabgap")?.let { systemProperty("bm.stabgap", it) }
 
     shouldRunAfter("test")
 
