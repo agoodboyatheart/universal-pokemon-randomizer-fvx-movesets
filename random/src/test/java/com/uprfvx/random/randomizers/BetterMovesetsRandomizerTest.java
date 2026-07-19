@@ -107,6 +107,12 @@ public class BetterMovesetsRandomizerTest {
     // the mon guarantees sun - one of these abilities, or a Sunny Day in the same moveset.
     private static final Set<Integer> SUN_SETTER_ABILITIES = Set.of(AbilityIDs.drought, AbilityIDs.desolateLand);
 
+    // Sun-dependent nukes: mirrors TrainerMovesetRandomizer.SUN_DEPENDENT_MOVES. SolarBeam / Solar Blade skip
+    // their charge turn only under sun, so they are gated to a sun source (a Sunny Day move in the set or a
+    // sun-setting ability). Conversely, a Sunny Day carried by a non-Fire / non-sun-ability mon is only allowed
+    // BECAUSE it enables one of these - so it must co-occur with one, never appear alone off such a mon.
+    private static final Set<Integer> SUN_DEPENDENT_MOVES = Set.of(MoveIDs.solarBeam, MoveIDs.solarBlade);
+
     // A pure-charge or recharge move must not become a common pick under the practical-value penalty. Generous
     // ceiling (observed pre-change worst case ~3.5%): trips only if a penalty is missing/broken. Soft, sampled.
     private static final double FLAWED_STRONG_MOVE_MAX_RATE = 0.08;
@@ -382,7 +388,7 @@ public class BetterMovesetsRandomizerTest {
         int aiUnusableUses = 0;      // times an AI-unusable move (Feint, Counter, ...) was picked - must stay 0
         int aiFlawedUses = 0;        // times an AI-flawed move (Explosion, Trick, ...) was picked - now penalised
         int ohkoUses = 0;            // times an OHKO move (Fissure, Sheer Cold, ...) was picked - now penalised
-        int solarOnNonSun = 0;       // SolarBeam / Solar Blade picks on a mon that cannot guarantee sun (info only)
+        int solarOnNonSun = 0;       // SolarBeam / Solar Blade picks on a mon that cannot guarantee sun (must be 0)
         int doublesFormatMons = 0;   // mons in a genuine double/multi battle (ALWAYS multi-battle status)
         int doublesMoveUsesInDoubles = 0; // doubles-support moves kept on those double/multi-battle mons
         int committedDamagingMoves = 0;   // damaging moves on physical/special-committed attackers (raw base stats)
@@ -432,6 +438,14 @@ public class BetterMovesetsRandomizerTest {
                 // level-appropriate by definition and may legitimately exceed the mon's soft power tier.
                 Set<Integer> naturalMoves = naturalLevelUpMoves(movesLearnt, altFormesCanDiffer, pk, tp.getLevel());
                 Set<Integer> movesThisMon = new HashSet<>();
+                // Complete move set gathered up front, so co-occurrence checks (e.g. Sunny Day + a sun nuke) are
+                // order-independent - movesThisMon is only complete after the per-move loop below.
+                Set<Integer> allMovesThisMon = new HashSet<>();
+                for (int mid : tp.getMoves()) {
+                    if (mid != 0) {
+                        allMovesThisMon.add(mid);
+                    }
+                }
                 int nonZero = 0;
                 int monAttackMoves = 0; // attacking moves on THIS mon (boss offensive-breadth tally)
                 StringBuilder line = new StringBuilder("  [" + tierOf(tr) + "] L" + tp.getLevel() + " "
@@ -484,7 +498,7 @@ public class BetterMovesetsRandomizerTest {
                     if (!movesThisMon.add(moveID)) {
                         violations.add(romName + ": duplicate move " + moveName + " on " + pk.getName());
                     }
-                    String weather = weatherRedundancy(moveID, pk, ability);
+                    String weather = weatherRedundancy(moveID, pk, ability, allMovesThisMon);
                     if (weather != null) {
                         violations.add(romName + ": " + weather);
                     }
@@ -667,10 +681,16 @@ public class BetterMovesetsRandomizerTest {
                     }
                 }
                 checkEnablerDependencies(movesThisMon, allMoves, pk, romName, violations);
-                // SolarBeam / Solar Blade skip the charge penalty only on a sun-guaranteed mon (sun-setter ability
-                // or a Sunny Day it also carries). Count picks that lack both - not a violation (the penalty just
-                // makes them rare wildcards, it does not ban them), but tracked as evidence the exemption is scoped.
-                if (movesThisMon.contains(MoveIDs.solarBeam) || movesThisMon.contains(MoveIDs.solarBlade)) {
+                // SolarBeam / Solar Blade are sun-gated: allowed only on a sun-guaranteed mon (sun-setter ability
+                // or a Sunny Day it also carries). Tally any pick lacking both - asserted to be 0 below (the enabler
+                // enforcement drops an orphaned nuke; the practical-value penalty separately keeps sun picks rare).
+                // Only the randomizer's own authored output is in scope. Trainers it skips (shouldNotGetBuffs, e.g.
+                // scripted tutorial/rival battles) and empty-pool mons handed back for their natural level-up moveset
+                // keep their VANILLA moves, which can include Game Freak's own sun-less SolarBeam (a real vanilla
+                // troll-set the randomizer never touched) - not a gate failure.
+                boolean randomized = !tr.shouldNotGetBuffs() && !tp.isResetMoves();
+                if (randomized
+                        && (movesThisMon.contains(MoveIDs.solarBeam) || movesThisMon.contains(MoveIDs.solarBlade))) {
                     boolean sun = SUN_SETTER_ABILITIES.contains(ability) || movesThisMon.contains(MoveIDs.sunnyDay);
                     if (!sun) {
                         solarOnNonSun++;
@@ -725,6 +745,12 @@ public class BetterMovesetsRandomizerTest {
         System.out.printf("     practical-value: %d pure-charge pick(s) (%d SolarBeam/Solar Blade on non-sun mons), "
                         + "%d recharge pick(s), across %d Pokemon%n",
                 pureChargeUses, solarOnNonSun, rechargeUses, tpCount);
+        // HARD invariant (mirrors the AI-unusable strip below): after the sun-enabler gate, SolarBeam / Solar Blade
+        // may NEVER appear on a mon that cannot guarantee sun - the enabler enforcement drops an orphaned nuke.
+        if (solarOnNonSun > 0) {
+            violations.add(String.format("%s: %d SolarBeam/Solar Blade pick(s) on a non-sun mon"
+                    + " - sun-enabler gate missing/broken", romName, solarOnNonSun));
+        }
         // Soft guarantee: no single pure-charge or recharge move should be a common pick under the penalty. This
         // is looser than a hard per-appearance ban (the moves stay legal rare surprises) but catches a missing or
         // broken practical-value weight, which would let a flawed strong move flood the slots again.
@@ -940,11 +966,14 @@ public class BetterMovesetsRandomizerTest {
         }
     }
 
-    // Returns a violation description if this weather move is redundant on the Pokemon, else null.
-    private String weatherRedundancy(int moveID, Species pk, int ability) {
+    // Returns a violation description if this weather move is redundant on the Pokemon, else null. Sunny Day has
+    // a third legitimate case beyond Fire type / sun ability: it enables a sun-dependent nuke (SolarBeam / Solar
+    // Blade) carried in the same set. That co-occurrence exception still catches a lone Sunny Day off such a mon.
+    private String weatherRedundancy(int moveID, Species pk, int ability, Set<Integer> movesOnMon) {
         boolean ok = switch (moveID) {
             case MoveIDs.rainDance -> hasType(pk, Type.WATER) || RAIN_ABILITIES.contains(ability);
-            case MoveIDs.sunnyDay -> hasType(pk, Type.FIRE) || SUN_ABILITIES.contains(ability);
+            case MoveIDs.sunnyDay -> hasType(pk, Type.FIRE) || SUN_ABILITIES.contains(ability)
+                    || !Collections.disjoint(movesOnMon, SUN_DEPENDENT_MOVES);
             case MoveIDs.sandstorm -> hasType(pk, Type.ROCK) || hasType(pk, Type.GROUND)
                     || hasType(pk, Type.STEEL) || SAND_ABILITIES.contains(ability);
             case MoveIDs.hail -> hasType(pk, Type.ICE) || HAIL_ABILITIES.contains(ability);

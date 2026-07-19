@@ -73,6 +73,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 currentSpeciesNumber = pk.getNumber();
                 int ability = hasAbilities ? romHandler.getAbilityForTrainerPokemon(tp) : 0;
 
+                // A mon with no standalone Sunny Day payoff (not Fire, no sun ability) that can still learn a
+                // sun-dependent nuke (SolarBeam / Solar Blade) keeps Sunny Day solely to enable that nuke - see
+                // isSituationalStatusRedundant (kept in pool) and isDependencyUnmet (force-dropped if the nuke is
+                // not also picked, so it never appears alone off a Fire / sun-ability mon).
+                currentSunnyDayNeedsSolar =
+                        movesAtLevel.stream().anyMatch(mv -> SUN_DEPENDENT_MOVES.contains(mv.number))
+                        && !SUN_SETTER_ABILITIES.contains(ability)
+                        && !(hasType(pk, Type.FIRE) || SUN_BENEFIT_ABILITIES.contains(ability));
+
                 // Strip intrinsically-redundant situational status moves (weather / Trick Room) up front, so they
                 // cannot slip in via a small movepool or the trim / fallback paths that skip the per-slot gate.
                 movesAtLevel.removeIf(mv -> isSituationalStatusRedundant(mv, pk, ability));
@@ -91,7 +100,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // while the user sleeps (Rest), and Spit Up and Swallow consume Stockpile counters. If a dependent's
                 // enabler is not even in the pool, strip it before it can claim a slot; the post-pass below then
                 // guarantees the dependency even when the enabler is available but goes unpicked.
-                stripUnsupportedDependentMoves(movesAtLevel);
+                stripUnsupportedDependentMoves(movesAtLevel, ability);
 
                 // In single battles, drop moves that only pay off with an ally / multiple targets (Follow Me,
                 // Rage Powder, Wide Guard, Helping Hand, ...). Done up front so they cannot slip through the
@@ -254,6 +263,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // so the six pick lambdas can consult the tally without threading the Species through every picker.
     private final Map<Integer, Map<Integer, Integer>> speciesMoveUsage = new HashMap<>();
     private int currentSpeciesNumber = -1;
+
+    // Set once per mon (see randomizeTrainerMovesets). True when this mon has no standalone Sunny Day payoff
+    // (not Fire, no sun ability) yet can learn a sun-dependent nuke, so Sunny Day is kept only to enable that
+    // nuke and is force-dropped by the enabler enforcement unless the nuke is also picked.
+    private boolean currentSunnyDayNeedsSolar = false;
 
     // Geometric decay per prior use of this move on this species this run. The primary tuning knob here -
     // calibrate against a fresh log so a high-appearance species' top move lands around 55-65% (moderate: keep
@@ -596,17 +610,25 @@ public class TrainerMovesetRandomizer extends Randomizer {
             MoveIDs.hypnosis, MoveIDs.sleepPowder, MoveIDs.spore, MoveIDs.sing,
             MoveIDs.grassWhistle, MoveIDs.lovelyKiss, MoveIDs.darkVoid, MoveIDs.yawn);
 
+    // Sun-dependent nukes: SolarBeam / Solar Blade skip their charge turn only under sun, so without a sun source
+    // they are a wasted turn. Guaranteed sun comes from a Sunny Day move in the set (the enabler below) or a
+    // sun-setting ability (handled as a special case in isDependencyUnmet).
+    private static final Set<Integer> SUN_DEPENDENT_MOVES = Set.of(MoveIDs.solarBeam, MoveIDs.solarBlade);
+
     // Moves that accomplish nothing unless an "enabler" move is also known: Snore and Sleep Talk only act while the
-    // user sleeps (Rest), Spit Up and Swallow consume Stockpile counters, and Dream Eater and Nightmare only work on
-    // a sleeping target (any sleep-inducer). Each may be selected only when at least one of its enablers is present
-    // in the same moveset. Maps dependent move -> the set of enablers, ANY of which satisfies the dependency.
+    // user sleeps (Rest), Spit Up and Swallow consume Stockpile counters, Dream Eater and Nightmare only work on a
+    // sleeping target (any sleep-inducer), and SolarBeam / Solar Blade need Sunny Day (or a sun ability - see
+    // isDependencyUnmet) to skip their charge turn. Each may be selected only when at least one of its enablers is
+    // present in the same moveset. Maps dependent move -> the set of enablers, ANY of which satisfies the dependency.
     private static final Map<Integer, Set<Integer>> DEPENDENT_MOVE_ENABLERS = Map.of(
             MoveIDs.snore, Set.of(MoveIDs.rest),
             MoveIDs.sleepTalk, Set.of(MoveIDs.rest),
             MoveIDs.spitUp, Set.of(MoveIDs.stockpile),
             MoveIDs.swallow, Set.of(MoveIDs.stockpile),
             MoveIDs.dreamEater, SLEEP_INDUCING_MOVES,
-            MoveIDs.nightmare, SLEEP_INDUCING_MOVES);
+            MoveIDs.nightmare, SLEEP_INDUCING_MOVES,
+            MoveIDs.solarBeam, Set.of(MoveIDs.sunnyDay),
+            MoveIDs.solarBlade, Set.of(MoveIDs.sunnyDay));
 
     // Doubles-support moves that only pay off with an ally or multiple targets, so they are dead weight (or
     // actively harmful, e.g. Heal Pulse on the lone opponent) in a single battle and get stripped in singles.
@@ -939,7 +961,13 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 if (SUN_SETTER_ABILITIES.contains(ability)) {
                     return true;
                 }
-                return !(hasType(pk, Type.FIRE) || SUN_BENEFIT_ABILITIES.contains(ability));
+                if (hasType(pk, Type.FIRE) || SUN_BENEFIT_ABILITIES.contains(ability)) {
+                    return false;
+                }
+                // No standalone payoff: keep Sunny Day only to enable a sun-dependent nuke this mon can learn.
+                // The enabler enforcement then drops it unless that nuke is also picked, so it never appears alone
+                // off a Fire / sun-ability mon (the existing standalone guard above stays fully in force).
+                return !currentSunnyDayNeedsSolar;
             case MoveIDs.sandstorm:
                 if (SAND_SETTER_ABILITIES.contains(ability)) {
                     return true;
@@ -1230,15 +1258,30 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return moveNumber == MoveIDs.batonPass || DEPENDENT_MOVE_ENABLERS.containsKey(moveNumber);
     }
 
-    private void stripUnsupportedDependentMoves(List<Move> pool) {
+    // Whether a move's enabler dependency is unmet given the moves present and this mon's ability. Two special
+    // cases beyond the static map: a sun-setting ability satisfies a sun-dependent nuke on its own (no Sunny Day
+    // move needed), and Sunny Day itself becomes dependent on a sun nuke only on a mon that has no standalone sun
+    // payoff (currentSunnyDayNeedsSolar) - so on such a mon Sunny Day and the nuke appear together or not at all.
+    private boolean isDependencyUnmet(int moveNumber, Set<Integer> presentMoves, int ability) {
+        if (moveNumber == MoveIDs.sunnyDay) {
+            return currentSunnyDayNeedsSolar && Collections.disjoint(presentMoves, SUN_DEPENDENT_MOVES);
+        }
+        Set<Integer> enablers = enablersFor(moveNumber);
+        if (enablers == null) {
+            return false;
+        }
+        if (SUN_DEPENDENT_MOVES.contains(moveNumber) && SUN_SETTER_ABILITIES.contains(ability)) {
+            return false;
+        }
+        return Collections.disjoint(presentMoves, enablers);
+    }
+
+    private void stripUnsupportedDependentMoves(List<Move> pool, int ability) {
         Set<Integer> present = new HashSet<>();
         for (Move mv : pool) {
             present.add(mv.number);
         }
-        pool.removeIf(mv -> {
-            Set<Integer> enablers = enablersFor(mv.number);
-            return enablers != null && Collections.disjoint(present, enablers);
-        });
+        pool.removeIf(mv -> isDependencyUnmet(mv.number, present, ability));
     }
 
     // Final cross-slot guarantee: drop any dependent whose enabler did not make the chosen set, then backfill to
@@ -1250,10 +1293,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         for (Move mv : picked) {
             pickedNumbers.add(mv.number);
         }
-        boolean removed = picked.removeIf(mv -> {
-            Set<Integer> enablers = enablersFor(mv.number);
-            return enablers != null && Collections.disjoint(pickedNumbers, enablers);
-        });
+        boolean removed = picked.removeIf(mv -> isDependencyUnmet(mv.number, pickedNumbers, ability));
         if (!removed) {
             return;
         }
