@@ -96,17 +96,19 @@ public class MovesetProfileRandomizerTest {
     }
 
     /**
-     * Calibrates the boss STAB much-weaker cull margin ({@link TrainerMovesetRandomizer#BOSS_STAB_MAX_POWER_GAP});
-     * a large value (e.g. 999) effectively disables the cull.
-     * <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepStabGap" -Dbm.stabgap=999,50,40,30,20 }</pre>
+     * Calibrates the boss STAB hard floor fraction ({@link TrainerMovesetRandomizer#POWER_FLOOR_FRACTION});
+     * a small value (e.g. 0.1) effectively disables the cull, a large one (e.g. 0.95) makes it very strict.
+     * Note this fraction is shared with the soft floor used by every other slot, so a sweep here also shifts
+     * coverage/wildcard/best-damaging picks - watch printSummary alongside printWeakStab for side effects.
+     * <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepStabFloor" -Dbm.stabfloor=0.1,0.5,0.65,0.75,0.85 }</pre>
      */
     @Test
-    public void sweepStabGap() {
-        sweep("bm.stabgap",
-                "sweep skipped - pass -Dbm.stabgap=<comma-separated BP margins> to calibrate",
-                v -> TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP = v,
-                () -> TrainerMovesetRandomizer.BOSS_STAB_MAX_POWER_GAP,
-                "BOSS_STAB_MAX_POWER_GAP=%.0f",
+    public void sweepStabFloor() {
+        sweep("bm.stabfloor",
+                "sweep skipped - pass -Dbm.stabfloor=<comma-separated fractions of centerPower> to calibrate",
+                v -> TrainerMovesetRandomizer.POWER_FLOOR_FRACTION = v,
+                () -> TrainerMovesetRandomizer.POWER_FLOOR_FRACTION,
+                "POWER_FLOOR_FRACTION=%.2f",
                 combined -> combined.printWeakStab("  "));
     }
 

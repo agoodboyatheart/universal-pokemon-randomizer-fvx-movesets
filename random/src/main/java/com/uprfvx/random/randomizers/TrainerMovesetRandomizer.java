@@ -414,22 +414,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // Below centerPower * this fraction a move starts losing pick weight; the falloff exponent is tier-scaled so
     // Boss/Important lean firmly to level-appropriate power while Regular trainers keep weaker, more surprising
-    // moves in play (matching their deliberately dumbed-down role).
-    private static final double POWER_FLOOR_FRACTION = 0.75;
+    // moves in play (matching their deliberately dumbed-down role). Also used as the boss-STAB hard floor below
+    // (pickStabMove) - non-final so the calibration harness can sweep it in-process (-Dbm.stabfloor).
+    static double POWER_FLOOR_FRACTION = 0.75;
     private static final double POWER_FLOOR_EXPONENT_BOSS = 2.0;
     private static final double POWER_FLOOR_EXPONENT_REGULAR = 0.8;
-
-    // Boss STAB "much-weaker" cull margin (BP). A boss's STAB slot draws from many same-type moves, most of them weak
-    // (a Water mon: Water Gun/Bubble/Bubblebeam/Water Pulse/Brine/Octazooka vs just Surf/Hydro Pump), so proportional
-    // weightedPick lands on SOME weak move ~1/3 of the time no matter how the per-move soft weights are set - it is a
-    // candidate-mass problem, not a weight problem (verified: neutralising any one soft weight moves the rate <=2pp).
-    // So for bosses only we CULL same-type STABs more than this many BP below the pool's strongest STAB before the
-    // pick, deleting the weak mass. It fires only when a strong STAB exists, so a thin / mono-type pool with only weak
-    // options is untouched (no pool-collapse); the surviving strong STABs are still spread across a team by the
-    // team/species repeat penalties (no mono-type re-stacking). goodWeakMoves are already excluded from the STAB pick
-    // (see pickStabMove), so this margin only culls plain damaging STABs too weak for the pool (Water Gun 40 vs Surf
-    // 90). Regular trainers keep the full loose pool. Non-final so the calibration harness can sweep it in-process.
-    static double BOSS_STAB_MAX_POWER_GAP = 30.0;
 
     // Hard sliding ceiling (pool stage): remove attacking moves too strong for the mon's level. Status / gimmick
     // moves (effective power 0) and the mon's own level-up moves (a signature move learned early) are exempt.
@@ -754,14 +743,17 @@ public class TrainerMovesetRandomizer extends Randomizer {
         if (hasAbilities) {
             candidates = updateMovesConsideringAbilitySynergies(ability, candidates);
         }
-        // Boss-only: drop STABs far weaker than the pool's best so the weak candidate mass cannot capture the pick.
-        // Fires only when a strong STAB exists (the best move always survives, so the list never empties). Regulars
-        // keep the full pool. See BOSS_STAB_MAX_POWER_GAP.
+        // Boss-only: cull STABs below the level-scaled floor (an ABSOLUTE bar, not relative to the pool's best) so
+        // the weak candidate mass cannot capture the pick even when the BP ladder has a big rung (a mono-type Rock
+        // pool: Stone Edge 100 / Head Smash 150 vs Rock Slide 75 / Power Gem 80 / Ancient Power 60 - the old
+        // best-minus-30 cull degenerated to one survivor here, and it deleted special Probopass's Power Gem against
+        // physical Head Smash, forcing an off-category STAB). Keep-best guard: if every candidate sits below the
+        // floor (a thin/mono pool with only weak options - Batch-9 starvation), keep the full list so it never
+        // empties. Regulars keep the full loose pool. See POWER_FLOOR_FRACTION.
         if (bossTier && candidates.size() > 1) {
-            double best = candidates.stream().mapToDouble(mv -> effectivePower(mv, level)).max().orElse(0);
-            double cut = best - BOSS_STAB_MAX_POWER_GAP;
+            double floor = centerPower(level) * POWER_FLOOR_FRACTION;
             List<Move> strong = candidates.stream()
-                    .filter(mv -> effectivePower(mv, level) >= cut)
+                    .filter(mv -> effectivePower(mv, level) >= floor)
                     .collect(Collectors.toList());
             if (!strong.isEmpty()) {
                 candidates = strong;
@@ -773,7 +765,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     * practicalValueWeight(mv, ability, exclude)
                     * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv) * speciesRepeatWeight(mv)
                     * teamRepeatWeight(mv, level, STAB_TEAM_MOVE_REPEAT_PENALTY)
-                    * levelAppropriatenessWeight(mv, level, bossTier)
+                    // The hard floor above already guarantees boss STAB candidates clear POWER_FLOOR_FRACTION, so
+                    // the strict boss exponent here would be redundant (weight 1.0 in the common case); always use
+                    // the looser Regular exponent - it still differentiates within the rare keep-best fallback set.
+                    * levelAppropriatenessWeight(mv, level, false)
                     * (bossTier ? accuracyWeight(mv) : 1.0);
         });
     }
