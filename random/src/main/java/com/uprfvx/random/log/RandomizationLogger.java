@@ -1079,6 +1079,11 @@ public class RandomizationLogger {
                         log.print(", " + getBS("Log.tp.ability") + ": "
                                 + romHandler.abilityName(romHandler.getAbilityForTrainerPokemon(tpk)));
                     }
+                    // Post-randomisation type, so a move/type mismatch (STAB slot vs the mon's actual typing) is
+                    // diagnosable from the log alone without instrumenting the randomizer.
+                    Species tpkSpecies = tpk.getSpecies();
+                    log.print(", Type: " + tpkSpecies.getPrimaryType(false)
+                            + (tpkSpecies.hasSecondaryType(false) ? "/" + tpkSpecies.getSecondaryType(false) : ""));
                     log.print(" - ");
                     boolean first = true;
                     for (int move : tpk.getMoves()) {

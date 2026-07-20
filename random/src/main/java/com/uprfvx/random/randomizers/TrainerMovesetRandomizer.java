@@ -1279,25 +1279,41 @@ public class TrainerMovesetRandomizer extends Randomizer {
         pool.removeIf(mv -> isDependencyUnmet(mv.number, present, ability));
     }
 
-    // Final cross-slot guarantee: drop any dependent whose enabler did not make the chosen set, then backfill to
-    // four with the next-best damaging move. The backfill pool excludes every dependent, or pickBestDamaging could
-    // re-select the move just removed (Snore and Spit Up are themselves valid damaging moves).
+    // Final cross-slot guarantee: drop any dependent whose enabler did not make the chosen set, then backfill with
+    // the next-best damaging move. The backfill pool excludes every dependent, or pickBestDamaging could re-select
+    // the move just removed (Snore and Spit Up are themselves valid damaging moves).
+    //
+    // Backfills are written IN PLACE at the vacated index, highest index first (so a removal never shifts an
+    // index still to be processed) - never appended at the end. List position is the move slot (writeMoves maps
+    // index -> slot directly): appending used to silently promote a later slot's pick into slot 0 whenever the
+    // STAB slot's own pick (e.g. Dream Eater without a sleep enabler present) was the one dropped, which is the
+    // confirmed mechanism behind the "off-type move in the STAB slot" bug (TODO 3 / Jynx).
     private void enforceEnablerDependencies(List<Move> picked, List<Move> distinctPool, int level, int ability,
                                             boolean bossTier) {
         Set<Integer> pickedNumbers = new HashSet<>();
         for (Move mv : picked) {
             pickedNumbers.add(mv.number);
         }
-        boolean removed = picked.removeIf(mv -> isDependencyUnmet(mv.number, pickedNumbers, ability));
-        if (!removed) {
+        List<Integer> unmetIndices = new ArrayList<>();
+        for (int i = 0; i < picked.size(); i++) {
+            if (isDependencyUnmet(picked.get(i).number, pickedNumbers, ability)) {
+                unmetIndices.add(i);
+            }
+        }
+        if (unmetIndices.isEmpty()) {
             return;
         }
         List<Move> backfillPool = distinctPool.stream()
                 .filter(mv -> !isEnablerDependent(mv.number))
                 .collect(Collectors.toList());
-        Move fill;
-        while (picked.size() < 4 && (fill = pickBestDamaging(backfillPool, picked, level, ability, bossTier)) != null) {
-            picked.add(fill);
+        for (int i = unmetIndices.size() - 1; i >= 0; i--) {
+            int idx = unmetIndices.get(i);
+            Move fill = pickBestDamaging(backfillPool, picked, level, ability, bossTier);
+            if (fill != null) {
+                picked.set(idx, fill);
+            } else {
+                picked.remove(idx);
+            }
         }
     }
 
