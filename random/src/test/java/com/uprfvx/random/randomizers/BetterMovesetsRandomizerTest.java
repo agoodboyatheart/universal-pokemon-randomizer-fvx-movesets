@@ -203,6 +203,24 @@ public class BetterMovesetsRandomizerTest {
     // the rate would jump to the unfiltered baseline if it were removed.
     private static final double MISMATCHED_BOOSTER_MAX_RATE = 0.05;
 
+    // Zero-STAB-anywhere guard (Batch 12 TODO 1 fix): a pure single-type mon has no secondary type to fall back
+    // on, so if enforceEnablerDependencies has to backfill its vacated STAB slot (e.g. Dream Eater with no sleep
+    // move present) a type-blind backfill could leave it with no same-type attack in ANY of its 4 slots. Ditto
+    // (Transform only) and Wobbuffet (Counter/Mirror Coat, both AI_UNUSABLE_MOVES and stripped up front) are the
+    // two authentic vanilla cases where the game itself gives a mon zero attacking moves of its own type.
+    private static final Set<Integer> PURE_SINGLE_TYPE_NO_STAB_EXCEPTIONS = Set.of(
+            SpeciesIDs.ditto, SpeciesIDs.wobbuffet);
+
+    // Soft ceiling, not a hard zero: the type-aware backfill still falls back to any-type when a mon has genuinely
+    // no other own-type damaging move anywhere in its pool (natural/TM/HM/tutor/egg) - a keep-best-style guard
+    // mirroring the STAB floor's never-empty pattern. Gen-aware like the other soft-ceiling guards above: Gen 1-2
+    // have far shallower TM/tutor support (Gen 1 has no move tutors at all; both have few TMs and only 1-2 HMs
+    // outside Water/Flying), so more species genuinely have no same-type attack at all - observed up to 17.8%
+    // (Gen 1) / 10.0% (Gen 2) even after wiring HM moves into the pool (see getMoveSelectionPoolAtLevel). Gen 3+
+    // have much deeper TM/tutor/egg-move coverage, observed <=6.6%. Both trip only on a further regression.
+    private static final double ZERO_STAB_ANYWHERE_MAX_RATE = 0.10;
+    private static final double ZERO_STAB_ANYWHERE_MAX_RATE_GEN1_2 = 0.20;
+
     @Test
     public void inspectBetterMovesets() {
         String romsDir = System.getProperty("romsPath");
@@ -414,6 +432,8 @@ public class BetterMovesetsRandomizerTest {
         int regAttackMoveTotal = 0;       // total attacking moves across those mons
         int stabSlotSyntheticUses = 0; // mons whose STAB slot (slot 0) is a type-matching synthetic/delayed move (now barred)
         int mismatchedBoosterMons = 0;        // mons with a single-stat status booster + an opposite-category attack
+        int pureSingleTypeMons = 0;           // randomized pure single-type mons eligible for the zero-STAB-anywhere guard
+        int zeroStabAnywhereMons = 0;         // ... of those, ones with no same-type attack in any of the 4 slots
 
         for (Trainer tr : romHandler.getTrainers()) {
             boolean printThis = printed < SAMPLE_MOVESETS_PER_ROM;
@@ -608,6 +628,20 @@ public class BetterMovesetsRandomizerTest {
                     if (printThis) {
                         System.out.println("     [dup-attack-type] " + pk.getName() + " (" + typeStr(pk)
                                 + ") carries 2+ same-type attacks");
+                    }
+                }
+                // Zero-STAB-anywhere guard: only meaningful for the randomizer's own authored output, and only a
+                // pure single-type mon has no secondary type to fall back on if its own-type attack gets bumped.
+                boolean randomizedMon = !tr.shouldNotGetBuffs() && !tp.isResetMoves();
+                if (randomizedMon && nonZero > 0 && pk.getSecondaryType(false) == null
+                        && !PURE_SINGLE_TYPE_NO_STAB_EXCEPTIONS.contains(pk.getNumber())) {
+                    pureSingleTypeMons++;
+                    if (!attackTypeCounts.containsKey(pk.getPrimaryType(false))) {
+                        zeroStabAnywhereMons++;
+                        if (printThis) {
+                            System.out.println("     [zero-STAB-anywhere] " + pk.getName() + " (" + typeStr(pk)
+                                    + ") has no same-type attack in any slot");
+                        }
                     }
                 }
                 // STAB-slot exclusion (Action 2): the STAB slot is the first move picked (slot 0; enabler-dependency
@@ -822,6 +856,22 @@ public class BetterMovesetsRandomizerTest {
                         "%s: %.1f%% of mons carry a single-stat booster with an opposite-category attack (%d/%d > %.0f%% "
                                 + "cap) - exclusive-category stat-boost gate missing/broken",
                         romName, rate * 100, mismatchedBoosterMons, tpCount, MISMATCHED_BOOSTER_MAX_RATE * 100));
+            }
+        }
+        // Zero-STAB-anywhere guard (Batch 12 TODO 1 fix): a pure single-type mon should virtually always keep at
+        // least one same-type attack. A spike means the type-aware enabler-dependency backfill is missing/broken -
+        // its type-blind predecessor could reassign a pure single-type mon's STAB slot to an off-type move with
+        // nothing left of its own type anywhere in the set.
+        if (pureSingleTypeMons > 20) {
+            double zeroStabRate = (double) zeroStabAnywhereMons / pureSingleTypeMons;
+            double zeroStabCap = gen <= 2 ? ZERO_STAB_ANYWHERE_MAX_RATE_GEN1_2 : ZERO_STAB_ANYWHERE_MAX_RATE;
+            System.out.printf("     zero-STAB-anywhere: %d/%d pure single-type mons (%.1f%%) have no same-type attack%n",
+                    zeroStabAnywhereMons, pureSingleTypeMons, zeroStabRate * 100);
+            if (zeroStabRate > zeroStabCap) {
+                violations.add(String.format(
+                        "%s: %.1f%% of pure single-type mons have zero same-type attack in any slot (%d/%d > %.0f%% "
+                                + "cap) - type-aware enabler backfill or HM pool wiring missing/broken",
+                        romName, zeroStabRate * 100, zeroStabAnywhereMons, pureSingleTypeMons, zeroStabCap * 100));
             }
         }
         // No-duplicate-attacking-type guard: with the guard in place, carrying two attacks of one type should be

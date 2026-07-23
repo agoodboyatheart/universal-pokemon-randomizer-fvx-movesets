@@ -16,7 +16,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private Map<Integer, List<MoveLearnt>> allLevelUpMoves;
     private Map<Integer, List<Integer>> allEggMoves;
     private Map<Species, boolean[]> allTMCompat, allTutorCompat;
-    private List<Integer> allTMMoves, allTutorMoves;
+    // allTMCompat's boolean[] is 1-indexed against allTMMoves (indices 1..allTMMoves.size()) THEN allHMMoves
+    // (allTMMoves.size()+1..+allHMMoves.size()) - one combined TM/HM compatibility array per species.
+    private List<Integer> allTMMoves, allHMMoves, allTutorMoves;
     // Move number -> number of species that can learn it (any source).
     private Map<Integer, Integer> moveAvailability;
     // Cached once per run: romHandler.getTypeTable() rebuilds from ROM on every call.
@@ -1342,13 +1344,21 @@ public class TrainerMovesetRandomizer extends Randomizer {
             perSpecies.computeIfAbsent(e.getKey(), k -> new HashSet<>()).addAll(e.getValue());
         }
 
-        // TM/HM moves (keyed by Species; boolean[] is 1-indexed against allTMMoves).
+        // TM moves (keyed by Species; boolean[] is 1-indexed against allTMMoves).
         for (Map.Entry<Species, boolean[]> e : allTMCompat.entrySet()) {
             Set<Integer> set = perSpecies.computeIfAbsent(e.getKey().getNumber(), k -> new HashSet<>());
             boolean[] compat = e.getValue();
             for (int i = 0; i < allTMMoves.size(); i++) {
                 if (compat[i + 1]) {
                     set.add(allTMMoves.get(i));
+                }
+            }
+            // HM moves (same compat array, indices immediately after the TM range). Previously never
+            // tallied - see the matching pool fix in getMoveSelectionPoolAtLevel for why that starved
+            // some Water/Flying-type mons (e.g. Surf/Waterfall) of their only real STAB.
+            for (int i = 0; i < allHMMoves.size(); i++) {
+                if (compat[allTMMoves.size() + i + 1]) {
+                    set.add(allHMMoves.get(i));
                 }
             }
         }
@@ -1390,6 +1400,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
         if (allTMMoves == null) {
             allTMMoves = romHandler.getTMMoves();
+        }
+        if (allHMMoves == null) {
+            allHMMoves = romHandler.getHMMoves();
         }
         if (allTutorCompat == null && romHandler.hasMoveTutors()) {
             allTutorCompat = romHandler.getMoveTutorCompatibility();
@@ -1474,6 +1487,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 int tmMove = allTMMoves.get(i);
                 if (tmCompat[i + 1]) {
                     moveSelectionPoolAtLevel.add(moves.get(tmMove));
+                }
+            }
+            // HM moves (same compat array, indices immediately after the TM range; 100% availability like TMs).
+            // Previously never added here at all - a trainer mon could never draw Surf/Waterfall/Fly/etc., which
+            // starved some Water/Flying-type mons (e.g. Seel, no natural Water move) of any same-type attack.
+            for (int i = 0; i < allHMMoves.size(); i++) {
+                int hmMove = allHMMoves.get(i);
+                if (tmCompat[allTMMoves.size() + i + 1]) {
+                    moveSelectionPoolAtLevel.add(moves.get(hmMove));
                 }
             }
         }
