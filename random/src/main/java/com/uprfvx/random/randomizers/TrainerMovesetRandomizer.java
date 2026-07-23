@@ -169,7 +169,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
                 // Drop any dependent whose enabler didn't make the final set, then backfill with the next-best
                 // damaging move.
-                enforceEnablerDependencies(picked, distinctPool, level, ability, isBossTier);
+                enforceEnablerDependencies(picked, distinctPool, level, ability, isBossTier,
+                        pk.getPrimaryType(false), pk.getSecondaryType(false));
 
                 writeMoves(tp, picked);
 
@@ -1118,8 +1119,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Backfills are written IN PLACE at the vacated index, highest index first, never appended - list position is
     // the move slot, and appending used to silently promote a later pick into slot 0 whenever the STAB slot's own
     // pick was dropped (the confirmed "off-type move in the STAB slot" bug, TODO 3 / Jynx).
+    //
+    // Index 0 is always the STAB slot (see randomizeTrainerMovesets: pickStabMove's result is picked.add()-ed
+    // first, for both tiers). A high-power STAB is sometimes enabler-dependent itself (Dream Eater needs a
+    // sleep-inducer, Snore needs Rest); when that enabler doesn't survive into the other 3 slots, a type-blind
+    // backfill here silently erases the mon's only same-type attack (Batch 12 TODO 1 - e.g. Espeon losing Dream
+    // Eater to off-type Bite). So slot 0's backfill prefers a same-type damaging replacement when one exists,
+    // falling back to the normal any-type pool only if the mon has no other own-type damaging move at all.
     private void enforceEnablerDependencies(List<Move> picked, List<Move> distinctPool, int level, int ability,
-                                            boolean bossTier) {
+                                            boolean bossTier, Type t1, Type t2) {
         Set<Integer> pickedNumbers = new HashSet<>();
         for (Move mv : picked) {
             pickedNumbers.add(mv.number);
@@ -1136,9 +1144,13 @@ public class TrainerMovesetRandomizer extends Randomizer {
         List<Move> backfillPool = distinctPool.stream()
                 .filter(mv -> !isEnablerDependent(mv.number))
                 .collect(Collectors.toList());
+        List<Move> ownTypeBackfillPool = backfillPool.stream()
+                .filter(mv -> mv.type == t1 || (t2 != null && mv.type == t2))
+                .collect(Collectors.toList());
         for (int i = unmetIndices.size() - 1; i >= 0; i--) {
             int idx = unmetIndices.get(i);
-            Move fill = pickBestDamaging(backfillPool, picked, level, ability, bossTier);
+            List<Move> pool = idx == 0 && !ownTypeBackfillPool.isEmpty() ? ownTypeBackfillPool : backfillPool;
+            Move fill = pickBestDamaging(pool, picked, level, ability, bossTier);
             if (fill != null) {
                 picked.set(idx, fill);
             } else {
