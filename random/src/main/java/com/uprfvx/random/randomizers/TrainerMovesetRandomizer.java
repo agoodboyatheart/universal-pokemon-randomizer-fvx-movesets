@@ -442,7 +442,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private static final Set<Integer> AI_UNUSABLE_MOVES = Set.of(
             MoveIDs.feint, MoveIDs.suckerPunch, MoveIDs.counter, MoveIDs.mirrorCoat,
             MoveIDs.metalBurst, MoveIDs.bide, MoveIDs.fling, MoveIDs.naturalGift,
-            MoveIDs.lastResort);
+            MoveIDs.lastResort, MoveIDs.falseSwipe);
 
     // Tier 2 - WEIGHTED penalty: the AI can fire these but usually to little effect (self-KO it can't value,
     // delayed/relative-HP damage it can't time, a Perish/Belly-Drum plan it can't coordinate). They never outright
