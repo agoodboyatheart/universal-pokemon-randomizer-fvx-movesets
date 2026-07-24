@@ -404,6 +404,7 @@ public class BetterMovesetsRandomizerTest {
         int pureChargeUses = 0;      // times a pure charge move (SolarBeam, Sky Attack, ...) was picked - now penalised
         int rechargeUses = 0;        // times a recharge move (Hyper Beam, Giga Impact) was picked - now penalised
         int aiUnusableUses = 0;      // times an AI-unusable move (Feint, Counter, ...) was picked - must stay 0
+        int counterSpecialistUses = 0; // times Counter/Mirror Coat was picked on Wobbuffet/Wynaut - sanctioned exception
         int aiFlawedUses = 0;        // times an AI-flawed move (Explosion, Trick, ...) was picked - now penalised
         int ohkoUses = 0;            // times an OHKO move (Fissure, Sheer Cold, ...) was picked - now penalised
         int solarOnNonSun = 0;       // SolarBeam / Solar Blade picks on a mon that cannot guarantee sun (must be 0)
@@ -487,7 +488,21 @@ public class BetterMovesetsRandomizerTest {
                         rechargeUses++;
                     }
                     if (AI_UNUSABLE_MOVES.contains(moveID)) {
-                        aiUnusableUses++;
+                        // Sanctioned exception: Wobbuffet/Wynaut's real (unchanged) learnsets are otherwise almost
+                        // nothing but Splash/Charm/status moves, so Counter/Mirror Coat - their purpose-built kit -
+                        // are deliberately let through for just these two species (TrainerMovesetRandomizer). Every
+                        // other AI_UNUSABLE_MOVES entry, and Counter/Mirror Coat on every other species, stays a
+                        // hard violation.
+                        boolean isCounterSpecialistException =
+                                (pk.getNumber() == SpeciesIDs.wobbuffet || pk.getNumber() == SpeciesIDs.wynaut)
+                                        && (moveID == MoveIDs.counter || moveID == MoveIDs.mirrorCoat);
+                        if (isCounterSpecialistException) {
+                            counterSpecialistUses++;
+                        } else {
+                            aiUnusableUses++;
+                            violations.add(romName + ": AI-unusable move " + allMoves.get(moveID).name
+                                    + " on " + pk.getName() + " - pool strip missing/broken");
+                        }
                     }
                     if (AI_FLAWED_MOVES.contains(moveID)) {
                         aiFlawedUses++;
@@ -798,18 +813,14 @@ public class BetterMovesetsRandomizerTest {
                     violations);
         }
         // Batch 7 - AI move usability. AI-unusable moves are stripped from the pool up front, so they must NEVER
-        // appear on a buffed mon (a HARD invariant, checked at any sample size). AI-flawed moves are only heavily
-        // penalised, so they stay rare surprises - checked against a soft ceiling like the practical-value block.
-        System.out.printf("     ai-usability: %d unusable pick(s) (must be 0), %d flawed pick(s), across %d Pokemon%n",
-                aiUnusableUses, aiFlawedUses, tpCount);
-        if (aiUnusableUses > 0) {
-            for (Map.Entry<Integer, Integer> e : moveCounts.entrySet()) {
-                if (AI_UNUSABLE_MOVES.contains(e.getKey())) {
-                    violations.add(String.format("%s: AI-unusable move '%s' appeared %d time(s) - pool strip missing/broken",
-                            romName, allMoves.get(e.getKey()).name, e.getValue()));
-                }
-            }
-        }
+        // appear on a buffed mon (a HARD invariant, checked at any sample size) - except Counter/Mirror Coat on
+        // Wobbuffet/Wynaut, a sanctioned species-specific carve-out tallied separately above. AI-flawed moves are
+        // only heavily penalised, so they stay rare surprises - checked against a soft ceiling like the
+        // practical-value block. Violations for genuine (non-exempt) AI-unusable picks are added inline above,
+        // where the carrying species is known.
+        System.out.printf("     ai-usability: %d unusable pick(s) (must be 0), %d Counter/Mirror Coat specialist "
+                        + "pick(s) (Wobbuffet/Wynaut exception), %d flawed pick(s), across %d Pokemon%n",
+                aiUnusableUses, counterSpecialistUses, aiFlawedUses, tpCount);
         if (tpCount > 100) {
             double flawedCap = gen == 1 ? AI_FLAWED_MOVE_MAX_RATE_GEN1 : AI_FLAWED_MOVE_MAX_RATE;
             checkRateCap(moveCounts, tpCount, allMoves,

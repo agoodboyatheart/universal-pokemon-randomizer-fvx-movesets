@@ -84,7 +84,16 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // AI-unusable moves (Feint, Counter, Focus Punch, ...): the greedy single-turn ROM battle AI can't
                 // predict the player or plan multi-turn, so these are dead weight in its hands. Strip before any
                 // slot logic to close all three doors (attack, status, wildcard) at once.
-                movesAtLevel.removeIf(mv -> AI_UNUSABLE_MOVES.contains(mv.number));
+                // Exception: Wobbuffet/Wynaut's real (unchanged) learnsets are otherwise almost nothing but
+                // Splash/Charm/status moves, so a blanket ban leaves them with no usable attacking option at all -
+                // Counter/Mirror Coat ARE their purpose-built moveset. Let just those two moves through for just
+                // these two species, and only when species learnsets are UNCHANGED - with learnsets randomised
+                // they get a normal varied pool and don't need the carve-out. Every other AI_UNUSABLE_MOVES entry
+                // stays banned for them, and Counter/Mirror Coat stay banned for everyone else.
+                boolean isCounterSpecialist = (pk.getNumber() == SpeciesIDs.wobbuffet || pk.getNumber() == SpeciesIDs.wynaut)
+                        && settings.getMovesetsMod() == Settings.MovesetsMod.UNCHANGED;
+                movesAtLevel.removeIf(mv -> AI_UNUSABLE_MOVES.contains(mv.number)
+                        && !(isCounterSpecialist && (mv.number == MoveIDs.counter || mv.number == MoveIDs.mirrorCoat)));
 
                 // Moves dead weight without an "enabler" (Sleep Talk/Snore need Rest, Spit Up/Swallow need
                 // Stockpile): strip if the enabler isn't even in the pool. The post-pass below covers the case
