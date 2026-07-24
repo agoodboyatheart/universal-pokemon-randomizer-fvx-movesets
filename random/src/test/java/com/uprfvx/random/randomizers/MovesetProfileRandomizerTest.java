@@ -164,6 +164,24 @@ public class MovesetProfileRandomizerTest {
                 combined -> combined.printRoleCoverage("  "));
     }
 
+    /**
+     * Calibrates the team-level "missing role" pull ({@link TrainerMovesetRandomizer#ROLE_COVERAGE_BONUS}).
+     * Compare the small(<3) vs normal split in printRoleCoverage across values: small-team rate should stay flat
+     * (the pull is disabled there by design) while normal-team rate should rise with the bonus. If small-team
+     * rate rises too, {@link TrainerMovesetRandomizer#ROLE_COVERAGE_MIN_TEAM_SIZE} isn't being read correctly -
+     * that's a bug, not a calibration question.
+     * <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepRoleCoverageBonus" -Dbm.rolecoverage=1.0,2.0,3.0,4.0 }</pre>
+     */
+    @Test
+    public void sweepRoleCoverageBonus() {
+        sweep("bm.rolecoverage",
+                "sweep skipped - pass -Dbm.rolecoverage=<comma-separated bonus values> to calibrate",
+                v -> TrainerMovesetRandomizer.ROLE_COVERAGE_BONUS = v,
+                () -> TrainerMovesetRandomizer.ROLE_COVERAGE_BONUS,
+                "ROLE_COVERAGE_BONUS=%.1f",
+                combined -> combined.printRoleCoverage("  "));
+    }
+
     // Re-runs the whole profile once per comma-separated value in the -D<prop> spec, temporarily setting a tuning
     // knob to each so the labelled tables can be compared without a rebuild. The original knob value is restored.
     private void sweep(String prop, String skipHint, DoubleConsumer knobSetter, DoubleSupplier knobGetter,

@@ -51,7 +51,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             boolean doubles = isDoublesFormatBattle(t);
 
             // Per-trainer memory of earlier teammates' moves/types, so choosy slots can avoid repeats.
-            teamUsage = new TeamMoveUsage();
+            teamUsage = new TeamMoveUsage(t.getPokemon().size());
 
             // Strongest mon first, so the ace sees the unpenalised pool before teamUsage demotes repeats
             // onto weaker teammates; a stable sort on a copy leaves the trainer's actual team order untouched.
@@ -229,6 +229,13 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private static final class TeamMoveUsage {
         private final Map<Integer, Integer> moveCounts = new HashMap<>();
         private final Map<Type, Integer> typeCounts = new HashMap<>();
+        private final boolean rolePullEligible;
+        private boolean hasSpeedControl;
+        private boolean hasPriorityAnswer;
+
+        TeamMoveUsage(int teamSize) {
+            this.rolePullEligible = teamSize >= ROLE_COVERAGE_MIN_TEAM_SIZE;
+        }
 
         int moveUses(int moveNumber) {
             return moveCounts.getOrDefault(moveNumber, 0);
@@ -243,6 +250,22 @@ public class TrainerMovesetRandomizer extends Randomizer {
             if (mv.type != null && effectivePower(mv, level) > 0) {
                 typeCounts.merge(mv.type, 1, Integer::sum);
             }
+            if (SPEED_CONTROL_MOVES.contains(mv.number)) {
+                hasSpeedControl = true;
+            }
+            if (mv.priority > 0 && effectivePower(mv, level) > 0) {
+                hasPriorityAnswer = true;
+            }
+        }
+
+        // True only while the team is below full size AND hasn't been given this role yet - decays to false
+        // (neutral pull) the instant a teammate satisfies it, and never applies at all on <3-mon rosters.
+        boolean needsSpeedControlPull() {
+            return rolePullEligible && !hasSpeedControl;
+        }
+
+        boolean needsPriorityPull() {
+            return rolePullEligible && !hasPriorityAnswer;
         }
     }
 
@@ -742,6 +765,29 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return SPEED_CONTROL_MOVES.contains(mv.number) ? SPEED_CONTROL_BONUS : 1.0;
     }
 
+    // Extra multiplier stacked on top of the base per-mon bonus while the team hasn't been given this role yet;
+    // decays to 1.0 (neutral) once satisfied. Non-final so MovesetProfileRandomizerTest can sweep it
+    // (-Dbm.rolecoverage). Calibrated to 3.0 from a 7-ROM sweep (1.0/2.0/3.0/4.0, via sweepRoleCoverageBonus):
+    // 2.0 only weakly separated the priority-answer rate from baseline (+5pp), while 3.0 gave a clear, robust
+    // lift for BOTH roles (speed-control +17pp, priority +13pp over baseline) well short of saturation, and
+    // 4.0's marginal gain over 3.0 was much smaller (diminishing returns). Tuning knob.
+    static double ROLE_COVERAGE_BONUS = 3.0;
+
+    private double speedControlTeamPull(Move mv) {
+        if (teamUsage == null || !teamUsage.needsSpeedControlPull() || !SPEED_CONTROL_MOVES.contains(mv.number)) {
+            return 1.0;
+        }
+        return ROLE_COVERAGE_BONUS;
+    }
+
+    private double priorityTeamPull(Move mv, int level) {
+        if (teamUsage == null || !teamUsage.needsPriorityPull()
+                || !(mv.priority > 0 && effectivePower(mv, level) > 0)) {
+            return 1.0;
+        }
+        return ROLE_COVERAGE_BONUS;
+    }
+
     // Slot 3: a non-redundant good status move, picked FLAT among eligible candidates. The stat-boost gate lives
     // in isRedundantStatusMove: a single-category booster is eligible only if every attack picked shares its
     // category, so a mixed set gets neither. Beyond that gate no synergy or accuracy lean applies, so boss
@@ -760,7 +806,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // Flat pick, tempered by teamRepeatWeight (status has effectivePower 0, so only the exact-move tally
         // applies) and availabilityWeight so universal status TMs (Toxic, Protect, ...) don't flood the slot.
         return weightedPick(candidates, mv -> teamRepeatWeight(mv, level) * availabilityWeight(mv)
-                * aiUsabilityWeight(mv) * speedControlWeight(mv));
+                * aiUsabilityWeight(mv) * speedControlWeight(mv) * speedControlTeamPull(mv));
     }
 
     // Global fallback for any unfillable slot: a damaging move softly weighted toward stronger picks, with the hard
@@ -981,7 +1027,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
                             * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv)
                             * ohkoWeight(mv) * levelAppropriatenessWeight(mv, level, isBossTier)
                             * (isBossTier && isAttackSlotEligible(mv, level) ? bossWildcardDamagingBonus : 1.0)
-                            * (isBossTier ? priorityMoveWeight(mv, level) : 1.0));
+                            * (isBossTier ? priorityMoveWeight(mv, level) : 1.0)
+                            * (isBossTier ? priorityTeamPull(mv, level) : 1.0));
             picked.add(move);
             if (picked.size() >= 4) {
                 break;

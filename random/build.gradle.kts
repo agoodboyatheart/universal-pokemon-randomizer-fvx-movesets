@@ -263,6 +263,8 @@ tasks.register<Test>("testROMs") {
     System.getProperty("bm.speedcontrol")?.let { systemProperty("bm.speedcontrol", it) }
     // Forward -Dbm.prioritybonus so the harness's priority-move-bonus sweep reaches the forked test JVM.
     System.getProperty("bm.prioritybonus")?.let { systemProperty("bm.prioritybonus", it) }
+    // Forward -Dbm.rolecoverage so the harness's team-role-coverage-bonus sweep reaches the forked test JVM.
+    System.getProperty("bm.rolecoverage")?.let { systemProperty("bm.rolecoverage", it) }
 
     shouldRunAfter("test")
 
