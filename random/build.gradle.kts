@@ -259,6 +259,8 @@ tasks.register<Test>("testROMs") {
     System.getProperty("bm.stabfloor")?.let { systemProperty("bm.stabfloor", it) }
     // Forward -Dbm.accuracyexp so the harness's accuracy-reliability-exponent sweep reaches the forked test JVM.
     System.getProperty("bm.accuracyexp")?.let { systemProperty("bm.accuracyexp", it) }
+    // Forward -Dbm.speedcontrol so the harness's speed-control-bonus sweep reaches the forked test JVM.
+    System.getProperty("bm.speedcontrol")?.let { systemProperty("bm.speedcontrol", it) }
 
     shouldRunAfter("test")
 

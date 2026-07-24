@@ -721,6 +721,27 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return false;
     }
 
+    // Moves that meaningfully invert or cripple the opponent's speed order — a Kaizo-hack staple for making a
+    // slower/bulkier boss threaten first. All six are already in GlobalConstants.goodStatusMoves (confirmed by
+    // reading the list), so they already reach pickStatusMove's candidate pool unchanged; this only adds a lean
+    // toward them within it. Trick Room deliberately excluded — it's already gated by isSituationalStatusRedundant
+    // to survive only on mons that genuinely benefit (own Speed <= TRICK_ROOM_MAX_SPEED), so it needs no separate
+    // handling here.
+    static final Set<Integer> SPEED_CONTROL_MOVES = Set.of(
+            MoveIDs.thunderWave, MoveIDs.glare, MoveIDs.stunSpore, MoveIDs.scaryFace,
+            MoveIDs.cottonSpore, MoveIDs.tailwind);
+    // Non-final so MovesetProfileRandomizerTest can sweep it (-Dbm.speedcontrol); treat as a constant in
+    // production. Tuning knob, starting point mirrors the existing wildcard/coverage bonus scale (2.0-5.0).
+    static double SPEED_CONTROL_BONUS = 2.5;
+    // Below this team size, Task 4's team-level "missing role" pull is disabled entirely. Declared here (not in
+    // Task 4) because the profile harness's small/normal split metric (Step 3 below) needs it from the start -
+    // Task 4 is the task that first makes production code actually READ it (via TeamMoveUsage).
+    static int ROLE_COVERAGE_MIN_TEAM_SIZE = 3;
+
+    private double speedControlWeight(Move mv) {
+        return SPEED_CONTROL_MOVES.contains(mv.number) ? SPEED_CONTROL_BONUS : 1.0;
+    }
+
     // Slot 3: a non-redundant good status move, picked FLAT among eligible candidates. The stat-boost gate lives
     // in isRedundantStatusMove: a single-category booster is eligible only if every attack picked shares its
     // category, so a mixed set gets neither. Beyond that gate no synergy or accuracy lean applies, so boss
@@ -739,7 +760,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // Flat pick, tempered by teamRepeatWeight (status has effectivePower 0, so only the exact-move tally
         // applies) and availabilityWeight so universal status TMs (Toxic, Protect, ...) don't flood the slot.
         return weightedPick(candidates, mv -> teamRepeatWeight(mv, level) * availabilityWeight(mv)
-                * aiUsabilityWeight(mv));
+                * aiUsabilityWeight(mv) * speedControlWeight(mv));
     }
 
     // Global fallback for any unfillable slot: a damaging move softly weighted toward stronger picks, with the hard

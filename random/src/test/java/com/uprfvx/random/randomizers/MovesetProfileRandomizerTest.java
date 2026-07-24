@@ -81,6 +81,7 @@ public class MovesetProfileRandomizerTest {
             p.printThinPoolBosses("  ");
             p.printAceVsTeam("  ");
             p.printWeakStab("  ");
+            p.printRoleCoverage("  ");
         }
         assumeTrue(loaded > 0, "No loadable ROM found in " + ROMS_PATH);
     }
@@ -130,6 +131,22 @@ public class MovesetProfileRandomizerTest {
                 combined -> combined.printWeakStab("  "));
     }
 
+    /**
+     * Calibrates the speed-control status-slot bonus ({@link TrainerMovesetRandomizer#SPEED_CONTROL_BONUS}).
+     * Watch printRoleCoverage's speed-control rate (target: meaningfully above baseline without every boss
+     * looking identical — cross-check a few individual game blocks via printSummary, not just the combined total).
+     * <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepSpeedControlBonus" -Dbm.speedcontrol=1.0,2.5,4.0,6.0 }</pre>
+     */
+    @Test
+    public void sweepSpeedControlBonus() {
+        sweep("bm.speedcontrol",
+                "sweep skipped - pass -Dbm.speedcontrol=<comma-separated bonus values> to calibrate",
+                v -> TrainerMovesetRandomizer.SPEED_CONTROL_BONUS = v,
+                () -> TrainerMovesetRandomizer.SPEED_CONTROL_BONUS,
+                "SPEED_CONTROL_BONUS=%.1f",
+                combined -> combined.printRoleCoverage("  "));
+    }
+
     // Re-runs the whole profile once per comma-separated value in the -D<prop> spec, temporarily setting a tuning
     // knob to each so the labelled tables can be compared without a rebuild. The original knob value is restored.
     private void sweep(String prop, String skipHint, DoubleConsumer knobSetter, DoubleSupplier knobGetter,
@@ -176,6 +193,7 @@ public class MovesetProfileRandomizerTest {
         for (Trainer tr : rom.getTrainers()) {
             boolean boss = tr.isBoss() || tr.isImportant();
             List<MonProfile> team = new ArrayList<>();
+            boolean teamHasSpeedControl = false;
             for (TrainerPokemon tp : tr.getPokemon()) {
                 Set<Integer> moves = new HashSet<>();
                 for (int id : tp.getMoves()) {
@@ -197,6 +215,9 @@ public class MovesetProfileRandomizerTest {
                 Set<Type> attackTypes = new HashSet<>();
                 for (int id : moves) {
                     Move mv = allMoves.get(id);
+                    if (TrainerMovesetRandomizer.SPEED_CONTROL_MOVES.contains(id)) {
+                        teamHasSpeedControl = true;
+                    }
                     if (isAttack(mv, id)) {
                         attacks++;
                         if (mv.power > 1) {
@@ -226,6 +247,7 @@ public class MovesetProfileRandomizerTest {
                 team.add(new MonProfile(tp.getLevel(), attacks, attackTypes.size(), attackPower));
             }
             p.addTeam(boss, team);
+            p.addSpeedControlCoverage(boss, team.size(), teamHasSpeedControl);
         }
         return p;
     }
@@ -264,6 +286,8 @@ public class MovesetProfileRandomizerTest {
         private final StabTally bossStab = new StabTally();
         private final StabTally regStab = new StabTally();
         private final StabTally[] bossStabBands = {new StabTally(), new StabTally(), new StabTally(), new StabTally()};
+        private final RoleCoverageTally speedControlSmall = new RoleCoverageTally();
+        private final RoleCoverageTally speedControlNormal = new RoleCoverageTally();
         private static final String[] BAND_LABELS = {"Lv1-15", "Lv16-30", "Lv31-45", "Lv46+"};
 
         void add(boolean isBoss, int level, int attacks, int distinctTypes, int useful, int junk) {
@@ -287,6 +311,16 @@ public class MovesetProfileRandomizerTest {
             if (isBoss) {
                 bossStabBands[bandIndex(level)].add(weak);
             }
+        }
+
+        // teamSize < ROLE_COVERAGE_MIN_TEAM_SIZE buckets separately so Task 4's small-team carve-out is directly
+        // checkable (small teams should NOT show an inflated rate once #4 lands).
+        void addSpeedControlCoverage(boolean isBoss, int teamSize, boolean hasSpeedControl) {
+            if (!isBoss || teamSize == 0) {
+                return;
+            }
+            (teamSize < TrainerMovesetRandomizer.ROLE_COVERAGE_MIN_TEAM_SIZE ? speedControlSmall : speedControlNormal)
+                    .add(hasSpeedControl);
         }
 
         // Feed a fully-profiled team into the ace-vs-teammates comparison (boss/important tier, 2+ profiled mons).
@@ -313,6 +347,8 @@ public class MovesetProfileRandomizerTest {
             for (int i = 0; i < bossStabBands.length; i++) {
                 bossStabBands[i].merge(other.bossStabBands[i]);
             }
+            speedControlSmall.merge(other.speedControlSmall);
+            speedControlNormal.merge(other.speedControlNormal);
         }
 
         void printSummary(String indent) {
@@ -359,6 +395,11 @@ public class MovesetProfileRandomizerTest {
                     System.out.println(indent + "  boss " + BAND_LABELS[i] + " " + bossStabBands[i].summary());
                 }
             }
+        }
+
+        void printRoleCoverage(String indent) {
+            System.out.println(indent + "boss speed-control answer  small(<" + TrainerMovesetRandomizer.ROLE_COVERAGE_MIN_TEAM_SIZE
+                    + ") " + speedControlSmall.summary() + "  normal " + speedControlNormal.summary());
         }
 
         private static int bandIndex(int level) {
@@ -468,6 +509,32 @@ public class MovesetProfileRandomizerTest {
                 return "(n=0)";
             }
             return String.format("%d%% (n=%d)", Math.round(100.0 * weak / n), n);
+        }
+    }
+
+    // Share of boss/important teams that have at least one speed-control move (any SPEED_CONTROL_MOVES member)
+    // somewhere on the roster.
+    private static final class RoleCoverageTally {
+        private int n;
+        private int withRole;
+
+        void add(boolean hasRole) {
+            n++;
+            if (hasRole) {
+                withRole++;
+            }
+        }
+
+        void merge(RoleCoverageTally other) {
+            n += other.n;
+            withRole += other.withRole;
+        }
+
+        String summary() {
+            if (n == 0) {
+                return "(n=0)";
+            }
+            return String.format("%d%% (n=%d)", Math.round(100.0 * withRole / n), n);
         }
     }
 
