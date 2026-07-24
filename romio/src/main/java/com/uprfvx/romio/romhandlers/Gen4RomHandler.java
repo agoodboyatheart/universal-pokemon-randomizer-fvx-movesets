@@ -5786,76 +5786,25 @@ public class Gen4RomHandler extends AbstractDSRomHandler {
 		return itemIdsToSet(Gen4Constants.allHeldItems);
 	}
 
+	private static final SensibleHeldItemsConfig SENSIBLE_ITEMS_CONFIG = new SensibleHeldItemsConfig(
+			Gen4Constants.generalPurposeConsumableItems,
+			Gen4Constants.generalPurposeItems,
+			Gen4Constants.typeBoostingItems,
+			null,
+			Gen4Constants.weaknessReducingBerries,
+			Gen4Constants.abilityBoostingItems,
+			null,
+			Gen4Constants.speciesBoostingItems,
+			Gen4Constants.moveBoostingItems,
+			false,
+			false,
+			false
+	);
+
 	@Override
 	public List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves,
 			int[] pokeMoves) {
-		List<Integer> ids = new ArrayList<>(Gen4Constants.generalPurposeConsumableItems);
-		int frequencyBoostCount = 6; // Make some very good items more common, but not too common
-		if (!consumableOnly) {
-			frequencyBoostCount = 8; // bigger to account for larger item pool.
-			ids.addAll(Gen4Constants.generalPurposeItems);
-		}
-		for (int moveIdx : pokeMoves) {
-			Move move = moves.get(moveIdx);
-			if (move == null) {
-				continue;
-			}
-			if (move.category == MoveCategory.PHYSICAL) {
-				ids.add(ItemIDs.liechiBerry);
-				if (!consumableOnly) {
-					ids.addAll(Gen4Constants.typeBoostingItems.get(move.type));
-					ids.add(ItemIDs.choiceBand);
-					ids.add(ItemIDs.muscleBand);
-				}
-			}
-			if (move.category == MoveCategory.SPECIAL) {
-				ids.add(ItemIDs.petayaBerry);
-				if (!consumableOnly) {
-					ids.addAll(Gen4Constants.typeBoostingItems.get(move.type));
-					ids.add(ItemIDs.wiseGlasses);
-					ids.add(ItemIDs.choiceSpecs);
-				}
-			}
-			if (!consumableOnly && Gen4Constants.moveBoostingItems.containsKey(moveIdx)) {
-				ids.addAll(Gen4Constants.moveBoostingItems.get(moveIdx));
-			}
-		}
-		Map<Type, Effectiveness> byType = getTypeTable().against(tp.getSpecies().getPrimaryType(false), tp.getSpecies().getSecondaryType(false));
-		for (Map.Entry<Type, Effectiveness> entry : byType.entrySet()) {
-			Integer berry = Gen4Constants.weaknessReducingBerries.get(entry.getKey());
-			if (entry.getValue() == Effectiveness.DOUBLE) {
-				ids.add(berry);
-			} else if (entry.getValue() == Effectiveness.QUADRUPLE) {
-				for (int i = 0; i < frequencyBoostCount; i++) {
-					ids.add(berry);
-				}
-			}
-		}
-		if (byType.get(Type.NORMAL) == Effectiveness.NEUTRAL) {
-			ids.add(ItemIDs.chilanBerry);
-		}
-
-		int ability = this.getAbilityForTrainerPokemon(tp);
-		if (ability == AbilityIDs.levitate) {
-			// we have to cast when removing, otherwise it defaults to removing by index
-			ids.remove((Integer) ItemIDs.shucaBerry);
-		}
-
-		if (!consumableOnly) {
-			if (Gen4Constants.abilityBoostingItems.containsKey(ability)) {
-				ids.addAll(Gen4Constants.abilityBoostingItems.get(ability));
-			}
-			if (tp.getSpecies().getPrimaryType(false) == Type.POISON || tp.getSpecies().getSecondaryType(false) == Type.POISON) {
-				ids.add(ItemIDs.blackSludge);
-			}
-			List<Integer> speciesItems = Gen4Constants.speciesBoostingItems.get(tp.getSpecies().getNumber());
-			if (speciesItems != null) {
-				for (int i = 0; i < frequencyBoostCount; i++) {
-					ids.addAll(speciesItems);
-				}
-			}
-		}
-		return ids.stream().map(items::get).collect(Collectors.toList());
+		return getSensibleHeldItemsForGen4Plus(SENSIBLE_ITEMS_CONFIG, tp, consumableOnly, moves, pokeMoves);
 	}
 
 	@Override

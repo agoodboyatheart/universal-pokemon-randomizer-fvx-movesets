@@ -893,6 +893,107 @@ public abstract class AbstractRomHandler implements RomHandler {
         return Collections.singletonList(null);
     }
 
+    /**
+     * Shared {@link RomHandler#getSensibleHeldItemsFor} implementation for Gen 4-7, which were
+     * previously four near-identical copies. Differences between those generations' item pools are
+     * captured by {@code config} rather than by subclassing. Gen 2/3 keep their own separate
+     * (simpler) implementations - they predate several of these mechanics entirely.
+     */
+    protected List<Item> getSensibleHeldItemsForGen4Plus(SensibleHeldItemsConfig config, TrainerPokemon tp,
+            boolean consumableOnly, List<Move> moves, int[] pokeMoves) {
+        List<Integer> ids = new ArrayList<>(config.generalPurposeConsumableItems());
+        int frequencyBoostCount = 6; // Make some very good items more common, but not too common
+        if (!consumableOnly) {
+            frequencyBoostCount = 8; // bigger to account for larger item pool.
+            ids.addAll(config.generalPurposeItems());
+        }
+        int numDamagingMoves = 0;
+        for (int moveIdx : pokeMoves) {
+            Move move = moves.get(moveIdx);
+            if (move == null) {
+                continue;
+            }
+            if (move.category == MoveCategory.PHYSICAL) {
+                numDamagingMoves++;
+                ids.add(ItemIDs.liechiBerry);
+                if (config.consumableTypeBoostingItems() != null) {
+                    ids.add(config.consumableTypeBoostingItems().get(move.type));
+                }
+                if (!consumableOnly) {
+                    ids.addAll(config.typeBoostingItems().get(move.type));
+                    ids.add(ItemIDs.choiceBand);
+                    ids.add(ItemIDs.muscleBand);
+                }
+            }
+            if (move.category == MoveCategory.SPECIAL) {
+                numDamagingMoves++;
+                ids.add(ItemIDs.petayaBerry);
+                if (config.consumableTypeBoostingItems() != null) {
+                    ids.add(config.consumableTypeBoostingItems().get(move.type));
+                }
+                if (!consumableOnly) {
+                    ids.addAll(config.typeBoostingItems().get(move.type));
+                    ids.add(ItemIDs.wiseGlasses);
+                    ids.add(ItemIDs.choiceSpecs);
+                }
+            }
+            if (!consumableOnly && config.moveBoostingItems().containsKey(moveIdx)) {
+                ids.addAll(config.moveBoostingItems().get(moveIdx));
+            }
+        }
+        if (config.hasAssaultVest() && numDamagingMoves >= 2) {
+            ids.add(ItemIDs.assaultVest);
+        }
+        Map<Type, Effectiveness> byType = getTypeTable().against(tp.getSpecies().getPrimaryType(false), tp.getSpecies().getSecondaryType(false));
+        for (Map.Entry<Type, Effectiveness> entry : byType.entrySet()) {
+            Integer berry = config.weaknessReducingBerries().get(entry.getKey());
+            if (entry.getValue() == Effectiveness.DOUBLE) {
+                ids.add(berry);
+            } else if (entry.getValue() == Effectiveness.QUADRUPLE) {
+                for (int i = 0; i < frequencyBoostCount; i++) {
+                    ids.add(berry);
+                }
+            }
+        }
+        if (byType.get(Type.NORMAL) == Effectiveness.NEUTRAL) {
+            ids.add(ItemIDs.chilanBerry);
+        }
+
+        int ability = this.getAbilityForTrainerPokemon(tp);
+        if (ability == AbilityIDs.levitate) {
+            // we have to cast when removing, otherwise it defaults to removing by index
+            ids.remove((Integer) ItemIDs.shucaBerry);
+        } else if (config.hasAirBalloon() &&
+                (byType.get(Type.GROUND) == Effectiveness.DOUBLE || byType.get(Type.GROUND) == Effectiveness.QUADRUPLE)) {
+            ids.add(ItemIDs.airBalloon);
+        }
+        if (config.consumableAbilityBoostingItems() != null && config.consumableAbilityBoostingItems().containsKey(ability)) {
+            ids.add(config.consumableAbilityBoostingItems().get(ability));
+        }
+
+        if (!consumableOnly) {
+            if (config.abilityBoostingItems().containsKey(ability)) {
+                ids.addAll(config.abilityBoostingItems().get(ability));
+            }
+            if (tp.getSpecies().getPrimaryType(false) == Type.POISON || tp.getSpecies().getSecondaryType(false) == Type.POISON) {
+                ids.add(ItemIDs.blackSludge);
+            }
+            List<Integer> speciesItems = config.speciesBoostingItems().get(tp.getSpecies().getNumber());
+            if (speciesItems != null) {
+                for (int i = 0; i < frequencyBoostCount; i++) {
+                    ids.addAll(speciesItems);
+                }
+            }
+            if (config.hasEviolite() && !tp.getSpecies().getEvolutionsFrom().isEmpty() && tp.getLevel() >= 20) {
+                // eviolite can be too good for early game, so we gate it behind a minimum level.
+                // We go with the same level as the option for "No early wonder guard".
+                ids.add(ItemIDs.eviolite);
+            }
+        }
+        List<Item> allItemsById = getItems();
+        return ids.stream().map(allItemsById::get).collect(Collectors.toList());
+    }
+
     @Override
     public Set<Item> getAllConsumableHeldItems() {
         return Collections.singleton(null);
