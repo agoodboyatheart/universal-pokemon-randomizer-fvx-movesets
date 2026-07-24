@@ -22,7 +22,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * environment because the Gen6/7 dumps present are non-USA-named (e.g. Alpha Sapphire is the Europe
  * decrypted dump) - see the {@code test-roms-harness} memory. Loading only the specific ROMs each
  * test needs, by explicit file name, avoids that entirely (same pattern as
- * {@link BetterMovesetsGoldenMasterRandomizerTest} and {@link TMTutorMoveRandomizerTest}).
+ * {@link SensibleHeldItemsGoldenMasterRandomizerTest}, and as the {@code better-movesets} branch's
+ * {@code BetterMovesetsGoldenMasterRandomizerTest}/{@code TMTutorMoveRandomizerTest}, not present
+ * on this branch).
  */
 public class SensibleHeldItemsInvariantsRandomizerTest {
 
