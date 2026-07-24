@@ -1098,8 +1098,10 @@ public class TrainerPokemonRandomizer extends Randomizer {
                                 movesets,
                                 highestLevelPoke.getLevel()) :
                         highestLevelPoke.getMoves();
-                randomizeHeldItem(highestLevelPoke, settings, moves, moveset);
+                randomizeHeldItem(highestLevelPoke, settings, moves, moveset, Collections.emptySet());
             } else {
+                boolean avoidDuplicateItems = t.isRequiresUniqueHeldItems() || t.isBoss() || t.isImportant();
+                Set<Item> alreadyPlacedItems = new HashSet<>();
                 for (TrainerPokemon tp : t.getPokemon()) {
                     int[] moveset = tp.isResetMoves() ?
                             romHandler.getMovesAtLevel(
@@ -1107,11 +1109,10 @@ public class TrainerPokemonRandomizer extends Randomizer {
                                     movesets,
                                     tp.getLevel()) :
                             tp.getMoves();
-                    randomizeHeldItem(tp, settings, moves, moveset);
-                    if (t.isRequiresUniqueHeldItems()) {
-                        while (!t.pokemonHaveUniqueHeldItems()) {
-                            randomizeHeldItem(tp, settings, moves, moveset);
-                        }
+                    randomizeHeldItem(tp, settings, moves, moveset,
+                            avoidDuplicateItems ? alreadyPlacedItems : Collections.emptySet());
+                    if (avoidDuplicateItems && tp.getHeldItem() != null) {
+                        alreadyPlacedItems.add(tp.getHeldItem());
                     }
                 }
             }
@@ -1119,7 +1120,8 @@ public class TrainerPokemonRandomizer extends Randomizer {
         changesMade = true;
     }
 
-    private void randomizeHeldItem(TrainerPokemon tp, Settings settings, List<Move> moves, int[] moveset) {
+    private void randomizeHeldItem(TrainerPokemon tp, Settings settings, List<Move> moves, int[] moveset,
+                                    Set<Item> alreadyPlacedItems) {
         boolean sensibleItemsOnly = settings.isSensibleItemsOnlyForTrainers();
         boolean consumableItemsOnly = settings.isConsumableItemsOnlyForTrainers();
         boolean swapMegaEvolutions = settings.isSwapTrainerMegaEvos();
@@ -1138,6 +1140,20 @@ public class TrainerPokemonRandomizer extends Randomizer {
         } else {
             toChooseFrom = new ArrayList<>(romHandler.getAllHeldItems());
         }
+
+        if (!alreadyPlacedItems.isEmpty()) {
+            // Exclude items already held by this trainer's other Pokemon, same pattern as the
+            // alreadyPlaced/bannedPokemon filtering used for species selection above. Only fall back
+            // to the unfiltered pool (accepting a duplicate) if filtering would leave nothing to pick
+            // from - i.e. the pool is genuinely too small for the team size.
+            List<Item> withoutAlreadyPlaced = toChooseFrom.stream()
+                    .filter(item -> !alreadyPlacedItems.contains(item))
+                    .collect(Collectors.toList());
+            if (!withoutAlreadyPlaced.isEmpty()) {
+                toChooseFrom = withoutAlreadyPlaced;
+            }
+        }
+
         tp.setHeldItem(toChooseFrom.get(random.nextInt(toChooseFrom.size())));
     }
 
