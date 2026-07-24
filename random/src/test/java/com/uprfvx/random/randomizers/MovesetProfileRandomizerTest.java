@@ -112,6 +112,24 @@ public class MovesetProfileRandomizerTest {
                 combined -> combined.printWeakStab("  "));
     }
 
+    /**
+     * Calibrates the boss/important accuracy-reliability exponent
+     * ({@link TrainerMovesetRandomizer#ACCURACY_PENALTY_EXPONENT}) — higher pushes boss STAB/coverage/status
+     * further toward reliable moves, away from low-accuracy nukes. Watch printWeakStab (target: lower) alongside
+     * printSummary (target: boss avg-attacks/breadth must not drop below the BOSS_BREADTH_TOLERANCE margin from
+     * regular, per the existing guardrail in BetterMovesetsRandomizerTest).
+     * <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepAccuracyExponent" -Dbm.accuracyexp=2.0,2.5,3.0 }</pre>
+     */
+    @Test
+    public void sweepAccuracyExponent() {
+        sweep("bm.accuracyexp",
+                "sweep skipped - pass -Dbm.accuracyexp=<comma-separated exponents> to calibrate",
+                v -> TrainerMovesetRandomizer.ACCURACY_PENALTY_EXPONENT = v,
+                () -> TrainerMovesetRandomizer.ACCURACY_PENALTY_EXPONENT,
+                "ACCURACY_PENALTY_EXPONENT=%.2f",
+                combined -> combined.printWeakStab("  "));
+    }
+
     // Re-runs the whole profile once per comma-separated value in the -D<prop> spec, temporarily setting a tuning
     // knob to each so the labelled tables can be compared without a rebuild. The original knob value is restored.
     private void sweep(String prop, String skipHint, DoubleConsumer knobSetter, DoubleSupplier knobGetter,

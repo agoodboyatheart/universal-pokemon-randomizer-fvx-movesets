@@ -457,7 +457,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // reliable, not 0% accurate. At/above RELIABLE_ACCURACY the weight is 1.0; below it falls off as
     // (accuracy/RELIABLE_ACCURACY)^ACCURACY_PENALTY_EXPONENT (80% keeps ~0.79, 50% keeps ~0.31). Tuning knobs.
     private static final double RELIABLE_ACCURACY = GlobalConstants.RELIABLE_ACCURACY_THRESHOLD;
-    private static final double ACCURACY_PENALTY_EXPONENT = 2.0;
+    // Non-final so MovesetProfileRandomizerTest can sweep it (-Dbm.accuracyexp); treat as a constant in
+    // production. Tuning knob.
+    static double ACCURACY_PENALTY_EXPONENT = 2.0;
 
     private double accuracyWeight(Move mv) {
         double acc = mv.hitratio;
