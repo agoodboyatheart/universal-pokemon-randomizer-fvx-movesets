@@ -1314,7 +1314,7 @@ public class Gen2RomHandler extends AbstractGBCRomHandler {
     }
 
     @Override
-    public List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves) {
+    public List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves, Random random) {
         List<Integer> ids = new ArrayList<>(Gen2Constants.generalPurposeConsumableItems);
 
         if (!consumableOnly) {

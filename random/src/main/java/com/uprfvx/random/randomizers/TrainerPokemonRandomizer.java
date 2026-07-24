@@ -1134,7 +1134,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
 
         List<Item> toChooseFrom;
         if (sensibleItemsOnly) {
-            toChooseFrom = romHandler.getSensibleHeldItemsFor(tp, consumableItemsOnly, moves, moveset);
+            toChooseFrom = romHandler.getSensibleHeldItemsFor(tp, consumableItemsOnly, moves, moveset, random);
         } else if (consumableItemsOnly) {
             toChooseFrom = new ArrayList<>(romHandler.getAllConsumableHeldItems());
         } else {

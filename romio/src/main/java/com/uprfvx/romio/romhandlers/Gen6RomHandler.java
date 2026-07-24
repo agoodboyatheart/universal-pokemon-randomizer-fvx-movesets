@@ -4061,8 +4061,8 @@ public class Gen6RomHandler extends Abstract3DSRomHandler {
     );
 
     @Override
-    public List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves) {
-        return getSensibleHeldItemsForGen4Plus(SENSIBLE_ITEMS_CONFIG, tp, consumableOnly, moves, pokeMoves);
+    public List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves, Random random) {
+        return getSensibleHeldItemsForGen4Plus(SENSIBLE_ITEMS_CONFIG, tp, consumableOnly, moves, pokeMoves, random);
     }
 
     @Override

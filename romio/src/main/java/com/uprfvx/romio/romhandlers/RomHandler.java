@@ -34,6 +34,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 /**
@@ -362,7 +363,7 @@ public interface RomHandler {
      * Returns a {@link List} of {@link Item}s that would be sensible/good for a {@link TrainerPokemon} to hold.
      * The List allows duplication of Items to make them more likely when chosen at random.
      */
-    List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves);
+    List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves, Random random);
 
     Set<Item> getAllConsumableHeldItems();
 

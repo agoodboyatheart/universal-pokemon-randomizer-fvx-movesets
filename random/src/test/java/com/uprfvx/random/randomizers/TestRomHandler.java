@@ -872,7 +872,7 @@ public class TestRomHandler extends AbstractRomHandler {
     }
 
     @Override
-    public List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves) {
+    public List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves, Random random) {
         throw new NotImplementedException();
     }
 

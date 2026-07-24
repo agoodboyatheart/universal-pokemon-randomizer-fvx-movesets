@@ -889,8 +889,22 @@ public abstract class AbstractRomHandler implements RomHandler {
     }
 
     @Override
-    public List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves) {
+    public List<Item> getSensibleHeldItemsFor(TrainerPokemon tp, boolean consumableOnly, List<Move> moves, int[] pokeMoves, Random random) {
         return Collections.singletonList(null);
+    }
+
+    /** How many items to sample from each always-eligible general-purpose item list, per call. */
+    private static final int GENERAL_PURPOSE_SAMPLE_SIZE = 4;
+
+    /**
+     * Returns up to {@code count} items chosen at random from {@code pool}, without replacement.
+     * Keeps the general-purpose fallback pool from unconditionally dominating a mon's candidate
+     * list regardless of its actual moves/type/ability - see the better-held-items plan.
+     */
+    private static List<Integer> sampleGeneralPurposeItems(List<Integer> pool, int count, Random random) {
+        List<Integer> shuffled = new ArrayList<>(pool);
+        Collections.shuffle(shuffled, random);
+        return shuffled.subList(0, Math.min(count, shuffled.size()));
     }
 
     /**
@@ -900,12 +914,13 @@ public abstract class AbstractRomHandler implements RomHandler {
      * (simpler) implementations - they predate several of these mechanics entirely.
      */
     protected List<Item> getSensibleHeldItemsForGen4Plus(SensibleHeldItemsConfig config, TrainerPokemon tp,
-            boolean consumableOnly, List<Move> moves, int[] pokeMoves) {
-        List<Integer> ids = new ArrayList<>(config.generalPurposeConsumableItems());
+            boolean consumableOnly, List<Move> moves, int[] pokeMoves, Random random) {
+        List<Integer> ids = new ArrayList<>(
+                sampleGeneralPurposeItems(config.generalPurposeConsumableItems(), GENERAL_PURPOSE_SAMPLE_SIZE, random));
         int frequencyBoostCount = 6; // Make some very good items more common, but not too common
         if (!consumableOnly) {
             frequencyBoostCount = 8; // bigger to account for larger item pool.
-            ids.addAll(config.generalPurposeItems());
+            ids.addAll(sampleGeneralPurposeItems(config.generalPurposeItems(), GENERAL_PURPOSE_SAMPLE_SIZE, random));
         }
         int numDamagingMoves = 0;
         for (int moveIdx : pokeMoves) {
