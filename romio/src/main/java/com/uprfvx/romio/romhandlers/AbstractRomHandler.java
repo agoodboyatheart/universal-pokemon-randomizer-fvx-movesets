@@ -1005,6 +1005,10 @@ public abstract class AbstractRomHandler implements RomHandler {
                 ids.add(ItemIDs.eviolite);
             }
         }
+        if (tp.getLevel() < 20) {
+            ids.removeIf(id -> id != null
+                    && (id == ItemIDs.lifeOrb || (config.hasAssaultVest() && id == ItemIDs.assaultVest)));
+        }
         List<Item> allItemsById = getItems();
         return ids.stream().map(allItemsById::get).collect(Collectors.toList());
     }

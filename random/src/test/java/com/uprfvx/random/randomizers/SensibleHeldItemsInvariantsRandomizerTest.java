@@ -1,6 +1,8 @@
 package com.uprfvx.random.randomizers;
 
 import com.uprfvx.random.Settings;
+import com.uprfvx.romio.gamedata.Item;
+import com.uprfvx.romio.gamedata.Move;
 import com.uprfvx.romio.gamedata.Trainer;
 import com.uprfvx.romio.gamedata.TrainerPokemon;
 import com.uprfvx.romio.romhandlers.Generation;
@@ -9,8 +11,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.File;
+import java.util.List;
 import java.util.Random;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -79,6 +83,33 @@ public class SensibleHeldItemsInvariantsRandomizerTest {
             }
             assertTrue(tr.pokemonHaveUniqueHeldItems(),
                     tr.getFullDisplayName() + " has a duplicate held item within its team.");
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("gamesToVerify")
+    public void sensibleItemsDoNotGiveLifeOrbOrAssaultVestBelowLevel20(String gameName, String fileBaseName) {
+        RomHandler romHandler = loadRom(gameName, fileBaseName);
+        assumeTrue(Generation.GAME_TO_GENERATION.get(gameName).getNumber() >= 4);
+
+        List<Move> moves = romHandler.getMoves();
+        for (Trainer tr : romHandler.getTrainers()) {
+            for (TrainerPokemon tp : tr.getPokemon()) {
+                if (tp.getLevel() >= 20) {
+                    continue;
+                }
+                int[] moveset = tp.isResetMoves()
+                        ? romHandler.getMovesAtLevel(tp.getSpecies(), romHandler.getMovesLearnt(), tp.getLevel())
+                        : tp.getMoves();
+                List<Item> sensible = romHandler.getSensibleHeldItemsFor(tp, false, moves, moveset, new Random(SEED));
+                for (Item item : sensible) {
+                    if (item == null) continue;
+                    assertFalse(item.getName().equals("Life Orb"), tp.getSpecies().getName() + " at Lv"
+                            + tp.getLevel() + " has Life Orb in its sensible-item pool.");
+                    assertFalse(item.getName().equals("Assault Vest"), tp.getSpecies().getName() + " at Lv"
+                            + tp.getLevel() + " has Assault Vest in its sensible-item pool.");
+                }
+            }
         }
     }
 }
