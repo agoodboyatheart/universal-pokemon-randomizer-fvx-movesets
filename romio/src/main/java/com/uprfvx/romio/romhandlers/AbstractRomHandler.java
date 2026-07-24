@@ -923,12 +923,19 @@ public abstract class AbstractRomHandler implements RomHandler {
             ids.addAll(sampleGeneralPurposeItems(config.generalPurposeItems(), GENERAL_PURPOSE_SAMPLE_SIZE, random));
         }
         int numDamagingMoves = 0;
+        boolean hasStatusMove = false;
+        boolean hasPhysicalMove = false;
+        boolean hasSpecialMove = false;
         for (int moveIdx : pokeMoves) {
             Move move = moves.get(moveIdx);
             if (move == null) {
                 continue;
             }
+            if (move.category == MoveCategory.STATUS) {
+                hasStatusMove = true;
+            }
             if (move.category == MoveCategory.PHYSICAL) {
+                hasPhysicalMove = true;
                 numDamagingMoves++;
                 ids.add(ItemIDs.liechiBerry);
                 if (config.consumableTypeBoostingItems() != null) {
@@ -936,11 +943,11 @@ public abstract class AbstractRomHandler implements RomHandler {
                 }
                 if (!consumableOnly) {
                     ids.addAll(config.typeBoostingItems().get(move.type));
-                    ids.add(ItemIDs.choiceBand);
                     ids.add(ItemIDs.muscleBand);
                 }
             }
             if (move.category == MoveCategory.SPECIAL) {
+                hasSpecialMove = true;
                 numDamagingMoves++;
                 ids.add(ItemIDs.petayaBerry);
                 if (config.consumableTypeBoostingItems() != null) {
@@ -949,11 +956,23 @@ public abstract class AbstractRomHandler implements RomHandler {
                 if (!consumableOnly) {
                     ids.addAll(config.typeBoostingItems().get(move.type));
                     ids.add(ItemIDs.wiseGlasses);
-                    ids.add(ItemIDs.choiceSpecs);
                 }
             }
             if (!consumableOnly && config.moveBoostingItems().containsKey(moveIdx)) {
                 ids.addAll(config.moveBoostingItems().get(moveIdx));
+            }
+        }
+        if (!consumableOnly && !hasStatusMove) {
+            // Choice items lock the holder into its first move; a status move in the kit would waste
+            // turns stuck on it (or waste the item entirely if the status move is never picked).
+            if (hasPhysicalMove && !hasSpecialMove) {
+                ids.add(ItemIDs.choiceBand);
+            }
+            if (hasSpecialMove && !hasPhysicalMove) {
+                ids.add(ItemIDs.choiceSpecs);
+            }
+            if (hasPhysicalMove || hasSpecialMove) {
+                ids.add(ItemIDs.choiceScarf);
             }
         }
         if (config.hasAssaultVest() && numDamagingMoves >= 2) {

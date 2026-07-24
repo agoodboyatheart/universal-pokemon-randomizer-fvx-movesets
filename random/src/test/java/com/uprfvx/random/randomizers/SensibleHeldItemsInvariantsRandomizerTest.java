@@ -3,6 +3,7 @@ package com.uprfvx.random.randomizers;
 import com.uprfvx.random.Settings;
 import com.uprfvx.romio.gamedata.Item;
 import com.uprfvx.romio.gamedata.Move;
+import com.uprfvx.romio.gamedata.MoveCategory;
 import com.uprfvx.romio.gamedata.Trainer;
 import com.uprfvx.romio.gamedata.TrainerPokemon;
 import com.uprfvx.romio.romhandlers.Generation;
@@ -13,6 +14,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.io.File;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -108,6 +110,41 @@ public class SensibleHeldItemsInvariantsRandomizerTest {
                             + tp.getLevel() + " has Life Orb in its sensible-item pool.");
                     assertFalse(item.getName().equals("Assault Vest"), tp.getSpecies().getName() + " at Lv"
                             + tp.getLevel() + " has Assault Vest in its sensible-item pool.");
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("gamesToVerify")
+    public void choiceItemsOnlyOfferedToAllAttackingMovesets(String gameName, String fileBaseName) {
+        RomHandler romHandler = loadRom(gameName, fileBaseName);
+        assumeTrue(Generation.GAME_TO_GENERATION.get(gameName).getNumber() >= 3);
+
+        List<Move> moves = romHandler.getMoves();
+        Set<String> choiceItemNames = Set.of("Choice Band", "Choice Specs", "Choice Scarf");
+        for (Trainer tr : romHandler.getTrainers()) {
+            for (TrainerPokemon tp : tr.getPokemon()) {
+                int[] moveset = tp.isResetMoves()
+                        ? romHandler.getMovesAtLevel(tp.getSpecies(), romHandler.getMovesLearnt(), tp.getLevel())
+                        : tp.getMoves();
+                boolean hasStatusMove = false;
+                for (int moveIdx : moveset) {
+                    Move move = moves.get(moveIdx);
+                    if (move != null && move.category == MoveCategory.STATUS) {
+                        hasStatusMove = true;
+                        break;
+                    }
+                }
+                if (!hasStatusMove) {
+                    continue;
+                }
+                List<Item> sensible = romHandler.getSensibleHeldItemsFor(tp, false, moves, moveset, new Random(SEED));
+                for (Item item : sensible) {
+                    if (item == null) continue;
+                    assertFalse(choiceItemNames.contains(item.getName()),
+                            tp.getSpecies().getName() + " knows a status move but " + item.getName()
+                                    + " is still in its sensible-item pool.");
                 }
             }
         }

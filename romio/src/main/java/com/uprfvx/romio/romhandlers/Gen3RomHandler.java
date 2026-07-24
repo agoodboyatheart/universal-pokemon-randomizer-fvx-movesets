@@ -4601,24 +4601,36 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
         if (!consumableOnly) {
             ids.addAll(Gen3Constants.generalPurposeItems);
         }
+        boolean hasStatusMove = false;
+        boolean hasPhysicalMove = false;
+        boolean hasSpecialMove = false;
         for (int moveIdx : pokeMoves) {
             Move move = moves.get(moveIdx);
             if (move == null) {
                 continue;
             }
+            if (move.category == MoveCategory.STATUS) {
+                hasStatusMove = true;
+            }
             if (GBConstants.physicalTypes.contains(move.type) && move.power > 0) {
+                hasPhysicalMove = true;
                 ids.add(ItemIDs.liechiBerry);
                 if (!consumableOnly) {
                     ids.addAll(Gen3Constants.typeBoostingItems.get(move.type));
-                    ids.add(ItemIDs.choiceBand);
                 }
             }
             if (!GBConstants.physicalTypes.contains(move.type) && move.power > 0) {
+                hasSpecialMove = true;
                 ids.add(ItemIDs.petayaBerry);
                 if (!consumableOnly) {
                     ids.addAll(Gen3Constants.typeBoostingItems.get(move.type));
                 }
             }
+        }
+        if (!consumableOnly && !hasStatusMove && hasPhysicalMove && !hasSpecialMove) {
+            // Choice Band locks the holder into its first move; a status move in the kit would waste
+            // turns stuck on it.
+            ids.add(ItemIDs.choiceBand);
         }
         if (!consumableOnly) {
             List<Integer> speciesItems = Gen3Constants.speciesBoostingItems.get(tp.getSpecies().getNumber());
