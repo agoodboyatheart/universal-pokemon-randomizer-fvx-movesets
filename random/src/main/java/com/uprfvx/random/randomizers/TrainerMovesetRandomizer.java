@@ -906,6 +906,18 @@ public class TrainerMovesetRandomizer extends Randomizer {
         return false;
     }
 
+    // Non-predictive priority attacking moves (Extreme Speed, Aqua Jet, Ice Shard, Bullet Punch, Mach Punch,
+    // Quick Attack, Accelerock, Vacuum Wave, ...) are a genuine revenge-kill tool the AI can use safely — unlike
+    // Sucker Punch/Counter (prediction-dependent, already in AI_UNUSABLE_MOVES and stripped before any slot is
+    // reached). Uses the real Move.priority field rather than a hand-maintained list, so it stays correct across
+    // gens automatically. Non-final so MovesetProfileRandomizerTest can sweep it (-Dbm.prioritybonus); treat as a
+    // constant in production. Tuning knob.
+    static double PRIORITY_MOVE_BONUS = 3.0;
+
+    private double priorityMoveWeight(Move mv, int level) {
+        return (mv.priority > 0 && effectivePower(mv, level) > 0) ? PRIORITY_MOVE_BONUS : 1.0;
+    }
+
     // Remaining slots: reuse the existing synergy-weighted pick + anti-synergy removal, but never pick a
     // redundant status move (so e.g. Spinarak never rolls Sunny Day and powers up the Fire moves it fears).
     private void fillWildcardMoves(TrainerPokemon tp, Species pk, int ability,
@@ -968,7 +980,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     mv -> practicalValueWeight(mv, ability, picked) * teamRepeatWeight(mv, level)
                             * availabilityWeight(mv) * aiUsabilityWeight(mv) * badStrongMoveWeight(mv)
                             * ohkoWeight(mv) * levelAppropriatenessWeight(mv, level, isBossTier)
-                            * (isBossTier && isAttackSlotEligible(mv, level) ? bossWildcardDamagingBonus : 1.0));
+                            * (isBossTier && isAttackSlotEligible(mv, level) ? bossWildcardDamagingBonus : 1.0)
+                            * (isBossTier ? priorityMoveWeight(mv, level) : 1.0));
             picked.add(move);
             if (picked.size() >= 4) {
                 break;

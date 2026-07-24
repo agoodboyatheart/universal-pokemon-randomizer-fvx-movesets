@@ -261,6 +261,8 @@ tasks.register<Test>("testROMs") {
     System.getProperty("bm.accuracyexp")?.let { systemProperty("bm.accuracyexp", it) }
     // Forward -Dbm.speedcontrol so the harness's speed-control-bonus sweep reaches the forked test JVM.
     System.getProperty("bm.speedcontrol")?.let { systemProperty("bm.speedcontrol", it) }
+    // Forward -Dbm.prioritybonus so the harness's priority-move-bonus sweep reaches the forked test JVM.
+    System.getProperty("bm.prioritybonus")?.let { systemProperty("bm.prioritybonus", it) }
 
     shouldRunAfter("test")
 

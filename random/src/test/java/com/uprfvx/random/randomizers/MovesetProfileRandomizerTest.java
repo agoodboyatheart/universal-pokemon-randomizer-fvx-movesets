@@ -147,6 +147,23 @@ public class MovesetProfileRandomizerTest {
                 combined -> combined.printRoleCoverage("  "));
     }
 
+    /**
+     * Calibrates the priority-move wildcard bonus ({@link TrainerMovesetRandomizer#PRIORITY_MOVE_BONUS}). Watch
+     * printRoleCoverage's priority-answer rate. Priority moves are typically low BP, so also cross-check
+     * printSummary/printBossByBand for any drop in average attack power — the bonus should add a priority OPTION,
+     * not crowd out the boss's main damage output.
+     * <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepPriorityBonus" -Dbm.prioritybonus=1.0,2.0,3.0,4.5 }</pre>
+     */
+    @Test
+    public void sweepPriorityBonus() {
+        sweep("bm.prioritybonus",
+                "sweep skipped - pass -Dbm.prioritybonus=<comma-separated bonus values> to calibrate",
+                v -> TrainerMovesetRandomizer.PRIORITY_MOVE_BONUS = v,
+                () -> TrainerMovesetRandomizer.PRIORITY_MOVE_BONUS,
+                "PRIORITY_MOVE_BONUS=%.1f",
+                combined -> combined.printRoleCoverage("  "));
+    }
+
     // Re-runs the whole profile once per comma-separated value in the -D<prop> spec, temporarily setting a tuning
     // knob to each so the labelled tables can be compared without a rebuild. The original knob value is restored.
     private void sweep(String prop, String skipHint, DoubleConsumer knobSetter, DoubleSupplier knobGetter,
@@ -194,6 +211,7 @@ public class MovesetProfileRandomizerTest {
             boolean boss = tr.isBoss() || tr.isImportant();
             List<MonProfile> team = new ArrayList<>();
             boolean teamHasSpeedControl = false;
+            boolean teamHasPriorityAnswer = false;
             for (TrainerPokemon tp : tr.getPokemon()) {
                 Set<Integer> moves = new HashSet<>();
                 for (int id : tp.getMoves()) {
@@ -217,6 +235,9 @@ public class MovesetProfileRandomizerTest {
                     Move mv = allMoves.get(id);
                     if (TrainerMovesetRandomizer.SPEED_CONTROL_MOVES.contains(id)) {
                         teamHasSpeedControl = true;
+                    }
+                    if (mv.priority > 0 && isAttack(mv, id)) {
+                        teamHasPriorityAnswer = true;
                     }
                     if (isAttack(mv, id)) {
                         attacks++;
@@ -248,6 +269,7 @@ public class MovesetProfileRandomizerTest {
             }
             p.addTeam(boss, team);
             p.addSpeedControlCoverage(boss, team.size(), teamHasSpeedControl);
+            p.addPriorityCoverage(boss, team.size(), teamHasPriorityAnswer);
         }
         return p;
     }
@@ -288,6 +310,8 @@ public class MovesetProfileRandomizerTest {
         private final StabTally[] bossStabBands = {new StabTally(), new StabTally(), new StabTally(), new StabTally()};
         private final RoleCoverageTally speedControlSmall = new RoleCoverageTally();
         private final RoleCoverageTally speedControlNormal = new RoleCoverageTally();
+        private final RoleCoverageTally prioritySmall = new RoleCoverageTally();
+        private final RoleCoverageTally priorityNormal = new RoleCoverageTally();
         private static final String[] BAND_LABELS = {"Lv1-15", "Lv16-30", "Lv31-45", "Lv46+"};
 
         void add(boolean isBoss, int level, int attacks, int distinctTypes, int useful, int junk) {
@@ -323,6 +347,14 @@ public class MovesetProfileRandomizerTest {
                     .add(hasSpeedControl);
         }
 
+        void addPriorityCoverage(boolean isBoss, int teamSize, boolean hasPriority) {
+            if (!isBoss || teamSize == 0) {
+                return;
+            }
+            (teamSize < TrainerMovesetRandomizer.ROLE_COVERAGE_MIN_TEAM_SIZE ? prioritySmall : priorityNormal)
+                    .add(hasPriority);
+        }
+
         // Feed a fully-profiled team into the ace-vs-teammates comparison (boss/important tier, 2+ profiled mons).
         void addTeam(boolean isBoss, List<MonProfile> team) {
             if (isBoss && team.size() >= 2) {
@@ -349,6 +381,8 @@ public class MovesetProfileRandomizerTest {
             }
             speedControlSmall.merge(other.speedControlSmall);
             speedControlNormal.merge(other.speedControlNormal);
+            prioritySmall.merge(other.prioritySmall);
+            priorityNormal.merge(other.priorityNormal);
         }
 
         void printSummary(String indent) {
@@ -400,6 +434,8 @@ public class MovesetProfileRandomizerTest {
         void printRoleCoverage(String indent) {
             System.out.println(indent + "boss speed-control answer  small(<" + TrainerMovesetRandomizer.ROLE_COVERAGE_MIN_TEAM_SIZE
                     + ") " + speedControlSmall.summary() + "  normal " + speedControlNormal.summary());
+            System.out.println(indent + "boss priority answer       small(<" + TrainerMovesetRandomizer.ROLE_COVERAGE_MIN_TEAM_SIZE
+                    + ") " + prioritySmall.summary() + "  normal " + priorityNormal.summary());
         }
 
         private static int bandIndex(int level) {
