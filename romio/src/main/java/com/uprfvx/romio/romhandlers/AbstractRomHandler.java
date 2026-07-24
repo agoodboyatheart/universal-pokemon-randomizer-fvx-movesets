@@ -917,9 +917,9 @@ public abstract class AbstractRomHandler implements RomHandler {
             boolean consumableOnly, List<Move> moves, int[] pokeMoves, Random random) {
         List<Integer> ids = new ArrayList<>(
                 sampleGeneralPurposeItems(config.generalPurposeConsumableItems(), GENERAL_PURPOSE_SAMPLE_SIZE, random));
-        int frequencyBoostCount = 6; // Make some very good items more common, but not too common
+        int frequencyBoostCount = 3; // Make some very good items more common, but not too common
         if (!consumableOnly) {
-            frequencyBoostCount = 8; // bigger to account for larger item pool.
+            frequencyBoostCount = 4; // bigger to account for larger item pool.
             ids.addAll(sampleGeneralPurposeItems(config.generalPurposeItems(), GENERAL_PURPOSE_SAMPLE_SIZE, random));
         }
         int numDamagingMoves = 0;
