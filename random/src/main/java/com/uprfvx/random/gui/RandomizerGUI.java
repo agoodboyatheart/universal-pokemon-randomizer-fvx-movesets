@@ -139,6 +139,7 @@ public class RandomizerGUI {
     private JCheckBox pmsReorderDamagingMovesCheckBox;
     private JCheckBox pmsNoGameBreakingMovesCheckBox;
     private JCheckBox pmsForceGoodDamagingCheckBox;
+    private JCheckBox pmsSensibleMovesetsCheckBox;
     private JSlider pmsGuaranteedLevel1MovesSlider;
     private SpinSlider pmsForceGoodDamagingSpinSlider;
     private JCheckBox tpRivalCarriesStarterCheckBox;
@@ -544,6 +545,7 @@ public class RandomizerGUI {
         pmsMetronomeOnlyModeRadioButton.addActionListener(_ -> enableOrDisableSubControls());
         pmsGuaranteedLevel1MovesCheckBox.addActionListener(_ -> enableOrDisableSubControls());
         pmsForceGoodDamagingCheckBox.addActionListener(_ -> enableOrDisableSubControls());
+        pmsSensibleMovesetsCheckBox.addActionListener(_ -> enableOrDisableSubControls());
         tpTrainersEvolveTheirPokemonCheckbox.addActionListener(_ -> enableOrDisableSubControls());
         tpPercentageEvolutionLevelModifierSpinSlider.addChangeListener(_ -> updateFullyEvolvedAtLvlLabel());
         tpPercentageLevelModifierCheckBox.addActionListener(_ -> enableOrDisableSubControls());
@@ -1838,6 +1840,7 @@ public class RandomizerGUI {
         pmsForceGoodDamagingSpinSlider.setValue(settings.getMovesetsGoodDamagingPercent());
         pmsNoGameBreakingMovesCheckBox.setSelected(settings.isBlockBrokenMovesetMoves());
         pmsEvolutionMovesCheckBox.setSelected(settings.isEvolutionMovesForAll());
+        pmsSensibleMovesetsCheckBox.setSelected(settings.isSensibleMovesets());
 
         tpSimilarStrengthCheckBox.setSelected(settings.isTrainersUsePokemonOfSimilarStrength());
         tpAvoidDuplicatesCheckBox.setSelected(settings.isTrainersAvoidDuplicates());
@@ -2129,6 +2132,7 @@ public class RandomizerGUI {
         settings.setBlockBrokenMovesetMoves(pmsNoGameBreakingMovesCheckBox.isSelected());
         settings.setEvolutionMovesForAll(pmsEvolutionMovesCheckBox.isVisible() &&
                 pmsEvolutionMovesCheckBox.isSelected());
+        settings.setSensibleMovesets(pmsSensibleMovesetsCheckBox.isSelected());
 
         settings.setTrainersMod(isTrainerSetting(TRAINER_UNCHANGED), isTrainerSetting(TRAINER_RANDOM),
                 isTrainerSetting(TRAINER_RANDOM_EVEN), isTrainerSetting(TRAINER_RANDOM_EVEN_MAIN),
@@ -2438,7 +2442,8 @@ public class RandomizerGUI {
 
         setInitialButtonState(pmsUnchangedRadioButton, pmsRandomPreferringSameTypeRadioButton, pmsRandomCompletelyRadioButton,
 				pmsMetronomeOnlyModeRadioButton, pmsGuaranteedLevel1MovesCheckBox, pmsReorderDamagingMovesCheckBox,
-				pmsNoGameBreakingMovesCheckBox, pmsForceGoodDamagingCheckBox, pmsEvolutionMovesCheckBox);
+				pmsNoGameBreakingMovesCheckBox, pmsForceGoodDamagingCheckBox, pmsEvolutionMovesCheckBox,
+				pmsSensibleMovesetsCheckBox);
 		pmsGuaranteedLevel1MovesSlider.setVisible(true);
 		pmsGuaranteedLevel1MovesSlider.setEnabled(false);
 		pmsGuaranteedLevel1MovesSlider.setValue(pmsGuaranteedLevel1MovesSlider.getMinimum());
@@ -3410,10 +3415,12 @@ public class RandomizerGUI {
 
         if (pmsMetronomeOnlyModeRadioButton.isSelected() || pmsUnchangedRadioButton.isSelected()) {
             disableAndDeselectButtons(pmsGuaranteedLevel1MovesCheckBox, pmsForceGoodDamagingCheckBox,
-                    pmsReorderDamagingMovesCheckBox, pmsNoGameBreakingMovesCheckBox, pmsEvolutionMovesCheckBox);
+                    pmsReorderDamagingMovesCheckBox, pmsNoGameBreakingMovesCheckBox, pmsEvolutionMovesCheckBox,
+                    pmsSensibleMovesetsCheckBox);
         } else {
             enableButtons(pmsGuaranteedLevel1MovesCheckBox, pmsForceGoodDamagingCheckBox,
-                    pmsReorderDamagingMovesCheckBox, pmsNoGameBreakingMovesCheckBox, pmsEvolutionMovesCheckBox);
+                    pmsReorderDamagingMovesCheckBox, pmsNoGameBreakingMovesCheckBox, pmsEvolutionMovesCheckBox,
+                    pmsSensibleMovesetsCheckBox);
         }
 
         if (pmsGuaranteedLevel1MovesCheckBox.isSelected()) {
