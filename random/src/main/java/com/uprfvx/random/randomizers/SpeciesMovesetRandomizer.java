@@ -42,7 +42,6 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         for (Integer pkmnNum : movesets.keySet()) {
             List<Integer> learnt = new ArrayList<>();
             List<MoveLearnt> moves = movesets.get(pkmnNum);
-            int lv1AttackingMove = 0;
             Species pkmn = findSpeciesInPoolWithSpeciesID(rSpecService.getAll(true), pkmnNum);
             if (pkmn == null) {
                 continue;
@@ -92,13 +91,31 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 lv1index--;
             }
 
-            // Force a certain amount of good damaging moves depending on the percentage
-            int goodDamagingLeft = (int)Math.round(goodDamagingPercentage * moves.size());
+            // Force a certain amount of good damaging moves depending on the percentage. Which slots get the
+            // budget is chosen up front by shuffling the eligible indices, not by consuming the budget in
+            // level order - the latter would deterministically front-load "good damaging" moves onto a
+            // learnset's lowest levels, since the loop always reaches low-level slots first (see
+            // species-power-curve-shuffle-and-scope-review.md Finding B for why the old post-hoc
+            // Collections.shuffle existed, and why it broke the level curve instead).
+            int goodDamagingCount = (int) Math.round(goodDamagingPercentage * moves.size());
+            Set<Integer> damagingSlotIndices = new HashSet<>();
+            damagingSlotIndices.add(lv1index);
+            if (goodDamagingCount > 0) {
+                List<Integer> eligibleIndices = new ArrayList<>();
+                for (int i = 0; i < moves.size(); i++) {
+                    if (i != lv1index) {
+                        eligibleIndices.add(i);
+                    }
+                }
+                Collections.shuffle(eligibleIndices, random);
+                damagingSlotIndices.addAll(
+                        eligibleIndices.subList(0, Math.min(goodDamagingCount, eligibleIndices.size())));
+            }
 
             // Replace moves as needed
             for (int i = 0; i < moves.size(); i++) {
                 // should this move be forced damaging?
-                boolean attemptDamaging = i == lv1index || goodDamagingLeft > 0;
+                boolean attemptDamaging = damagingSlotIndices.contains(i);
 
                 // type themed?
                 Type typeOfMove = null;
@@ -160,7 +177,13 @@ public class SpeciesMovesetRandomizer extends Randomizer {
 
                 // now pick a move until we get a valid one
                 Move mv;
-                if (sensibleMovesets && attemptDamaging && moves.get(i).level > 0) {
+                // Weight every slot's pick toward centerPower(level), not just attemptDamaging ones -
+                // Sensible Movesets is deliberately decoupled from Force Good Damaging's slot budget (see
+                // species-power-curve-shuffle-and-scope-review.md Finding A). This does not change which
+                // slots are damaging vs status - pickList above already fixed that - it only re-weights
+                // which move wins within whatever pool was already selected; status/fixed-damage moves get
+                // weight 1.0 from sensibleMovesetWeight, so they're unaffected.
+                if (sensibleMovesets && moves.get(i).level > 0) {
                     List<Move> available = pickList.stream()
                             .filter(candidate -> !learnt.contains(candidate.number))
                             .collect(Collectors.toList());
@@ -173,24 +196,8 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                     }
                 }
 
-                if (i == lv1index) {
-                    lv1AttackingMove = mv.number;
-                } else {
-                    goodDamagingLeft--;
-                }
                 learnt.add(mv.number);
 
-            }
-
-            Collections.shuffle(learnt, random);
-            if (learnt.get(lv1index) != lv1AttackingMove) {
-                for (int i = 0; i < learnt.size(); i++) {
-                    if (learnt.get(i) == lv1AttackingMove) {
-                        learnt.set(i, learnt.get(lv1index));
-                        learnt.set(lv1index, lv1AttackingMove);
-                        break;
-                    }
-                }
             }
 
             // write all moves for the pokemon
