@@ -334,14 +334,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // (levelAppropriatenessWeight) demotes (never removes) below-level moves at pick time, so a thin STAB pool
     // always has an alternative. Curve: BASE at Lv1 rising linearly to MAX by the saturation level. Tuning knobs
     // (calibrate with -Dbm.sweep).
-    private static final double LEVEL_POWER_BASE = 45.0;
-    private static final double LEVEL_POWER_MAX = 95.0;
-    private static final double LEVEL_POWER_SATURATION_LEVEL = 50.0;
-
-    static double centerPower(int level) {
-        double t = Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
-        return LEVEL_POWER_BASE + (LEVEL_POWER_MAX - LEVEL_POWER_BASE) * t;
-    }
+    // centerPower and its constants live on the shared Randomizer base (species-power-curve reuses them too).
 
     // A move is culled above centerPower * a level-scaled ceiling multiplier: tight at low level (reproducing the
     // old ~60 cap), widening at high level so premier nukes (Draco Meteor/Overheat 130) survive and only

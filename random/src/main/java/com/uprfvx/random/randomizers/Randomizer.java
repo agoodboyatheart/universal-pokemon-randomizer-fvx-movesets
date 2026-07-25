@@ -88,6 +88,18 @@ public abstract class Randomizer {
     protected static final double TIER_LOW_MAX_BP  = 60.0;
     protected static final double TIER_MID_MAX_BP  = 80.0;
 
+    // The effective power (power * hitCount) expected of a damaging move at a given level - BASE at Lv1 rising
+    // linearly to MAX by the saturation level. Shared by both moveset randomizers so trainer and species pacing
+    // are calibrated against the same curve. Tuning knobs.
+    protected static final double LEVEL_POWER_BASE = 45.0;
+    protected static final double LEVEL_POWER_MAX = 95.0;
+    protected static final double LEVEL_POWER_SATURATION_LEVEL = 50.0;
+
+    protected static double centerPower(int level) {
+        double t = Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
+        return LEVEL_POWER_BASE + (LEVEL_POWER_MAX - LEVEL_POWER_BASE) * t;
+    }
+
     protected CustomNamesSet getCustomNames() {
         // This is not in line with how most /data resources are loaded for randomization.
         // Am not certain whether this or the other ways are more elegant, might be up
