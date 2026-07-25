@@ -1557,7 +1557,6 @@
                         <properties>
                           <enabled value="false"/>
                           <text resource-bundle="com/uprfvx/random/gui/Bundle" key="GUI.igtDontUseLegendariesCheckBox.text"/>
-                          <toolTipText resource-bundle="com/uprfvx/random/gui/Bundle" key="GUI.igtDontUseLegendariesCheckBox.toolTipText"/>
                         </properties>
                       </component>
                     </children>
