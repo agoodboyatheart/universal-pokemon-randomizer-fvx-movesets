@@ -62,6 +62,12 @@ public class SensibleHeldItemsInvariantsRandomizerTest {
         return romHandler;
     }
 
+    private static int[] resolveMoveset(RomHandler romHandler, TrainerPokemon tp) {
+        return tp.isResetMoves()
+                ? romHandler.getMovesAtLevel(tp.getSpecies(), romHandler.getMovesLearnt(), tp.getLevel())
+                : tp.getMoves();
+    }
+
     @ParameterizedTest
     @MethodSource("gamesToVerify")
     public void bossAndImportantTrainersGetUniqueHeldItemsByDefault(String gameName, String fileBaseName) {
@@ -100,9 +106,7 @@ public class SensibleHeldItemsInvariantsRandomizerTest {
                 if (tp.getLevel() >= 20) {
                     continue;
                 }
-                int[] moveset = tp.isResetMoves()
-                        ? romHandler.getMovesAtLevel(tp.getSpecies(), romHandler.getMovesLearnt(), tp.getLevel())
-                        : tp.getMoves();
+                int[] moveset = resolveMoveset(romHandler, tp);
                 List<Item> sensible = romHandler.getSensibleHeldItemsFor(tp, false, moves, moveset, new Random(SEED));
                 for (Item item : sensible) {
                     if (item == null) continue;
@@ -125,9 +129,7 @@ public class SensibleHeldItemsInvariantsRandomizerTest {
         Set<String> choiceItemNames = Set.of("Choice Band", "Choice Specs", "Choice Scarf");
         for (Trainer tr : romHandler.getTrainers()) {
             for (TrainerPokemon tp : tr.getPokemon()) {
-                int[] moveset = tp.isResetMoves()
-                        ? romHandler.getMovesAtLevel(tp.getSpecies(), romHandler.getMovesLearnt(), tp.getLevel())
-                        : tp.getMoves();
+                int[] moveset = resolveMoveset(romHandler, tp);
                 boolean hasStatusMove = false;
                 for (int moveIdx : moveset) {
                     Move move = moves.get(moveIdx);

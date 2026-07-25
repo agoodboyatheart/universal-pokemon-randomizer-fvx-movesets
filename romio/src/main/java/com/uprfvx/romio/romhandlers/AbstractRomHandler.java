@@ -1025,8 +1025,9 @@ public abstract class AbstractRomHandler implements RomHandler {
             }
         }
         if (tp.getLevel() < 20) {
-            ids.removeIf(id -> id != null
-                    && (id == ItemIDs.lifeOrb || (config.hasAssaultVest() && id == ItemIDs.assaultVest)));
+            // No hasAssaultVest() check needed here: assaultVest can only be in ids at all if that
+            // flag was already true (the add above is gated on it).
+            ids.removeIf(id -> id != null && (id == ItemIDs.lifeOrb || id == ItemIDs.assaultVest));
         }
         List<Item> allItemsById = getItems();
         return ids.stream().map(allItemsById::get).collect(Collectors.toList());
