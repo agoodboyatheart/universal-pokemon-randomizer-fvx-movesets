@@ -330,6 +330,9 @@ public class Settings {
     private boolean randomizeInGameTradesOTs;
     private boolean randomizeInGameTradesIVs;
     private boolean randomizeInGameTradesItems;
+    private boolean tradeSimilarStrength;
+    private boolean tradeBasicOnly;
+    private boolean tradeNoLegendaries;
 
     public enum FieldItemsMod {
         UNCHANGED, SHUFFLE, RANDOM, RANDOM_EVEN
@@ -725,9 +728,9 @@ public class Settings {
         out.write(makeByteSelected(trainersEvolveTheirPokemon, banPrematureEvos, trainersLevelModified,
                 wildLevelsModified, totemLevelsModified, staticLevelModified));
 
-        // 64 shop items 2, static basic only
+        // 64 shop items 2, static basic only, trade filters
         out.write(makeByteSelected(balanceShopPrices, addCheapRareCandiesToShops,
-                staticBasicOnly, false, false, false, false, false));
+                staticBasicOnly, tradeSimilarStrength, tradeBasicOnly, tradeNoLegendaries, false, false));
 
         // 65 general options #2
         out.write(makeByteSelected(randomizeIntroMon, raceMode, false, limitPokemon,
@@ -1085,6 +1088,9 @@ public class Settings {
         settings.setBalanceShopPrices(restoreState(data[64],0));
         settings.setAddCheapRareCandiesToShops(restoreState(data[64], 1));
         settings.setStaticBasicOnly(restoreState(data[64], 2));
+        settings.setTradeSimilarStrength(restoreState(data[64], 3));
+        settings.setTradeBasicOnly(restoreState(data[64], 4));
+        settings.setTradeNoLegendaries(restoreState(data[64], 5));
 
         settings.setRandomizeIntroMon(restoreState(data[65], 0));
         settings.setRaceMode(restoreState(data[65], 1));
@@ -2688,6 +2694,30 @@ public class Settings {
 
     public void setRandomizeInGameTradesItems(boolean randomizeInGameTradesItems) {
         this.randomizeInGameTradesItems = randomizeInGameTradesItems;
+    }
+
+    public boolean isTradeSimilarStrength() {
+        return tradeSimilarStrength;
+    }
+
+    public void setTradeSimilarStrength(boolean tradeSimilarStrength) {
+        this.tradeSimilarStrength = tradeSimilarStrength;
+    }
+
+    public boolean isTradeBasicOnly() {
+        return tradeBasicOnly;
+    }
+
+    public void setTradeBasicOnly(boolean tradeBasicOnly) {
+        this.tradeBasicOnly = tradeBasicOnly;
+    }
+
+    public boolean isTradeNoLegendaries() {
+        return tradeNoLegendaries;
+    }
+
+    public void setTradeNoLegendaries(boolean tradeNoLegendaries) {
+        this.tradeNoLegendaries = tradeNoLegendaries;
     }
 
     public FieldItemsMod getFieldItemsMod() {

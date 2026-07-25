@@ -48,4 +48,52 @@ public class SettingsStaticTradeFilterFlagsTest {
         assertEquals(true, restored.isAddCheapRareCandiesToShops());
         assertEquals(true, restored.isStaticBasicOnly());
     }
+
+    @Test
+    public void tradeFiltersRoundTripTrue() {
+        Settings s = newSettings();
+        s.setTradeSimilarStrength(true);
+        s.setTradeBasicOnly(true);
+        s.setTradeNoLegendaries(true);
+
+        Settings restored = Settings.fromString(s.toString());
+
+        assertEquals(true, restored.isTradeSimilarStrength());
+        assertEquals(true, restored.isTradeBasicOnly());
+        assertEquals(true, restored.isTradeNoLegendaries());
+    }
+
+    @Test
+    public void tradeFiltersRoundTripFalse() {
+        Settings s = newSettings();
+        s.setTradeSimilarStrength(false);
+        s.setTradeBasicOnly(false);
+        s.setTradeNoLegendaries(false);
+
+        Settings restored = Settings.fromString(s.toString());
+
+        assertFalse(restored.isTradeSimilarStrength());
+        assertFalse(restored.isTradeBasicOnly());
+        assertFalse(restored.isTradeNoLegendaries());
+    }
+
+    @Test
+    public void tradeFiltersDoNotCorruptByte64Neighbors() {
+        Settings s = newSettings();
+        s.setBalanceShopPrices(true);
+        s.setAddCheapRareCandiesToShops(true);
+        s.setStaticBasicOnly(true);
+        s.setTradeSimilarStrength(true);
+        s.setTradeBasicOnly(true);
+        s.setTradeNoLegendaries(true);
+
+        Settings restored = Settings.fromString(s.toString());
+
+        assertEquals(true, restored.isBalanceShopPrices());
+        assertEquals(true, restored.isAddCheapRareCandiesToShops());
+        assertEquals(true, restored.isStaticBasicOnly());
+        assertEquals(true, restored.isTradeSimilarStrength());
+        assertEquals(true, restored.isTradeBasicOnly());
+        assertEquals(true, restored.isTradeNoLegendaries());
+    }
 }

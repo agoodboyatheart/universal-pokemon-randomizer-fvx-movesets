@@ -21,6 +21,9 @@ public class TradeRandomizer extends Randomizer {
         boolean randomOT = settings.isRandomizeInGameTradesOTs();
         boolean randomStats = settings.isRandomizeInGameTradesIVs();
         boolean randomItem = settings.isRandomizeInGameTradesItems();
+        boolean similarStrength = settings.isTradeSimilarStrength();
+        boolean basicOnly = settings.isTradeBasicOnly();
+        boolean noLegendaries = settings.isTradeNoLegendaries();
         CustomNamesSet customNames = getCustomNames();
 
         // Process trainer names
@@ -51,11 +54,16 @@ public class TradeRandomizer extends Randomizer {
 
         // get old trades
         List<InGameTrade> trades = romHandler.getInGameTrades();
-        List<Species> usedRequests = new ArrayList<>();
-        List<Species> usedGivens = new ArrayList<>();
         List<String> usedOTs = new ArrayList<>();
         List<String> usedNicknames = new ArrayList<>();
         List<Item> possibleItems = new ArrayList<>(romHandler.getAllowedItems());
+
+        SpeciesSet speciesPool = new SpeciesSet(rSpecService.getSpecies(noLegendaries, false, false));
+        if (basicOnly) {
+            speciesPool = speciesPool.filterBasic(false);
+        }
+        SpeciesSet givenLeft = new SpeciesSet(speciesPool);
+        SpeciesSet requestLeft = new SpeciesSet(speciesPool);
 
         int nickCount = nicknames.size();
         int trnameCount = trainerNames.size();
@@ -63,11 +71,7 @@ public class TradeRandomizer extends Randomizer {
         for (InGameTrade trade : trades) {
             // pick new given pokemon
             Species oldgiven = trade.getGivenSpecies();
-            Species given = rSpecService.randomSpecies(random);
-            while (usedGivens.contains(given)) {
-                given = rSpecService.randomSpecies(random);
-            }
-            usedGivens.add(given);
+            Species given = pickTradeSpecies(givenLeft, givenLeft, speciesPool, oldgiven, similarStrength);
             trade.getGivenSpeciesHolder().setSpecies(given);
             randomizeGivenCosmeticForme(trade);
 
@@ -77,11 +81,11 @@ public class TradeRandomizer extends Randomizer {
                 trade.setRequestedSpecies(given);
             } else if (randomizeRequest) {
                 if (trade.getRequestedSpecies() != null) {
-                    Species request = rSpecService.randomSpecies(random);
-                    while (usedRequests.contains(request) || request == given) {
-                        request = rSpecService.randomSpecies(random);
-                    }
-                    usedRequests.add(request);
+                    Species oldrequested = trade.getRequestedSpecies();
+                    SpeciesSet requestCandidates = requestLeft.contains(given) && requestLeft.size() > 1 ?
+                            requestLeft.filter(sp -> sp != given) : requestLeft;
+                    Species request = pickTradeSpecies(requestCandidates, requestLeft, speciesPool, oldrequested,
+                            similarStrength);
                     trade.setRequestedSpecies(request);
                 }
             }
@@ -124,6 +128,22 @@ public class TradeRandomizer extends Randomizer {
         // things that the game doesn't support should just be ignored
         romHandler.setInGameTrades(trades);
         changesMade = true;
+    }
+
+    /**
+     * Picks a replacement Species for a trade from candidates, then removes it from left (refilling left
+     * from fullPool if left becomes empty as a result).
+     */
+    private Species pickTradeSpecies(SpeciesSet candidates, SpeciesSet left, SpeciesSet fullPool, Species anchor,
+                                      boolean similarStrength) {
+        Species picked = similarStrength ?
+                candidates.getRandomSimilarStrengthSpecies(anchor, false, random) :
+                candidates.getRandomSpecies(random);
+        left.remove(picked);
+        if (left.isEmpty()) {
+            left.addAll(fullPool);
+        }
+        return picked;
     }
 
     /**

@@ -123,6 +123,9 @@ public class RandomizerGUI {
     private JCheckBox igtRandomizeOTsCheckBox;
     private JCheckBox igtRandomizeIVsCheckBox;
     private JCheckBox igtRandomizeItemsCheckBox;
+    private JCheckBox igtSimilarStrengthCheckBox;
+    private JCheckBox igtBasicOnlyCheckBox;
+    private JCheckBox igtDontUseLegendariesCheckBox;
     private JCheckBox mdRandomizeMovePowerCheckBox;
     private JCheckBox mdRandomizeMoveAccuracyCheckBox;
     private JCheckBox mdRandomizeMovePPCheckBox;
@@ -1986,6 +1989,9 @@ public class RandomizerGUI {
         igtRandomizeIVsCheckBox.setSelected(settings.isRandomizeInGameTradesIVs());
         igtRandomizeNicknamesCheckBox.setSelected(settings.isRandomizeInGameTradesNicknames());
         igtRandomizeOTsCheckBox.setSelected(settings.isRandomizeInGameTradesOTs());
+        igtSimilarStrengthCheckBox.setSelected(settings.isTradeSimilarStrength());
+        igtBasicOnlyCheckBox.setSelected(settings.isTradeBasicOnly());
+        igtDontUseLegendariesCheckBox.setSelected(settings.isTradeNoLegendaries());
         igtUnchangedRadioButton.setSelected(settings.getInGameTradesMod() == Settings.InGameTradesMod.UNCHANGED);
 
         fiRandomRadioButton.setSelected(settings.getFieldItemsMod() == Settings.FieldItemsMod.RANDOM);
@@ -2239,6 +2245,9 @@ public class RandomizerGUI {
         settings.setRandomizeInGameTradesIVs(igtRandomizeIVsCheckBox.isSelected());
         settings.setRandomizeInGameTradesNicknames(igtRandomizeNicknamesCheckBox.isSelected());
         settings.setRandomizeInGameTradesOTs(igtRandomizeOTsCheckBox.isSelected());
+        settings.setTradeSimilarStrength(igtSimilarStrengthCheckBox.isSelected());
+        settings.setTradeBasicOnly(igtBasicOnlyCheckBox.isSelected());
+        settings.setTradeNoLegendaries(igtDontUseLegendariesCheckBox.isSelected());
 
         settings.setFieldItemsMod(fiUnchangedRadioButton.isSelected(), fiShuffleRadioButton.isSelected(), fiRandomRadioButton.isSelected(), fiRandomEvenDistributionRadioButton.isSelected());
         settings.setBanBadRandomFieldItems(fiBanBadItemsCheckBox.isSelected());
@@ -2430,7 +2439,8 @@ public class RandomizerGUI {
 
         setInitialButtonState(igtUnchangedRadioButton, igtRandomizeGivenPokemonOnlyRadioButton,
 				igtRandomizeBothRequestedGivenRadioButton, igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox,
-				igtRandomizeIVsCheckBox, igtRandomizeItemsCheckBox);
+				igtRandomizeIVsCheckBox, igtRandomizeItemsCheckBox, igtSimilarStrengthCheckBox,
+				igtBasicOnlyCheckBox, igtDontUseLegendariesCheckBox);
 
         setInitialButtonState(mdRandomizeMovePowerCheckBox, mdRandomizeMoveAccuracyCheckBox, mdRandomizeMovePPCheckBox,
             mdRandomizeMoveTypesCheckBox, mdRandomizeMoveCategoryCheckBox, mdUpdateMovesCheckBox, mdRandomizeMoveNamesCheckBox);
@@ -2832,6 +2842,9 @@ public class RandomizerGUI {
             igtRandomizeOTsCheckBox.setEnabled(false);
             igtRandomizeIVsCheckBox.setEnabled(false);
             igtRandomizeItemsCheckBox.setEnabled(false);
+            igtSimilarStrengthCheckBox.setEnabled(false);
+            igtBasicOnlyCheckBox.setEnabled(false);
+            igtDontUseLegendariesCheckBox.setEnabled(false);
 
             if (pokemonGeneration == 1) {
                 igtRandomizeOTsCheckBox.setVisible(false);
@@ -3400,10 +3413,12 @@ public class RandomizerGUI {
 
         if (igtUnchangedRadioButton.isSelected()) {
             disableAndDeselectButtons(igtRandomizeItemsCheckBox, igtRandomizeIVsCheckBox,
-                    igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox);
+                    igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox, igtSimilarStrengthCheckBox,
+                    igtBasicOnlyCheckBox, igtDontUseLegendariesCheckBox);
         } else {
             enableButtons(igtRandomizeItemsCheckBox, igtRandomizeIVsCheckBox,
-                    igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox);
+                    igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox, igtSimilarStrengthCheckBox,
+                    igtBasicOnlyCheckBox, igtDontUseLegendariesCheckBox);
         }
 
         if (mdUpdateMovesCheckBox.isSelected()) {
