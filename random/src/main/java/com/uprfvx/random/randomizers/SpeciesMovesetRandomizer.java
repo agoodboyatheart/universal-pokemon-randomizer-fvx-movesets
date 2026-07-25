@@ -33,7 +33,11 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         List<Move> validDamagingMoves = new ArrayList<>();
         Map<Type, List<Move>> validTypeMoves = new HashMap<>();
         Map<Type, List<Move>> validTypeDamagingMoves = new HashMap<>();
-        createSetsOfMoves(noBroken, validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves);
+        // When Sensible Movesets is on, widen the damaging pool to include weak (sub-isGoodDamaging) moves so the
+        // level curve can actually reach its low end. Without this the pool floor (~50 effective power) sits above
+        // centerPower at low levels and the curve is starved - see species-power-curve-structural-flaw.md.
+        createSetsOfMoves(noBroken, sensibleMovesets, validMoves, validDamagingMoves, validTypeMoves,
+                validTypeDamagingMoves);
 
         for (Integer pkmnNum : movesets.keySet()) {
             List<Integer> learnt = new ArrayList<>();
@@ -217,7 +221,9 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         List<Move> validDamagingMoves = new ArrayList<>();
         Map<Type, List<Move>> validTypeMoves = new HashMap<>();
         Map<Type, List<Move>> validTypeDamagingMoves = new HashMap<>();
-        createSetsOfMoves(noBroken, validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves);
+        // Egg moves are out of Sensible Movesets' scope (no per-move level to weight against), so keep the narrow
+        // isGoodDamaging pool here - no widening.
+        createSetsOfMoves(noBroken, false, validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves);
 
         for (Integer pkmnNum : movesets.keySet()) {
             List<Integer> learnt = new ArrayList<>();
@@ -325,22 +331,26 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         changesMade = true;
     }
 
-    // Below centerPower(level) * SPECIES_POWER_FLOOR_FRACTION a damaging move's pick weight falls off; status
-    // moves and moves already at/above the floor keep full weight. No boss tier or quality-list exemption - the
-    // player filters species pools themselves, so nothing here should judge move quality. Tuning knobs.
-    private static final double SPECIES_POWER_FLOOR_FRACTION = 0.6;
-    private static final double SPECIES_POWER_FLOOR_EXPONENT = 0.8;
+    // A damaging move's pick weight is a bell curve peaking at centerPower(level) - the effective power expected
+    // at that level - and falling off symmetrically for moves that are too weak OR too strong for the slot. This
+    // needs the widened damaging pool (see createSetsOfMoves / widenDamagingPool): with the narrow isGoodDamaging
+    // pool the curve's low end (centerPower ~45 at Lv1) sits below the pool floor of ~50 and the weight is starved
+    // - see species-power-curve-structural-flaw.md.
+    //
+    // SPREAD is the one knob: the Gaussian's standard deviation as a fraction of centerPower. Smaller = a tighter,
+    // more strongly level-locked curve; larger = looser, preserving more variability (this fork prizes variability
+    // over rigid correctness, so this stays deliberately wide). Status / fixed-damage moves (no base power to place
+    // on the curve) keep full weight. No boss tier or quality-list exemption - the player filters species pools.
+    private static final double SPECIES_POWER_SPREAD = 0.4;
 
     private static double sensibleMovesetWeight(Move mv, int level) {
         double effectivePower = mv.power * mv.hitCount;
         if (effectivePower <= 0) {
             return 1.0;
         }
-        double floor = centerPower(level) * SPECIES_POWER_FLOOR_FRACTION;
-        if (effectivePower >= floor) {
-            return 1.0;
-        }
-        return Math.pow(effectivePower / floor, SPECIES_POWER_FLOOR_EXPONENT);
+        double center = centerPower(level);
+        double z = (effectivePower - center) / (SPECIES_POWER_SPREAD * center);
+        return Math.exp(-0.5 * z * z);
     }
 
     private boolean checkForUnusedMove(List<Move> potentialList, List<Integer> alreadyUsed) {
@@ -352,8 +362,9 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         return false;
     }
 
-    private void createSetsOfMoves(boolean noBroken, List<Move> validMoves, List<Move> validDamagingMoves,
-                                   Map<Type, List<Move>> validTypeMoves, Map<Type, List<Move>> validTypeDamagingMoves) {
+    private void createSetsOfMoves(boolean noBroken, boolean widenDamagingPool, List<Move> validMoves,
+                                   List<Move> validDamagingMoves, Map<Type, List<Move>> validTypeMoves,
+                                   Map<Type, List<Move>> validTypeDamagingMoves) {
         List<Move> allMoves = romHandler.getMoves();
         List<Integer> hms = romHandler.getHMMoves();
         Set<Integer> allBanned = new HashSet<>(noBroken ? romHandler.getGameBreakingMoves() : Collections.emptySet());
@@ -373,7 +384,13 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 }
 
                 if (!GlobalConstants.bannedForDamagingMove[mv.number]) {
-                    if (mv.isGoodDamaging(romHandler.getPerfectAccuracy())) {
+                    // widenDamagingPool (Sensible Movesets): admit any move with real base power, not just
+                    // isGoodDamaging (>=50) ones, so the level curve has weak low-level moves to select. The
+                    // soft floor in sensibleMovesetWeight suppresses genuine junk at the low end.
+                    boolean include = widenDamagingPool
+                            ? (mv.category != MoveCategory.STATUS && mv.power * mv.hitCount > 0)
+                            : mv.isGoodDamaging(romHandler.getPerfectAccuracy());
+                    if (include) {
                         validDamagingMoves.add(mv);
                         if (mv.type != null) {
                             if (!validTypeDamagingMoves.containsKey(mv.type)) {

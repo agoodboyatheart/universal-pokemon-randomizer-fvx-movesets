@@ -68,6 +68,13 @@ public class SensibleMovesetsRandomizerTest {
         int lowCount = 0;
         double highSum = 0;
         int highCount = 0;
+        // Finer per-level-band diagnostics (report-only; the assertion below still uses the coarse low/high bands).
+        int[] bandEdges = {10, 20, 35, 49, Integer.MAX_VALUE};
+        String[] bandNames = {"1-10", "11-20", "21-35", "36-49", "50+"};
+        double[] bandSum = new double[bandEdges.length];
+        int[] bandCount = new int[bandEdges.length];
+        int lowOverpowered = 0; // level <=10 slots that rolled effective power > 100
+        int lowTotal = 0;
         Map<Integer, List<MoveLearnt>> movesets = rom.getMovesLearnt();
         List<Move> allMoves = rom.getMoves();
         for (List<MoveLearnt> learnt : movesets.values()) {
@@ -80,6 +87,19 @@ public class SensibleMovesetsRandomizerTest {
                     continue;
                 }
                 double effectivePower = mv.power * mv.hitCount;
+                for (int b = 0; b < bandEdges.length; b++) {
+                    if (ml.level <= bandEdges[b]) {
+                        bandSum[b] += effectivePower;
+                        bandCount[b]++;
+                        break;
+                    }
+                }
+                if (ml.level <= 10) {
+                    lowTotal++;
+                    if (effectivePower > 100) {
+                        lowOverpowered++;
+                    }
+                }
                 if (ml.level <= LOW_LEVEL_CEILING) {
                     lowSum += effectivePower;
                     lowCount++;
@@ -93,6 +113,12 @@ public class SensibleMovesetsRandomizerTest {
                 "Not enough sampled slots in both bands (low=" + lowCount + ", high=" + highCount + ")");
         double lowAvg = lowSum / lowCount;
         double highAvg = highSum / highCount;
+        for (int b = 0; b < bandEdges.length; b++) {
+            System.out.printf("  band %-6s avg power: %.1f (n=%d)%n", bandNames[b],
+                    bandCount[b] == 0 ? 0 : bandSum[b] / bandCount[b], bandCount[b]);
+        }
+        System.out.printf("  level<=10 slots rolling >100 power: %d/%d (%.1f%%)%n",
+                lowOverpowered, lowTotal, lowTotal == 0 ? 0 : 100.0 * lowOverpowered / lowTotal);
         System.out.printf("Low-level (<=%d) avg effective power: %.1f (n=%d)%n", LOW_LEVEL_CEILING, lowAvg, lowCount);
         System.out.printf("High-level (>=%d) avg effective power: %.1f (n=%d)%n", HIGH_LEVEL_FLOOR, highAvg, highCount);
         assertTrue(highAvg > lowAvg,
