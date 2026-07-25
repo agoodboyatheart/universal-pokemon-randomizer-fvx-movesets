@@ -22,6 +22,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         int forceStartingMoveCount = settings.getGuaranteedMoveCount();
         double goodDamagingPercentage =
                 settings.isMovesetsForceGoodDamaging() ? settings.getMovesetsGoodDamagingPercent() / 100.0 : 0;
+        boolean sensibleMovesets = settings.isSensibleMovesets();
         boolean evolutionMovesForAll = settings.isEvolutionMovesForAll();
 
         // Get current sets
@@ -154,9 +155,18 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 }
 
                 // now pick a move until we get a valid one
-                Move mv = pickList.get(random.nextInt(pickList.size()));
-                while (learnt.contains(mv.number)) {
+                Move mv;
+                if (sensibleMovesets && attemptDamaging && moves.get(i).level > 0) {
+                    List<Move> available = pickList.stream()
+                            .filter(candidate -> !learnt.contains(candidate.number))
+                            .collect(Collectors.toList());
+                    int slotLevel = moves.get(i).level;
+                    mv = weightedPick(available, candidate -> sensibleMovesetWeight(candidate, slotLevel));
+                } else {
                     mv = pickList.get(random.nextInt(pickList.size()));
+                    while (learnt.contains(mv.number)) {
+                        mv = pickList.get(random.nextInt(pickList.size()));
+                    }
                 }
 
                 if (i == lv1index) {
@@ -226,6 +236,8 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 continue;
             }
 
+            // No per-move level here to weight against, so Sensible Movesets' power curve doesn't apply - picks
+            // stay uniform (species-tmtutor-moveset-redesign.md Phase 1 scope note).
             // Force a certain amount of good damaging moves depending on the percentage
             int goodDamagingLeft = (int)Math.round(goodDamagingPercentage * moves.size());
 
@@ -311,6 +323,24 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         // Done, save
         romHandler.setEggMoves(movesets);
         changesMade = true;
+    }
+
+    // Below centerPower(level) * SPECIES_POWER_FLOOR_FRACTION a damaging move's pick weight falls off; status
+    // moves and moves already at/above the floor keep full weight. No boss tier or quality-list exemption - the
+    // player filters species pools themselves, so nothing here should judge move quality. Tuning knobs.
+    private static final double SPECIES_POWER_FLOOR_FRACTION = 0.6;
+    private static final double SPECIES_POWER_FLOOR_EXPONENT = 0.8;
+
+    private static double sensibleMovesetWeight(Move mv, int level) {
+        double effectivePower = mv.power * mv.hitCount;
+        if (effectivePower <= 0) {
+            return 1.0;
+        }
+        double floor = centerPower(level) * SPECIES_POWER_FLOOR_FRACTION;
+        if (effectivePower >= floor) {
+            return 1.0;
+        }
+        return Math.pow(effectivePower / floor, SPECIES_POWER_FLOOR_EXPONENT);
     }
 
     private boolean checkForUnusedMove(List<Move> potentialList, List<Integer> alreadyUsed) {
