@@ -75,35 +75,20 @@ public abstract class Randomizer {
         return candidates.get(candidates.size() - 1);
     }
 
-    // Level->power-tier soft bias, shared by the trainer (Better Movesets) and species (power-curve)
-    // moveset randomizers. Moves fall into fixed BP tiers that "unlock" with level; below a tier's
-    // unlock level its moves get a soft, shrinking weight so a low-level mon still occasionally rolls
-    // one, rather than the old flat level*3 cutoff. Effective power is power * hitCount (0 for status).
-    protected static final double TIER_LOW_MAX_BP  = 60.0;  // <=60  = low  tier (always available)
-    protected static final double TIER_MID_MAX_BP  = 80.0;  // 61-80 = mid  tier
-    protected static final int    TIER_MID_UNLOCK  = 20;    // mid power starts appearing here
-    protected static final int    TIER_HIGH_UNLOCK = 35;    // high power (81+) starts appearing here
-    protected static final double TIER_SOFTNESS    = 0.8;   // per-level falloff below unlock (0.8^10 ~= 0.11)
+    // Shared BP tier edges: moves fall into fixed effective-power (power * hitCount, 0 for status) bands.
+    protected static final double TIER_LOW_MAX_BP  = 60.0;
+    protected static final double TIER_MID_MAX_BP  = 80.0;
 
-    /**
-     * Soft level-gate weight in (0,1] for a move of the given effective power on a mon of the given
-     * level: 1.0 once the mon's level reaches the move's tier unlock level, and a soft, shrinking
-     * fraction below it (so an under-level mon can still occasionally roll up a tier). Multiply an
-     * existing power-based selection weight by this to bias picks toward level-appropriate power.
-     */
-    protected static double levelTierWeight(int level, double effectivePower) {
-        int unlock;
-        if (effectivePower <= TIER_LOW_MAX_BP) {
-            unlock = 0;                 // low tier: always available
-        } else if (effectivePower <= TIER_MID_MAX_BP) {
-            unlock = TIER_MID_UNLOCK;   // mid tier
-        } else {
-            unlock = TIER_HIGH_UNLOCK;  // high tier
-        }
-        if (level >= unlock) {
-            return 1.0;
-        }
-        return Math.pow(TIER_SOFTNESS, unlock - level);
+    // The effective power (power * hitCount) expected of a damaging move at a given level - BASE at Lv1 rising
+    // linearly to MAX by the saturation level. Shared by both moveset randomizers so trainer and species pacing
+    // are calibrated against the same curve. Tuning knobs.
+    protected static final double LEVEL_POWER_BASE = 45.0;
+    protected static final double LEVEL_POWER_MAX = 95.0;
+    protected static final double LEVEL_POWER_SATURATION_LEVEL = 50.0;
+
+    protected static double centerPower(int level) {
+        double t = Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
+        return LEVEL_POWER_BASE + (LEVEL_POWER_MAX - LEVEL_POWER_BASE) * t;
     }
 
     protected CustomNamesSet getCustomNames() {
