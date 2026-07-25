@@ -297,6 +297,7 @@ public class RandomizerGUI {
     private JCheckBox stpPercentageLevelModifierCheckBox;
     private SpinSlider stpPercentageLevelModifierSpinSlider;
     private JCheckBox stpFixMusicCheckBox;
+    private JCheckBox stpBasicOnlyCheckBox;
     private JCheckBox miscFasterHPAndEXPBarsCheckBox;
     private JCheckBox tpBossTrainersItemsCheckBox;
     private JCheckBox tpImportantTrainersItemsCheckBox;
@@ -1942,6 +1943,7 @@ public class RandomizerGUI {
         stpPercentageLevelModifierCheckBox.setSelected(settings.isStaticLevelModified());
         stpPercentageLevelModifierSpinSlider.setValue(settings.getStaticLevelModifier());
         stpFixMusicCheckBox.setSelected(settings.isCorrectStaticMusic());
+        stpBasicOnlyCheckBox.setSelected(settings.isStaticBasicOnly());
 
         thcRandomCompletelyRadioButton
                 .setSelected(settings.getTmsHmsCompatibilityMod() == Settings.TMsHMsCompatibilityMod.COMPLETELY_RANDOM);
@@ -2208,6 +2210,7 @@ public class RandomizerGUI {
         settings.setStaticLevelModified(stpPercentageLevelModifierCheckBox.isSelected());
         settings.setStaticLevelModifier(stpPercentageLevelModifierSpinSlider.getValue());
         settings.setCorrectStaticMusic(stpFixMusicCheckBox.isSelected() && stpFixMusicCheckBox.isVisible());
+        settings.setStaticBasicOnly(stpBasicOnlyCheckBox.isSelected() && stpBasicOnlyCheckBox.isVisible());
 
         settings.setTmsMod(tmUnchangedRadioButton.isSelected(), tmRandomRadioButton.isSelected());
 
@@ -2420,7 +2423,7 @@ public class RandomizerGUI {
         setInitialButtonState(stpUnchangedRadioButton, stpSwapLegendariesSwapStandardsRadioButton,
 				stpRandomCompletelyRadioButton, stpRandomSimilarStrengthRadioButton, stpPercentageLevelModifierCheckBox,
 				stpLimitMainGameLegendariesCheckBox, stpRandomize600BSTCheckBox, stpAllowAltFormesCheckBox,
-				stpSwapMegaEvosCheckBox, stpFixMusicCheckBox);
+				stpSwapMegaEvosCheckBox, stpFixMusicCheckBox, stpBasicOnlyCheckBox);
 		stpPercentageLevelModifierSpinSlider.setVisible(true);
 		stpPercentageLevelModifierSpinSlider.setEnabled(false);
 		stpPercentageLevelModifierSpinSlider.setValue(0);
@@ -2817,6 +2820,7 @@ public class RandomizerGUI {
                 stpPercentageLevelModifierCheckBox.setVisible(false);
                 stpPercentageLevelModifierSpinSlider.setVisible(false);
                 stpFixMusicCheckBox.setVisible(false);
+                stpBasicOnlyCheckBox.setVisible(false);
             }
 
             igtUnchangedRadioButton.setEnabled(true);
@@ -3375,10 +3379,10 @@ public class RandomizerGUI {
 
         if (stpUnchangedRadioButton.isSelected()) {
             disableAndDeselectButtons(stpRandomize600BSTCheckBox, stpAllowAltFormesCheckBox,
-                    stpSwapMegaEvosCheckBox, stpFixMusicCheckBox);
+                    stpSwapMegaEvosCheckBox, stpFixMusicCheckBox, stpBasicOnlyCheckBox);
         } else {
             enableButtons(stpRandomize600BSTCheckBox, stpAllowAltFormesCheckBox,
-                    stpSwapMegaEvosCheckBox, stpFixMusicCheckBox);
+                    stpSwapMegaEvosCheckBox, stpFixMusicCheckBox, stpBasicOnlyCheckBox);
         }
 
         if (stpRandomSimilarStrengthRadioButton.isSelected()) {

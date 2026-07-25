@@ -38,6 +38,9 @@ Download the Randomizer below by clicking on `UPR_FVX-[VERSION]-[OS].zip`. If yo
 
 ### Static Pokemon
 - (Gen 3) [The description of a changed feature here.]
+- Added a "Basic Pokemon Only" checkbox. When checked, static Pokemon are only replaced with
+  Pokemon that nothing else evolves into, regardless of which randomization mode (Swap
+  Legendaries for Legendaries, Completely Random, or Similar Strength) is active.
 
 ### Misc. Tweaks
 - (Gen 4+5) [The description of a misc. tweak addition or change here.]

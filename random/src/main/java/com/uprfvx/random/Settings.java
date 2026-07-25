@@ -262,6 +262,7 @@ public class Settings {
     private boolean staticLevelModified;
     private int staticLevelModifier = 0; // -100 ~ 155
     private boolean correctStaticMusic;
+    private boolean staticBasicOnly;
 
     public enum TotemPokemonMod {
         UNCHANGED, RANDOM, SIMILAR_STRENGTH
@@ -724,9 +725,9 @@ public class Settings {
         out.write(makeByteSelected(trainersEvolveTheirPokemon, banPrematureEvos, trainersLevelModified,
                 wildLevelsModified, totemLevelsModified, staticLevelModified));
 
-        // 64 shop items 2
+        // 64 shop items 2, static basic only
         out.write(makeByteSelected(balanceShopPrices, addCheapRareCandiesToShops,
-                false, false, false, false, false, false));
+                staticBasicOnly, false, false, false, false, false));
 
         // 65 general options #2
         out.write(makeByteSelected(randomizeIntroMon, raceMode, false, limitPokemon,
@@ -1083,6 +1084,7 @@ public class Settings {
 
         settings.setBalanceShopPrices(restoreState(data[64],0));
         settings.setAddCheapRareCandiesToShops(restoreState(data[64], 1));
+        settings.setStaticBasicOnly(restoreState(data[64], 2));
 
         settings.setRandomizeIntroMon(restoreState(data[65], 0));
         settings.setRaceMode(restoreState(data[65], 1));
@@ -2413,6 +2415,14 @@ public class Settings {
 
     public void setCorrectStaticMusic(boolean correctStaticMusic) {
         this.correctStaticMusic = correctStaticMusic;
+    }
+
+    public boolean isStaticBasicOnly() {
+        return staticBasicOnly;
+    }
+
+    public void setStaticBasicOnly(boolean staticBasicOnly) {
+        this.staticBasicOnly = staticBasicOnly;
     }
 
 

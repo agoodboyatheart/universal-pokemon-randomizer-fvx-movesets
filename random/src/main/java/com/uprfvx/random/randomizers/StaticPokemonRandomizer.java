@@ -59,6 +59,7 @@ public class StaticPokemonRandomizer extends Randomizer {
         boolean abilitiesAreRandomized = settings.getAbilitiesMod() == Settings.AbilitiesMod.RANDOMIZE;
         int levelModifier = settings.isStaticLevelModified() ? settings.getStaticLevelModifier() : 0;
         boolean correctStaticMusic = settings.isCorrectStaticMusic();
+        boolean basicOnly = settings.isStaticBasicOnly();
 
         // Load
         List<StaticEncounter> currentStaticPokemon = romHandler.getStaticPokemon();
@@ -96,6 +97,11 @@ public class StaticPokemonRandomizer extends Randomizer {
             legendariesLeft.removeAll(banned);
             nonlegsLeft.removeAll(banned);
             ultraBeastsLeft.removeAll(banned);
+            if (basicOnly) {
+                legendariesLeft = legendariesLeft.filterBasic(false);
+                nonlegsLeft = nonlegsLeft.filterBasic(false);
+                ultraBeastsLeft = ultraBeastsLeft.filterBasic(false);
+            }
 
             // Full pools for easier refilling later
             SpeciesSet legendariesPool = new SpeciesSet(legendariesLeft);
@@ -164,6 +170,9 @@ public class StaticPokemonRandomizer extends Randomizer {
             SpeciesSet pokemonLeft = new SpeciesSet(!allowAltFormes ?
                     rSpecService.getAll(false) : listInclFormesExclCosmetics);
             pokemonLeft.removeAll(banned);
+            if (basicOnly) {
+                pokemonLeft = pokemonLeft.filterBasic(false);
+            }
 
             SpeciesSet pokemonPool = new SpeciesSet(pokemonLeft);
 
@@ -257,6 +266,9 @@ public class StaticPokemonRandomizer extends Randomizer {
             SpeciesSet pokemonLeft = new SpeciesSet(!allowAltFormes ?
                     rSpecService.getAll(false) : listInclFormesExclCosmetics);
             pokemonLeft.removeAll(banned);
+            if (basicOnly) {
+                pokemonLeft = pokemonLeft.filterBasic(false);
+            }
 
             SpeciesSet pokemonPool = new SpeciesSet(pokemonLeft);
 
