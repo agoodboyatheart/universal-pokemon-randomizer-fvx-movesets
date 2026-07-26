@@ -178,6 +178,7 @@ public class Settings {
     private boolean blockBrokenMovesetMoves;
     private boolean evolutionMovesForAll;
     private boolean sensibleMovesets;
+    private boolean movesetsFollowEvolutions;
 
     public enum TrainersMod {
         UNCHANGED, RANDOM, DISTRIBUTED, MAINPLAYTHROUGH, TYPE_THEMED,
@@ -710,7 +711,7 @@ public class Settings {
         // 61 trainer type diversity + better movesets + species sensible movesets
         out.write(makeByteSelected(diverseTypesForBossTrainers, diverseTypesForImportantTrainers,
                 diverseTypesForRegularTrainers, betterBossTrainerMovesets, betterImportantTrainerMovesets,
-                betterRegularTrainerMovesets, sensibleMovesets, false));
+                betterRegularTrainerMovesets, sensibleMovesets, movesetsFollowEvolutions));
 
         // 62 setting battle style: modification (3bits) + style (4bits)
         out.write(makeByteSelected(settingBattleStyle.getModification() == BattleStyle.Modification.UNCHANGED,
@@ -1072,6 +1073,7 @@ public class Settings {
         settings.setBetterImportantTrainerMovesets(restoreState(data[61], 4));
         settings.setBetterRegularTrainerMovesets(restoreState(data[61], 5));
         settings.setSensibleMovesets(restoreState(data[61], 6));
+        settings.setMovesetsFollowEvolutions(restoreState(data[61], 7));
 
         settings.settingBattleStyle.setModification(restoreEnum(BattleStyle.Modification.class, data[62], 0, 1, 2));
         settings.settingBattleStyle.setStyle(restoreEnum(BattleStyle.Style.class, data[62], 3, 4, 5, 6));
@@ -1879,6 +1881,14 @@ public class Settings {
 
     public void setSensibleMovesets(boolean sensibleMovesets) {
         this.sensibleMovesets = sensibleMovesets;
+    }
+
+    public boolean isMovesetsFollowEvolutions() {
+        return movesetsFollowEvolutions;
+    }
+
+    public void setMovesetsFollowEvolutions(boolean movesetsFollowEvolutions) {
+        this.movesetsFollowEvolutions = movesetsFollowEvolutions;
     }
 
     public TrainersMod getTrainersMod() {

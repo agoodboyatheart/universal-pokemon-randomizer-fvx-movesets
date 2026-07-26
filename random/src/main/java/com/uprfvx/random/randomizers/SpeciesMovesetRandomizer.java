@@ -4,6 +4,8 @@ import com.uprfvx.random.Settings;
 import com.uprfvx.romio.constants.GlobalConstants;
 import com.uprfvx.romio.constants.MoveIDs;
 import com.uprfvx.romio.gamedata.*;
+import com.uprfvx.romio.gamedata.cueh.BasicSpeciesAction;
+import com.uprfvx.romio.gamedata.cueh.EvolvedSpeciesAction;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
 import java.util.*;
@@ -24,6 +26,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 settings.isMovesetsForceGoodDamaging() ? settings.getMovesetsGoodDamagingPercent() / 100.0 : 0;
         boolean sensibleMovesets = settings.isSensibleMovesets();
         boolean evolutionMovesForAll = settings.isEvolutionMovesForAll();
+        boolean movesetsFollowEvolutions = settings.isMovesetsFollowEvolutions();
 
         // Get current sets
         Map<Integer, List<MoveLearnt>> movesets = romHandler.getMovesLearnt();
@@ -39,49 +42,135 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         createSetsOfMoves(noBroken, sensibleMovesets, validMoves, validDamagingMoves, validTypeMoves,
                 validTypeDamagingMoves);
 
-        for (Integer pkmnNum : movesets.keySet()) {
-            List<Integer> learnt = new ArrayList<>();
-            List<MoveLearnt> moves = movesets.get(pkmnNum);
-            Species pkmn = findSpeciesInPoolWithSpeciesID(rSpecService.getAll(true), pkmnNum);
-            if (pkmn == null) {
-                continue;
-            }
-
-            double atkSpAtkRatio = pkmn.getAttackSpecialAttackRatio();
-
-            // 4 starting moves?
-            if (forceStartingMoves) {
-                int lv1count = 0;
-                for (MoveLearnt ml : moves) {
-                    if (ml.level == 1) {
-                        lv1count++;
-                    }
+        if (movesetsFollowEvolutions) {
+            // Basic species are randomized exactly like the plain (non-follow) path below - only evolved
+            // species behave differently, via evolvedAction.
+            BasicSpeciesAction<Species> independentAction = pkmn -> {
+                List<MoveLearnt> moves = movesets.get(pkmn.getNumber());
+                if (moves == null || !rSpecService.getAll(true).contains(pkmn)) {
+                    return;
                 }
-                if (lv1count < forceStartingMoveCount) {
-                    for (int i = 0; i < forceStartingMoveCount - lv1count; i++) {
-                        MoveLearnt fakeLv1 = new MoveLearnt(0, 1);
-                        moves.add(0, fakeLv1);
-                    }
+                padMovesetSlots(moves, forceStartingMoves, forceStartingMoveCount, evolutionMovesForAll);
+                if (copyCosmeticMovesetIfNeeded(pkmn, moves, movesets)) {
+                    return;
+                }
+                randomizeMovesLearntForSpecies(pkmn, moves, 0, typeThemed, sensibleMovesets, goodDamagingPercentage,
+                        validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves);
+            };
+
+            // An evolved species inherits its pre-evolution's already-finalized picks, earliest-learned first,
+            // into as many of its own slots as the pre-evolution has moves to give - this is what makes both
+            // the fewer-slots-than-prevo case (truncate, keep the lowest levels) and the more-slots-than-prevo
+            // case (leftover slots randomized independently below) fall out of the same min(...) bound, instead
+            // of needing two separate rules. Levels are never touched here - only which move fills each of the
+            // evolved species' own (fixed) slots changes.
+            EvolvedSpeciesAction<Species> evolvedAction = (evFrom, evTo, isFinalEvo) -> {
+                List<MoveLearnt> toMoves = movesets.get(evTo.getNumber());
+                List<MoveLearnt> fromMoves = movesets.get(evFrom.getNumber());
+                if (toMoves == null || fromMoves == null || !rSpecService.getAll(true).contains(evTo)) {
+                    return;
+                }
+                padMovesetSlots(toMoves, forceStartingMoves, forceStartingMoveCount, evolutionMovesForAll);
+                if (copyCosmeticMovesetIfNeeded(evTo, toMoves, movesets)) {
+                    return;
+                }
+                int copyCount = Math.min(toMoves.size(), fromMoves.size());
+                for (int i = 0; i < copyCount; i++) {
+                    toMoves.get(i).move = fromMoves.get(i).move;
+                }
+                if (copyCount < toMoves.size()) {
+                    randomizeMovesLearntForSpecies(evTo, toMoves, copyCount, typeThemed, sensibleMovesets,
+                            goodDamagingPercentage, validMoves, validDamagingMoves, validTypeMoves,
+                            validTypeDamagingMoves);
+                }
+            };
+
+            copyUpEvolutionsHelper.apply(true, false, independentAction, evolvedAction, null, independentAction);
+        } else {
+            for (Integer pkmnNum : movesets.keySet()) {
+                List<MoveLearnt> moves = movesets.get(pkmnNum);
+                Species pkmn = findSpeciesInPoolWithSpeciesID(rSpecService.getAll(true), pkmnNum);
+                if (pkmn == null) {
+                    continue;
+                }
+                padMovesetSlots(moves, forceStartingMoves, forceStartingMoveCount, evolutionMovesForAll);
+                if (copyCosmeticMovesetIfNeeded(pkmn, moves, movesets)) {
+                    continue;
+                }
+                randomizeMovesLearntForSpecies(pkmn, moves, 0, typeThemed, sensibleMovesets, goodDamagingPercentage,
+                        validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves);
+            }
+        }
+
+        // Done, save
+        romHandler.setMovesLearnt(movesets);
+        changesMade = true;
+    }
+
+    // 4-starting-moves / evolution-move-for-all padding, applied once per species before any picking or Follow
+    // Evolutions copying happens - slot counts must be final before they're used as the follow-evolutions copy
+    // bound.
+    private void padMovesetSlots(List<MoveLearnt> moves, boolean forceStartingMoves, int forceStartingMoveCount,
+                                 boolean evolutionMovesForAll) {
+        // 4 starting moves?
+        if (forceStartingMoves) {
+            int lv1count = 0;
+            for (MoveLearnt ml : moves) {
+                if (ml.level == 1) {
+                    lv1count++;
                 }
             }
-
-            if (evolutionMovesForAll) {
-                if (moves.get(0).level != 0) {
-                    MoveLearnt fakeEvoMove = new MoveLearnt(0, 0);
-                    moves.add(0, fakeEvoMove);
+            if (lv1count < forceStartingMoveCount) {
+                for (int i = 0; i < forceStartingMoveCount - lv1count; i++) {
+                    MoveLearnt fakeLv1 = new MoveLearnt(0, 1);
+                    moves.add(0, fakeLv1);
                 }
             }
+        }
 
-            if (pkmn.isEssentiallyCosmetic()) {
-                for (int i = 0; i < moves.size(); i++) {
-                    moves.get(i).move = movesets.get(pkmn.getConceptualBaseForme().getNumber()).get(i).move;
-                }
-                continue;
+        if (evolutionMovesForAll) {
+            if (moves.get(0).level != 0) {
+                MoveLearnt fakeEvoMove = new MoveLearnt(0, 0);
+                moves.add(0, fakeEvoMove);
             }
+        }
+    }
 
-            // Find last lv1 move
-            // lv1index ends up as the index of the first non-lv1 move
-            int lv1index = moves.get(0).level == 1 ? 0 : 1; // Evolution move handling (level 0 = evo move)
+    // Cosmetic/alt formes (e.g. Rotom-Wash) always mirror their base forme's moveset index-for-index - unrelated
+    // to evolution, and takes priority over it. Returns true if pkmn was cosmetic and its moveset was copied
+    // (caller should stop, not also run independent randomization or evolution-following on it).
+    private boolean copyCosmeticMovesetIfNeeded(Species pkmn, List<MoveLearnt> moves,
+                                                 Map<Integer, List<MoveLearnt>> movesets) {
+        if (!pkmn.isEssentiallyCosmetic()) {
+            return false;
+        }
+        List<MoveLearnt> baseMoves = movesets.get(pkmn.getConceptualBaseForme().getNumber());
+        for (int i = 0; i < moves.size(); i++) {
+            moves.get(i).move = baseMoves.get(i).move;
+        }
+        return true;
+    }
+
+    // Independently randomizes moves.get(startIndex .. moves.size()-1) for pkmn. startIndex is 0 for a species
+    // whose whole moveset is being freshly randomized; when Follow Evolutions is on, it's the copy bound for the
+    // leftover tail of an evolved species whose own slot count exceeds what its pre-evolution had to offer.
+    private void randomizeMovesLearntForSpecies(Species pkmn, List<MoveLearnt> moves, int startIndex,
+                                                boolean typeThemed, boolean sensibleMovesets,
+                                                double goodDamagingPercentage, List<Move> validMoves,
+                                                List<Move> validDamagingMoves, Map<Type, List<Move>> validTypeMoves,
+                                                Map<Type, List<Move>> validTypeDamagingMoves) {
+        List<Integer> learnt = new ArrayList<>();
+        for (int i = 0; i < startIndex; i++) {
+            learnt.add(moves.get(i).move);
+        }
+
+        double atkSpAtkRatio = pkmn.getAttackSpecialAttackRatio();
+
+        // Find last lv1 move
+        // lv1index ends up as the index of the first non-lv1 move
+        int lv1index;
+        if (startIndex == 0) {
+            lv1index = moves.get(0).level == 1 ? 0 : 1; // Evolution move handling (level 0 = evo move)
             while (lv1index < moves.size() && moves.get(lv1index).level == 1) {
                 lv1index++;
             }
@@ -90,128 +179,132 @@ public class SpeciesMovesetRandomizer extends Randomizer {
             if (lv1index != 0) {
                 lv1index--;
             }
+        } else {
+            // Level-1 breakpoints are always a species' lowest-level entries, so for the leftover tail of a
+            // Follow Evolutions species (startIndex > 0) they've already been claimed by inherited slots -
+            // nothing left here to force to level 1.
+            lv1index = -1;
+        }
 
-            // Force a certain amount of good damaging moves depending on the percentage. Which slots get the
-            // budget is chosen up front by shuffling the eligible indices, not by consuming the budget in
-            // level order - the latter would deterministically front-load "good damaging" moves onto a
-            // learnset's lowest levels, since the loop always reaches low-level slots first (see
-            // species-power-curve-shuffle-and-scope-review.md Finding B for why the old post-hoc
-            // Collections.shuffle existed, and why it broke the level curve instead).
-            int goodDamagingCount = (int) Math.round(goodDamagingPercentage * moves.size());
-            Set<Integer> damagingSlotIndices = new HashSet<>();
+        // Force a certain amount of good damaging moves depending on the percentage. Which slots get the
+        // budget is chosen up front by shuffling the eligible indices, not by consuming the budget in
+        // level order - the latter would deterministically front-load "good damaging" moves onto a
+        // learnset's lowest levels, since the loop always reaches low-level slots first (see
+        // species-power-curve-shuffle-and-scope-review.md Finding B for why the old post-hoc
+        // Collections.shuffle existed, and why it broke the level curve instead).
+        int goodDamagingCount = (int) Math.round(goodDamagingPercentage * (moves.size() - startIndex));
+        Set<Integer> damagingSlotIndices = new HashSet<>();
+        if (lv1index >= startIndex) {
             damagingSlotIndices.add(lv1index);
-            if (goodDamagingCount > 0) {
-                List<Integer> eligibleIndices = new ArrayList<>();
-                for (int i = 0; i < moves.size(); i++) {
-                    if (i != lv1index) {
-                        eligibleIndices.add(i);
-                    }
+        }
+        if (goodDamagingCount > 0) {
+            List<Integer> eligibleIndices = new ArrayList<>();
+            for (int i = startIndex; i < moves.size(); i++) {
+                if (i != lv1index) {
+                    eligibleIndices.add(i);
                 }
-                Collections.shuffle(eligibleIndices, random);
-                damagingSlotIndices.addAll(
-                        eligibleIndices.subList(0, Math.min(goodDamagingCount, eligibleIndices.size())));
+            }
+            Collections.shuffle(eligibleIndices, random);
+            damagingSlotIndices.addAll(
+                    eligibleIndices.subList(0, Math.min(goodDamagingCount, eligibleIndices.size())));
+        }
+
+        // Replace moves as needed
+        for (int i = startIndex; i < moves.size(); i++) {
+            // should this move be forced damaging?
+            boolean attemptDamaging = damagingSlotIndices.contains(i);
+
+            // type themed?
+            Type typeOfMove = null;
+            if (typeThemed) {
+                double picked = random.nextDouble();
+                if ((pkmn.getPrimaryType(false) == Type.NORMAL && pkmn.getSecondaryType(false) != null) ||
+                        (pkmn.getSecondaryType(false) == Type.NORMAL)) {
+
+                    Type otherType = pkmn.getPrimaryType(false) == Type.NORMAL ? pkmn.getSecondaryType(false) : pkmn.getPrimaryType(false);
+
+                    // Normal/OTHER: 10% normal, 30% other, 60% random
+                    if (picked < 0.1) {
+                        typeOfMove = Type.NORMAL;
+                    } else if (picked < 0.4) {
+                        typeOfMove = otherType;
+                    }
+                    // else random
+                } else if (pkmn.getSecondaryType(false) != null) {
+                    // Primary/Secondary: 20% primary, 20% secondary, 60% random
+                    if (picked < 0.2) {
+                        typeOfMove = pkmn.getPrimaryType(false);
+                    } else if (picked < 0.4) {
+                        typeOfMove = pkmn.getSecondaryType(false);
+                    }
+                    // else random
+                } else {
+                    // Primary/None: 40% primary, 60% random
+                    if (picked < 0.4) {
+                        typeOfMove = pkmn.getPrimaryType(false);
+                    }
+                    // else random
+                }
             }
 
-            // Replace moves as needed
-            for (int i = 0; i < moves.size(); i++) {
-                // should this move be forced damaging?
-                boolean attemptDamaging = damagingSlotIndices.contains(i);
-
-                // type themed?
-                Type typeOfMove = null;
-                if (typeThemed) {
-                    double picked = random.nextDouble();
-                    if ((pkmn.getPrimaryType(false) == Type.NORMAL && pkmn.getSecondaryType(false) != null) ||
-                            (pkmn.getSecondaryType(false) == Type.NORMAL)) {
-
-                        Type otherType = pkmn.getPrimaryType(false) == Type.NORMAL ? pkmn.getSecondaryType(false) : pkmn.getPrimaryType(false);
-
-                        // Normal/OTHER: 10% normal, 30% other, 60% random
-                        if (picked < 0.1) {
-                            typeOfMove = Type.NORMAL;
-                        } else if (picked < 0.4) {
-                            typeOfMove = otherType;
-                        }
-                        // else random
-                    } else if (pkmn.getSecondaryType(false) != null) {
-                        // Primary/Secondary: 20% primary, 20% secondary, 60% random
-                        if (picked < 0.2) {
-                            typeOfMove = pkmn.getPrimaryType(false);
-                        } else if (picked < 0.4) {
-                            typeOfMove = pkmn.getSecondaryType(false);
-                        }
-                        // else random
-                    } else {
-                        // Primary/None: 40% primary, 60% random
-                        if (picked < 0.4) {
-                            typeOfMove = pkmn.getPrimaryType(false);
-                        }
-                        // else random
-                    }
-                }
-
-                // select a list to pick a move from that has at least one free
-                List<Move> pickList = validMoves;
-                if (attemptDamaging) {
-                    if (typeOfMove != null) {
-                        if (validTypeDamagingMoves.containsKey(typeOfMove)
-                                && checkForUnusedMove(validTypeDamagingMoves.get(typeOfMove), learnt)) {
-                            pickList = validTypeDamagingMoves.get(typeOfMove);
-                        } else if (checkForUnusedMove(validDamagingMoves, learnt)) {
-                            pickList = validDamagingMoves;
-                        }
+            // select a list to pick a move from that has at least one free
+            List<Move> pickList = validMoves;
+            if (attemptDamaging) {
+                if (typeOfMove != null) {
+                    if (validTypeDamagingMoves.containsKey(typeOfMove)
+                            && checkForUnusedMove(validTypeDamagingMoves.get(typeOfMove), learnt)) {
+                        pickList = validTypeDamagingMoves.get(typeOfMove);
                     } else if (checkForUnusedMove(validDamagingMoves, learnt)) {
                         pickList = validDamagingMoves;
                     }
-                    MoveCategory forcedCategory = random.nextDouble() < atkSpAtkRatio ? MoveCategory.PHYSICAL : MoveCategory.SPECIAL;
-                    List<Move> filteredList = pickList.stream().filter(mv -> mv.category == forcedCategory).collect(Collectors.toList());
-                    if (!filteredList.isEmpty() && checkForUnusedMove(filteredList, learnt)) {
-                        pickList = filteredList;
-                    }
-                } else if (typeOfMove != null) {
-                    if (validTypeMoves.containsKey(typeOfMove)
-                            && checkForUnusedMove(validTypeMoves.get(typeOfMove), learnt)) {
-                        pickList = validTypeMoves.get(typeOfMove);
-                    }
+                } else if (checkForUnusedMove(validDamagingMoves, learnt)) {
+                    pickList = validDamagingMoves;
                 }
-
-                // now pick a move until we get a valid one
-                Move mv;
-                // Weight every slot's pick toward centerPower(level), not just attemptDamaging ones -
-                // Sensible Movesets is deliberately decoupled from Force Good Damaging's slot budget (see
-                // species-power-curve-shuffle-and-scope-review.md Finding A). This does not change which
-                // slots are damaging vs status - pickList above already fixed that - it only re-weights
-                // which move wins within whatever pool was already selected; status/fixed-damage moves get
-                // weight 1.0 from sensibleMovesetWeight, so they're unaffected.
-                if (sensibleMovesets && moves.get(i).level > 0) {
-                    List<Move> available = pickList.stream()
-                            .filter(candidate -> !learnt.contains(candidate.number))
-                            .collect(Collectors.toList());
-                    int slotLevel = moves.get(i).level;
-                    mv = weightedPick(available, candidate -> sensibleMovesetWeight(candidate, slotLevel));
-                } else {
-                    mv = pickList.get(random.nextInt(pickList.size()));
-                    while (learnt.contains(mv.number)) {
-                        mv = pickList.get(random.nextInt(pickList.size()));
-                    }
+                MoveCategory forcedCategory = random.nextDouble() < atkSpAtkRatio ? MoveCategory.PHYSICAL : MoveCategory.SPECIAL;
+                List<Move> filteredList = pickList.stream().filter(mv -> mv.category == forcedCategory).collect(Collectors.toList());
+                if (!filteredList.isEmpty() && checkForUnusedMove(filteredList, learnt)) {
+                    pickList = filteredList;
                 }
-
-                learnt.add(mv.number);
-
+            } else if (typeOfMove != null) {
+                if (validTypeMoves.containsKey(typeOfMove)
+                        && checkForUnusedMove(validTypeMoves.get(typeOfMove), learnt)) {
+                    pickList = validTypeMoves.get(typeOfMove);
+                }
             }
 
-            // write all moves for the pokemon
-            for (int i = 0; i < learnt.size(); i++) {
-                moves.get(i).move = learnt.get(i);
-                if (i == lv1index) {
-                    // just in case, set this to lv1
-                    moves.get(i).level = 1;
+            // now pick a move until we get a valid one
+            Move mv;
+            // Weight every slot's pick toward centerPower(level), not just attemptDamaging ones -
+            // Sensible Movesets is deliberately decoupled from Force Good Damaging's slot budget (see
+            // species-power-curve-shuffle-and-scope-review.md Finding A). This does not change which
+            // slots are damaging vs status - pickList above already fixed that - it only re-weights
+            // which move wins within whatever pool was already selected; status/fixed-damage moves get
+            // weight 1.0 from sensibleMovesetWeight, so they're unaffected.
+            if (sensibleMovesets && moves.get(i).level > 0) {
+                List<Move> available = pickList.stream()
+                        .filter(candidate -> !learnt.contains(candidate.number))
+                        .collect(Collectors.toList());
+                int slotLevel = moves.get(i).level;
+                mv = weightedPick(available, candidate -> sensibleMovesetWeight(candidate, slotLevel));
+            } else {
+                mv = pickList.get(random.nextInt(pickList.size()));
+                while (learnt.contains(mv.number)) {
+                    mv = pickList.get(random.nextInt(pickList.size()));
                 }
+            }
+
+            learnt.add(mv.number);
+
+        }
+
+        // write all moves for the pokemon
+        for (int i = startIndex; i < learnt.size(); i++) {
+            moves.get(i).move = learnt.get(i);
+            if (i == lv1index) {
+                // just in case, set this to lv1
+                moves.get(i).level = 1;
             }
         }
-        // Done, save
-        romHandler.setMovesLearnt(movesets);
-        changesMade = true;
     }
 
     public void randomizeEggMoves() {

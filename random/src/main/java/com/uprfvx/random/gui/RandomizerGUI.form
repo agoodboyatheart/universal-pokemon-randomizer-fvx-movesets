@@ -1712,7 +1712,7 @@
                       </hspacer>
                       <vspacer id="98120">
                         <constraints>
-                          <grid row="8" column="1" row-span="1" col-span="1" vsize-policy="6" hsize-policy="1" anchor="0" fill="2" indent="0" use-parent-layout="false"/>
+                          <grid row="9" column="1" row-span="1" col-span="1" vsize-policy="6" hsize-policy="1" anchor="0" fill="2" indent="0" use-parent-layout="false"/>
                           <gridbag weightx="0.0" weighty="0.0"/>
                         </constraints>
                       </vspacer>
@@ -1853,6 +1853,17 @@
                           <enabled value="false"/>
                           <text resource-bundle="com/uprfvx/random/gui/Bundle" key="GUI.pmsSensibleMovesetsCheckBox.text"/>
                           <toolTipText resource-bundle="com/uprfvx/random/gui/Bundle" key="GUI.pmsSensibleMovesetsCheckBox.toolTipText"/>
+                        </properties>
+                      </component>
+                      <component id="fe001" class="javax.swing.JCheckBox" binding="pmsFollowEvolutionsCheckBox">
+                        <constraints>
+                          <grid row="8" column="2" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
+                          <gridbag weightx="0.0" weighty="0.0"/>
+                        </constraints>
+                        <properties>
+                          <enabled value="false"/>
+                          <text resource-bundle="com/uprfvx/random/gui/Bundle" key="GUI.pmsFollowEvolutionsCheckBox.text"/>
+                          <toolTipText resource-bundle="com/uprfvx/random/gui/Bundle" key="GUI.pmsFollowEvolutionsCheckBox.toolTipText"/>
                         </properties>
                       </component>
                     </children>
