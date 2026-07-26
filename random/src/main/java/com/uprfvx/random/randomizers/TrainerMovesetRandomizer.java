@@ -497,18 +497,19 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Weather moves are only worth running if the Pokemon benefits from that weather, and redundant if its own
     // ability already sets it.
     private static final Set<Integer> RAIN_BENEFIT_ABILITIES = Set.of(
-            AbilityIDs.swiftSwim, AbilityIDs.rainDish, AbilityIDs.drySkin, AbilityIDs.hydration);
+            AbilityIDs.swiftSwim, AbilityIDs.rainDish, AbilityIDs.drySkin, AbilityIDs.hydration, AbilityIDs.forecast);
     private static final Set<Integer> RAIN_SETTER_ABILITIES = Set.of(
             AbilityIDs.drizzle, AbilityIDs.primordialSea);
     private static final Set<Integer> SUN_BENEFIT_ABILITIES = Set.of(
-            AbilityIDs.chlorophyll, AbilityIDs.solarPower, AbilityIDs.leafGuard, AbilityIDs.flowerGift, AbilityIDs.harvest);
+            AbilityIDs.chlorophyll, AbilityIDs.solarPower, AbilityIDs.leafGuard, AbilityIDs.flowerGift,
+            AbilityIDs.harvest, AbilityIDs.forecast);
     private static final Set<Integer> SUN_SETTER_ABILITIES = Set.of(
             AbilityIDs.drought, AbilityIDs.desolateLand);
     private static final Set<Integer> SAND_BENEFIT_ABILITIES = Set.of(
             AbilityIDs.sandVeil, AbilityIDs.sandRush, AbilityIDs.sandForce);
     private static final Set<Integer> SAND_SETTER_ABILITIES = Set.of(AbilityIDs.sandStream);
     private static final Set<Integer> HAIL_BENEFIT_ABILITIES = Set.of(
-            AbilityIDs.snowCloak, AbilityIDs.iceBody, AbilityIDs.slushRush);
+            AbilityIDs.snowCloak, AbilityIDs.iceBody, AbilityIDs.slushRush, AbilityIDs.forecast);
     private static final Set<Integer> HAIL_SETTER_ABILITIES = Set.of(AbilityIDs.snowWarning);
 
     // Dream Eater and Nightmare only do anything to a sleeping target, so one of these must also be carried. Yawn
