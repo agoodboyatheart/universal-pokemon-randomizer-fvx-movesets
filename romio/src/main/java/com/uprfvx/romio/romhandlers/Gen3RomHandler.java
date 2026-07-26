@@ -2426,7 +2426,7 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
 
 				int itemDescPointerOffset = itemBaseOffset + Gen3Constants.itemDataDescriptionOffset;
 				try {
-					rewriteVariableLengthString(itemDescPointerOffset, newItemDesc);
+					repointVariableLengthStringToFreeSpace(itemDescPointerOffset, newItemDesc);
 				} catch (RomIOException e) {
                     // This used to be a simple logging, turned it into a full error because I don't *think* it
                     // should be too common? Plus the RomHandler arguably should not do logging.
@@ -4458,10 +4458,6 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
         return compressed.length;
     }
 
-	private void rewriteVariableLengthString(int pointerOffset, String string) {
-		rewriteVariableLengthString(pointerOffset, string, new int[0]);
-	}
-
 	private void rewriteVariableLengthString(int pointerOffset, String string, int[] secondaryPointerOffsets) {
 		new DataRewriter<String>().rewriteData(pointerOffset, string, secondaryPointerOffsets,
 				this::variableLengthStringToBytes, this::lengthOfStringAt);
@@ -4472,6 +4468,13 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
 		byte[] newData = Arrays.copyOf(translated, translated.length + 1);
 		newData[newData.length - 1] = (byte) 0xFF;
 		return newData;
+	}
+
+	// Vanilla TM/HM item descriptions alias the same address as their move's MoveDescriptions
+	// entry, so freeing the old string here (like rewriteVariableLengthString does) corrupts that
+	// shared entry even though only this pointer gets repointed afterwards.
+	private void repointVariableLengthStringToFreeSpace(int pointerOffset, String string) {
+		new DataRewriter<String>().repointAndWriteToFreeSpace(pointerOffset, variableLengthStringToBytes(string));
 	}
 
     @Override
