@@ -94,11 +94,24 @@ public class ItemRandomizer extends Randomizer {
                 .collect(Collectors.toList());
         Set<Item> requiredTMs = romHandler.getRequiredFieldTMs();
 
+        // Gym Leader reward TMs are handed out via a fixed battle script, not the field-item
+        // table, so they never appear in "tms"/"current" to begin with. Excluded from the pool
+        // below so the same TM number can't also get placed at an unrelated field location,
+        // duplicating a gym's reward move.
+        List<Item> pool = new ArrayList<>(allTMs);
+        for (int tmNumber : romHandler.getGymLeaderTMs().values()) {
+            if (tmNumber >= 1 && tmNumber <= allTMs.size()) {
+                pool.remove(allTMs.get(tmNumber - 1));
+            }
+        }
+
         int neededTMAmount = tms.size();
+        Set<Item> maxPossible = new HashSet<>(pool);
+        maxPossible.addAll(requiredTMs);
 
         Set<Item> newTMs = new HashSet<>(requiredTMs);
-        while (newTMs.size() < neededTMAmount && newTMs.size() < allTMs.size()) {
-            newTMs.add(allTMs.get(random.nextInt(allTMs.size()))); // duplicates get automatically ignored by the Set
+        while (newTMs.size() < neededTMAmount && newTMs.size() < maxPossible.size()) {
+            newTMs.add(pool.get(random.nextInt(pool.size()))); // duplicates get automatically ignored by the Set
         }
         if (newTMs.size() != neededTMAmount) {
             throw new RandomizationException("Could not randomize TM field items, too many TMs requested.");
