@@ -31,6 +31,20 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         // Get current sets
         Map<Integer, List<MoveLearnt>> movesets = romHandler.getMovesLearnt();
 
+        // Pristine snapshot of vanilla move IDs per species, taken before any randomization mutation -
+        // computeBackfillEffectiveLevels needs the PRE-EVOLUTION's original learnset, but movesets' own
+        // MoveLearnt objects get overwritten in place as each species is processed below (and, with Follow
+        // Evolutions on, prevos are processed before their evolutions) - so a snapshot taken any later
+        // would already be corrupted for whichever species happened to be handled first.
+        Map<Integer, Set<Integer>> vanillaMoveIdsBySpecies = new HashMap<>();
+        for (Map.Entry<Integer, List<MoveLearnt>> entry : movesets.entrySet()) {
+            Set<Integer> ids = new HashSet<>();
+            for (MoveLearnt ml : entry.getValue()) {
+                ids.add(ml.move);
+            }
+            vanillaMoveIdsBySpecies.put(entry.getKey(), ids);
+        }
+
         // Build sets of moves
         List<Move> validMoves = new ArrayList<>();
         List<Move> validDamagingMoves = new ArrayList<>();
@@ -55,7 +69,8 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                     return;
                 }
                 randomizeMovesLearntForSpecies(pkmn, moves, 0, typeThemed, sensibleMovesets, goodDamagingPercentage,
-                        validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves);
+                        validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves,
+                        vanillaMoveIdsBySpecies);
             };
 
             // An evolved species inherits its pre-evolution's already-finalized picks, earliest-learned first,
@@ -81,7 +96,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 if (copyCount < toMoves.size()) {
                     randomizeMovesLearntForSpecies(evTo, toMoves, copyCount, typeThemed, sensibleMovesets,
                             goodDamagingPercentage, validMoves, validDamagingMoves, validTypeMoves,
-                            validTypeDamagingMoves);
+                            validTypeDamagingMoves, vanillaMoveIdsBySpecies);
                 }
             };
 
@@ -98,7 +113,8 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                     continue;
                 }
                 randomizeMovesLearntForSpecies(pkmn, moves, 0, typeThemed, sensibleMovesets, goodDamagingPercentage,
-                        validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves);
+                        validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves,
+                        vanillaMoveIdsBySpecies);
             }
         }
 
@@ -158,11 +174,16 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                                                 boolean typeThemed, boolean sensibleMovesets,
                                                 double goodDamagingPercentage, List<Move> validMoves,
                                                 List<Move> validDamagingMoves, Map<Type, List<Move>> validTypeMoves,
-                                                Map<Type, List<Move>> validTypeDamagingMoves) {
+                                                Map<Type, List<Move>> validTypeDamagingMoves,
+                                                Map<Integer, Set<Integer>> vanillaMoveIdsBySpecies) {
         List<Integer> learnt = new ArrayList<>();
         for (int i = 0; i < startIndex; i++) {
             learnt.add(moves.get(i).move);
         }
+
+        Map<Integer, Integer> backfillEffectiveLevels = sensibleMovesets
+                ? computeBackfillEffectiveLevels(pkmn, moves, startIndex, vanillaMoveIdsBySpecies)
+                : Collections.emptyMap();
 
         double atkSpAtkRatio = pkmn.getAttackSpecialAttackRatio();
 
@@ -284,7 +305,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 List<Move> available = pickList.stream()
                         .filter(candidate -> !learnt.contains(candidate.number))
                         .collect(Collectors.toList());
-                int slotLevel = moves.get(i).level;
+                int slotLevel = backfillEffectiveLevels.getOrDefault(i, moves.get(i).level);
                 mv = weightedPick(available, candidate -> sensibleMovesetWeight(candidate, slotLevel));
             } else {
                 mv = pickList.get(random.nextInt(pickList.size()));

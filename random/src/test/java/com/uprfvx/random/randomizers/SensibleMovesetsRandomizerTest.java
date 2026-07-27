@@ -21,7 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * ROM-driven validation for Species "Sensible Movesets" Phase 1 (level-appropriate power curve).
+ * ROM-driven validation for Species "Sensible Movesets" (species-tmtutor-moveset-redesign.md P10-P12: a
+ * two-band power guideline, deliberately NOT a continuously level-scaled curve - species pacing must never
+ * push toward higher power as level rises, only gate rare strong outliers at low level).
  * <p>
  * Named to match the {@code *Randomizer*Test} filter so it runs under the {@code testROMs} Gradle task. Does NOT
  * extend {@link RandomizerTest} - loads each ROM in {@code roms/} itself, by content, and skips itself if none
@@ -32,17 +34,11 @@ public class SensibleMovesetsRandomizerTest {
 
     private static final long MAX_ROM_BYTES = 6L * 1024 * 1024 * 1024;
     // Gen 1/2 ROMs (<=2MB) have short ~4-move learnsets and few species, which starves the level-50+ sample
-    // count needed to detect a modest power-curve effect above noise - prefer a GBA-tier ROM or later.
+    // count needed to detect the guideline's effect above noise - prefer a GBA-tier ROM or later.
     private static final long MIN_ROM_BYTES = 10L * 1024 * 1024;
-    private static final int LOW_LEVEL_CEILING = 20;
-    private static final int HIGH_LEVEL_FLOOR = 50;
-    // Empirically calibrated (species-movesets-phase1.75-shuffle-fix-plan.md): the broken shuffle/coupling
-    // measured ~0.05-0.10 level-power correlation on real ROM data; the fix measured ~0.41-0.44. 0.25 sits
-    // comfortably between the two with margin on both sides.
-    private static final double MIN_LEVEL_POWER_CORRELATION = 0.25;
 
     @Test
-    public void sensibleMovesetsWeightsDamagingPicksTowardLevelAppropriatePower() {
+    public void sensibleMovesetsKeepsLowBpMovesAvailableAndGatesHighBpMovesByLevel() {
         RomHandler rom = loadAnyRom();
 
         Settings on = new Settings();
@@ -56,14 +52,14 @@ public class SensibleMovesetsRandomizerTest {
         bands.assumeEnoughSamples();
         bands.printReport();
 
-        assertTrue(bands.highAvg() > bands.lowAvg(),
-                "Expected high-level damaging picks to average more power than low-level ones with Sensible "
-                        + "Movesets on (low=" + bands.lowAvg() + ", high=" + bands.highAvg() + ")");
-        assertTrue(bands.correlation() > MIN_LEVEL_POWER_CORRELATION,
-                "Expected a meaningful positive level-power correlation across every sampled slot, not just "
-                        + "aggregate bucket averages (which can look curve-like even when the shuffle destroys "
-                        + "per-slot correspondence - see species-power-curve-shuffle-and-scope-review.md Finding "
-                        + "B). correlation=" + bands.correlation() + ", threshold=" + MIN_LEVEL_POWER_CORRELATION);
+        assertTrue(bands.lowBpAvailableAtHighLevel() > 0,
+                "Expected some <=60 BP moves to still appear at level 50+ (species pacing must not push "
+                        + "toward higher power as level rises - species-tmtutor-moveset-redesign.md P10), "
+                        + "count=" + bands.lowBpAvailableAtHighLevel());
+        assertTrue(bands.highBpRateBelowThirty() < bands.highBpRateAtFiftyPlus(),
+                "Expected >60 BP moves to be rarer (as a share of picks) below level 30 than at level 50+ "
+                        + "(soft ceiling ramping from L30 to L50), rateBelow30=" + bands.highBpRateBelowThirty()
+                        + " rateAtFiftyPlus=" + bands.highBpRateAtFiftyPlus());
     }
 
     @Test
@@ -80,11 +76,11 @@ public class SensibleMovesetsRandomizerTest {
         bands.assumeEnoughSamples();
         bands.printReport();
 
-        assertTrue(bands.correlation() > MIN_LEVEL_POWER_CORRELATION,
-                "Expected a meaningful positive level-power correlation even with Force Good Damaging off - "
-                        + "Sensible Movesets must not depend on that unrelated, older toggle's budget (see "
-                        + "species-power-curve-shuffle-and-scope-review.md Finding A). correlation="
-                        + bands.correlation() + ", threshold=" + MIN_LEVEL_POWER_CORRELATION);
+        assertTrue(bands.highBpRateBelowThirty() < bands.highBpRateAtFiftyPlus(),
+                "Expected the >60 BP soft ceiling to hold even with Force Good Damaging off - Sensible "
+                        + "Movesets must not depend on that unrelated, older toggle's budget (see "
+                        + "species-power-curve-shuffle-and-scope-review.md Finding A). rateBelow30="
+                        + bands.highBpRateBelowThirty() + " rateAtFiftyPlus=" + bands.highBpRateAtFiftyPlus());
     }
 
     @Test
@@ -121,26 +117,29 @@ public class SensibleMovesetsRandomizerTest {
         return bands;
     }
 
-    /** Accumulates per-band average effective power across every sampled learnset slot. */
+    /** Accumulates per-band effective power stats across every sampled learnset slot. */
     private static final class PowerBands {
         private static final int[] BAND_EDGES = {10, 20, 35, 49, Integer.MAX_VALUE};
         private static final String[] BAND_NAMES = {"1-10", "11-20", "21-35", "36-49", "50+"};
+        private static final double LOW_BP_GUIDELINE = 60.0;
 
         private final double[] bandSum = new double[BAND_EDGES.length];
         private final int[] bandCount = new int[BAND_EDGES.length];
-        private double lowSum = 0, midLowSum = 0, highSum = 0;
-        private int lowCount = 0, midLowCount = 0, highCount = 0;
         private int lowOverpowered = 0, lowTotal = 0;
+        private int totalSamples = 0;
 
-        // Streaming accumulators for a Pearson correlation between level and effective power across every
-        // individual sample. Bucket-average comparisons (lowAvg/midLowAvg/highAvg) are confounded when the
-        // shuffle bug is present: it scrambles picks WITHIN a species, but each species' own pool of
-        // weighted picks still trends upward with that species' own level range, so aggregate bucket means
-        // can look curve-like even with zero real per-slot correspondence. Correlation over the full,
-        // unbucketed (level, power) pairs is what actually tests "does this slot's power track this slot's
-        // own level" - matches the per-exact-level analysis in species-power-curve-shuffle-and-scope-review.md.
-        private long corrN = 0;
-        private double corrSumLevel = 0, corrSumPower = 0, corrSumLevelPower = 0, corrSumLevelSq = 0, corrSumPowerSq = 0;
+        // The three P10 invariants this test actually cares about - see the class doc comment. Unlike the
+        // old Gaussian curve's "power should climb with level" claim (removed - it's the opposite of this
+        // recalibration's goal), none of these assert an average trending upward with level.
+        //
+        // Rates, not raw counts: a whole dex has far more learnset slots below level 30 than at level 50+
+        // (most non-legendary lines top out well below 50), so a raw count of ">60 BP picks below 30" can
+        // exceed the raw count "at 50+" even when the underlying RATE at 50+ is much higher - confirmed by
+        // running this once with raw counts (below30=318, atFifty=223, i.e. 12% vs 68% once divided by each
+        // band's own total). Comparing rates is what actually tests the soft ceiling.
+        private int lowBpAtHighLevel = 0; // <=60 BP move picks at level >= 50
+        private int belowThirtyTotal = 0, highBpBelowThirty = 0;
+        private int fiftyPlusTotal = 0, highBpAtFiftyPlus = 0;
 
         void add(int level, double effectivePower) {
             for (int b = 0; b < BAND_EDGES.length; b++) {
@@ -150,56 +149,47 @@ public class SensibleMovesetsRandomizerTest {
                     break;
                 }
             }
-            corrN++;
-            corrSumLevel += level;
-            corrSumPower += effectivePower;
-            corrSumLevelPower += (double) level * effectivePower;
-            corrSumLevelSq += (double) level * level;
-            corrSumPowerSq += effectivePower * effectivePower;
+            totalSamples++;
             if (level <= 10) {
                 lowTotal++;
                 if (effectivePower > 100) {
                     lowOverpowered++;
                 }
             }
-            if (level <= LOW_LEVEL_CEILING) {
-                lowSum += effectivePower;
-                lowCount++;
-            } else if (level >= HIGH_LEVEL_FLOOR) {
-                highSum += effectivePower;
-                highCount++;
+            if (effectivePower <= LOW_BP_GUIDELINE && level >= 50) {
+                lowBpAtHighLevel++;
             }
-            if (level >= 2 && level <= LOW_LEVEL_CEILING) {
-                midLowSum += effectivePower;
-                midLowCount++;
+            boolean highBp = effectivePower > LOW_BP_GUIDELINE;
+            if (level < 30) {
+                belowThirtyTotal++;
+                if (highBp) {
+                    highBpBelowThirty++;
+                }
+            } else if (level >= 50) {
+                fiftyPlusTotal++;
+                if (highBp) {
+                    highBpAtFiftyPlus++;
+                }
             }
         }
 
         void assumeEnoughSamples() {
-            assumeTrue(lowCount > 10 && highCount > 10,
-                    "Not enough sampled slots in both bands (low=" + lowCount + ", high=" + highCount + ")");
-            assumeTrue(midLowCount > 10, "Not enough sampled slots in the level 2-20 band (n=" + midLowCount + ")");
+            assumeTrue(totalSamples > 100, "Not enough sampled slots overall (n=" + totalSamples + ")");
+            assumeTrue(belowThirtyTotal > 10 && fiftyPlusTotal > 10,
+                    "Not enough sampled slots in both bands (below30=" + belowThirtyTotal + ", atFifty="
+                            + fiftyPlusTotal + ")");
         }
 
-        double lowAvg() {
-            return lowSum / lowCount;
+        int lowBpAvailableAtHighLevel() {
+            return lowBpAtHighLevel;
         }
 
-        double midLowAvg() {
-            return midLowSum / midLowCount;
+        double highBpRateBelowThirty() {
+            return (double) highBpBelowThirty / belowThirtyTotal;
         }
 
-        double highAvg() {
-            return highSum / highCount;
-        }
-
-        /** Pearson correlation between level and effective power across every sampled slot. NaN if degenerate. */
-        double correlation() {
-            double n = corrN;
-            double covariance = corrSumLevelPower - corrSumLevel * corrSumPower / n;
-            double levelVariance = corrSumLevelSq - corrSumLevel * corrSumLevel / n;
-            double powerVariance = corrSumPowerSq - corrSumPower * corrSumPower / n;
-            return covariance / Math.sqrt(levelVariance * powerVariance);
+        double highBpRateAtFiftyPlus() {
+            return (double) highBpAtFiftyPlus / fiftyPlusTotal;
         }
 
         void printReport() {
@@ -209,10 +199,10 @@ public class SensibleMovesetsRandomizerTest {
             }
             System.out.printf("  level<=10 slots rolling >100 power: %d/%d (%.1f%%)%n",
                     lowOverpowered, lowTotal, lowTotal == 0 ? 0 : 100.0 * lowOverpowered / lowTotal);
-            System.out.printf("Low-level (<=%d) avg effective power: %.1f (n=%d)%n", LOW_LEVEL_CEILING, lowAvg(), lowCount);
-            System.out.printf("Level 2-%d (excluding lv1) avg effective power: %.1f (n=%d)%n", LOW_LEVEL_CEILING, midLowAvg(), midLowCount);
-            System.out.printf("High-level (>=%d) avg effective power: %.1f (n=%d)%n", HIGH_LEVEL_FLOOR, highAvg(), highCount);
-            System.out.printf("Level-power correlation (all %d samples): %.3f%n", corrN, correlation());
+            System.out.printf("  <=60 BP picks at level>=50: %d%n", lowBpAtHighLevel);
+            System.out.printf("  >60 BP picks below level 30: %d/%d (%.1f%%), at level>=50: %d/%d (%.1f%%)%n",
+                    highBpBelowThirty, belowThirtyTotal, 100.0 * highBpRateBelowThirty(),
+                    highBpAtFiftyPlus, fiftyPlusTotal, 100.0 * highBpRateAtFiftyPlus());
         }
     }
 
