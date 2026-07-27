@@ -56,9 +56,12 @@ public class GameLocationMetadataExtractionRandomizerTest extends RomHandlerTest
     public void dumpPlannedGameLocationMetadata() {
         assumeTrue(ROMS_PATH != null, "romsPath not set (run via the testROMs task)");
 
-        // key = game + "|" + locationTag -> set of primary/secondary types seen there, used only
-        // to feed the Habitats CSV's type aggregation (never printed as a per-location species
-        // roster - that's live randomizer input/output, not stable category metadata).
+        // key = game + "|" + locationTag + "|" + area.getEncounterType() -> set of primary/
+        // secondary types seen there, used only to feed the Habitats CSV's type aggregation
+        // (never printed as a per-location species roster - that's live randomizer input/output,
+        // not stable category metadata). Keyed per EncounterType (not just per location) so a
+        // Surfing/Fishing area's species never share a bucket with the same location's Walking
+        // area - the join script routes each EncounterType to its own habitat bucket.
         Map<String, Set<Type>> typesByLocation = new HashMap<>();
 
         System.out.println("GAME_LOCATIONS_METADATA_CSV_BEGIN");
@@ -101,7 +104,6 @@ public class GameLocationMetadataExtractionRandomizerTest extends RomHandlerTest
                 boolean hasSpecial = false;
                 boolean postGame = false;
                 int mapIndex = -1;
-                Set<Type> types = typesByLocation.computeIfAbsent(game + "|" + locationTag, k -> new HashSet<>());
                 for (EncounterArea area : group) {
                     if (displayName.isEmpty() && area.getDisplayName() != null) {
                         displayName = area.getDisplayName();
@@ -119,6 +121,8 @@ public class GameLocationMetadataExtractionRandomizerTest extends RomHandlerTest
                         case SPECIAL -> hasSpecial = true;
                         default -> { /* UNUSED already filtered out above */ }
                     }
+                    Set<Type> types = typesByLocation.computeIfAbsent(
+                            game + "|" + locationTag + "|" + area.getEncounterType(), k -> new HashSet<>());
                     for (Encounter enc : area) {
                         Species sp = enc.getSpecies();
                         types.add(sp.getPrimaryType(false));
@@ -140,11 +144,12 @@ public class GameLocationMetadataExtractionRandomizerTest extends RomHandlerTest
         // habitat is derived in the Python join script, not here, matching the moves/species
         // harnesses' division of labor: harness dumps facts, script joins.
         System.out.println("GAME_LOCATIONS_SPECIES_TYPES_BY_LOCATION_CSV_BEGIN");
-        System.out.println("game,locationTag,primaryOrSecondaryType");
+        System.out.println("game,locationTag,encounterType,primaryOrSecondaryType");
         for (Map.Entry<String, Set<Type>> entry : typesByLocation.entrySet()) {
-            String[] parts = entry.getKey().split("\\|", 2);
+            String[] parts = entry.getKey().split("\\|", 3);
             for (Type type : entry.getValue()) {
-                System.out.printf("%s,%s,%s%n", csvEscape(parts[0]), csvEscape(parts[1]), type);
+                System.out.printf("%s,%s,%s,%s%n",
+                        csvEscape(parts[0]), csvEscape(parts[1]), parts[2], type);
             }
         }
         System.out.println("GAME_LOCATIONS_SPECIES_TYPES_BY_LOCATION_CSV_END");
