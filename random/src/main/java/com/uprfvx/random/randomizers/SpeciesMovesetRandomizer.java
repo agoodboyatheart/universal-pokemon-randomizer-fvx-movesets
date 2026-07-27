@@ -472,6 +472,48 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         return (level - startLevel) / (double) (endLevel - startLevel);
     }
 
+    // Real vanilla learnsets are per-species standalone tables; an evolved species' table typically
+    // re-lists everything its pre-evolution could already learn, bunched at level 1 - confirmed on real
+    // ROM data across every generation (species-tmtutor-moveset-redesign.md P11: 70-95% of an evolved
+    // species' extra level-1 slots, beyond what a base-stage species has, are literal move-ID matches
+    // against the prevo's own vanilla learnset). This flags those slots so move selection can evaluate the
+    // P10 guideline at the species' own evolution level instead of level 1 - the slot isn't this species'
+    // genuine first move, it's a pre-evolution's already-known move relisted for lookup convenience.
+    //
+    // vanillaMoveIdsBySpecies must be a snapshot taken before any randomization mutation - the live
+    // movesets map's MoveLearnt objects get overwritten in place as each species is processed, so a
+    // snapshot taken later would already reflect randomized (not vanilla) content for whichever species
+    // happened to be processed first.
+    static Map<Integer, Integer> computeBackfillEffectiveLevels(Species pkmn, List<MoveLearnt> moves,
+            int startIndex, Map<Integer, Set<Integer>> vanillaMoveIdsBySpecies) {
+        Map<Integer, Integer> effectiveLevels = new HashMap<>();
+        List<Evolution> prevos = pkmn.getEvolutionsTo();
+        if (prevos.isEmpty()) {
+            return effectiveLevels;
+        }
+
+        Set<Integer> prevoMoveIds = new HashSet<>();
+        int evoLevel = Integer.MAX_VALUE;
+        for (Evolution evo : prevos) {
+            Set<Integer> ids = vanillaMoveIdsBySpecies.get(evo.getFrom().getNumber());
+            if (ids != null) {
+                prevoMoveIds.addAll(ids);
+            }
+            evoLevel = Math.min(evoLevel, Math.max(1, evo.getEstimatedEvoLvl()));
+        }
+        if (prevoMoveIds.isEmpty()) {
+            return effectiveLevels;
+        }
+
+        for (int i = startIndex; i < moves.size(); i++) {
+            MoveLearnt ml = moves.get(i);
+            if (ml.level == 1 && ml.move != 0 && prevoMoveIds.contains(ml.move)) {
+                effectiveLevels.put(i, evoLevel);
+            }
+        }
+        return effectiveLevels;
+    }
+
     private boolean checkForUnusedMove(List<Move> potentialList, List<Integer> alreadyUsed) {
         for (Move mv : potentialList) {
             if (!alreadyUsed.contains(mv.number)) {
