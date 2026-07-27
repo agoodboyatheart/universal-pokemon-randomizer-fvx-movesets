@@ -25,6 +25,8 @@ package com.uprfvx.romio.constants;
 /*--  along with this program. If not, see <http://www.gnu.org/licenses/>.  --*/
 /*----------------------------------------------------------------------------*/
 
+import com.uprfvx.romio.gamedata.Type;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -144,6 +146,35 @@ public class GlobalConstants {
             AbilityIDs.dazzling, AbilityIDs.tanglingHair, AbilityIDs.powerOfAlchemy, AbilityIDs.fullMetalBody,
             AbilityIDs.shadowShield, AbilityIDs.prismArmor, AbilityIDs.libero, AbilityIDs.stalwart
     );
+
+    // Sensible Abilities (opt-in): abilities whose entire function is boosting same-type moves, with
+    // no other effect - dead weight if assigned to a species that lacks the type entirely. Maps
+    // ability -> the type(s) that must be present for the ability to ever do anything. See
+    // project_memory\sensible-abilities-design.md Category 1.
+    public static final Map<Integer, List<Type>> typeLockedAbilities = Map.of(
+            AbilityIDs.blaze, List.of(Type.FIRE),
+            AbilityIDs.torrent, List.of(Type.WATER),
+            AbilityIDs.overgrow, List.of(Type.GRASS),
+            AbilityIDs.swarm, List.of(Type.BUG),
+            AbilityIDs.steelworker, List.of(Type.STEEL));
+
+    // Sensible Abilities (opt-in): abilities whose entire function is gated on inflicting/suffering a
+    // status the holder's own type already makes impossible - excluded if the species HAS any listed
+    // type (opposite direction from typeLockedAbilities above, which excludes when the type is
+    // ABSENT). See project_memory\sensible-abilities-design.md Category 3. Limber (Electric-type,
+    // Gen 6+ only) and Overcoat (Grass + a weather-chip-immune type) have extra conditions and are
+    // handled separately in SpeciesAbilityRandomizer rather than in this table.
+    public static final Map<Integer, List<Type>> typeRedundantAbilities = Map.of(
+            AbilityIDs.immunity, List.of(Type.POISON, Type.STEEL),
+            AbilityIDs.poisonHeal, List.of(Type.POISON, Type.STEEL),
+            AbilityIDs.toxicBoost, List.of(Type.POISON, Type.STEEL),
+            AbilityIDs.waterVeil, List.of(Type.FIRE),
+            AbilityIDs.flareBoost, List.of(Type.FIRE),
+            AbilityIDs.magmaArmor, List.of(Type.FIRE),
+            AbilityIDs.levitate, List.of(Type.FLYING),
+            AbilityIDs.voltAbsorb, List.of(Type.GROUND),
+            AbilityIDs.lightningRod, List.of(Type.GROUND),
+            AbilityIDs.motorDrive, List.of(Type.GROUND));
 
     public static final List<Integer> noPowerNonStatusMoves = Arrays.asList(
             MoveIDs.guillotine, MoveIDs.hornDrill, MoveIDs.sonicBoom, MoveIDs.lowKick, MoveIDs.counter, MoveIDs.seismicToss,
