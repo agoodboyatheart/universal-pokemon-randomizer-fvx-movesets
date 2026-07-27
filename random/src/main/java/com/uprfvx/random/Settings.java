@@ -104,6 +104,7 @@ public class Settings {
     private boolean banNegativeAbilities;
     private boolean banBadAbilities;
     private boolean weighDuplicateAbilitiesTogether;
+    private boolean sensibleAbilities;
     private boolean ensureTwoAbilities;
 
     public enum StartersMod {
@@ -661,10 +662,10 @@ public class Settings {
                 ensureTwoAbilities,
                 trainersUseLocalPokemon));
 
-        // 51 pickup item randomization
+        // 51 pickup item randomization, sensible abilities
         out.write(makeByteSelected(pickupItemsMod == PickupItemsMod.RANDOM,
                 pickupItemsMod == PickupItemsMod.UNCHANGED, banBadRandomPickupItems,
-                banIrregularAltFormes));
+                banIrregularAltFormes, sensibleAbilities));
 
         // 52 elite four unique pokemon (3 bits) + catch rate level (3 bits)
         out.write(eliteFourUniquePokemonNumber | ((minimumCatchRateLevel - 1) << 3));
@@ -1022,6 +1023,7 @@ public class Settings {
                 0));       // RANDOMIZE
         settings.setBanBadRandomPickupItems(restoreState(data[51], 2));
         settings.setBanIrregularAltFormes(restoreState(data[51], 3));
+        settings.setSensibleAbilities(restoreState(data[51], 4));
 
         settings.setEliteFourUniquePokemonNumber(data[52] & 0x7);
         settings.setMinimumCatchRateLevel(((data[52] & 0x38) >> 3) + 1);
@@ -1555,6 +1557,14 @@ public class Settings {
 
     public void setWeighDuplicateAbilitiesTogether(boolean weighDuplicateAbilitiesTogether) {
         this.weighDuplicateAbilitiesTogether = weighDuplicateAbilitiesTogether;
+    }
+
+    public boolean isSensibleAbilities() {
+        return sensibleAbilities;
+    }
+
+    public void setSensibleAbilities(boolean sensibleAbilities) {
+        this.sensibleAbilities = sensibleAbilities;
     }
 
     public boolean isEnsureTwoAbilities() { return ensureTwoAbilities; }
