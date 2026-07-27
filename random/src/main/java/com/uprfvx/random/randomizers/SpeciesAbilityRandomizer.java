@@ -6,8 +6,10 @@ import com.uprfvx.romio.constants.Gen3Constants;
 import com.uprfvx.romio.constants.GlobalConstants;
 import com.uprfvx.romio.gamedata.MegaEvolution;
 import com.uprfvx.romio.gamedata.Species;
+import com.uprfvx.romio.gamedata.Type;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -114,6 +116,53 @@ public class SpeciesAbilityRandomizer extends Randomizer {
         }
 
         changesMade = true;
+    }
+
+    /**
+     * Sensible Abilities (opt-in): the additional abilities to exclude for this specific species,
+     * on top of the global bannedAbilities list, because they are provably non-functional or
+     * self-sabotaging given the species' own type. See project_memory\sensible-abilities-design.md
+     * for the full rule table and rationale. Pure function (no RomHandler/Settings dependency) so
+     * it can be unit-tested directly - see SensibleAbilitiesRuleTest.
+     */
+    static List<Integer> sensibleBannedAbilitiesFor(Species pk, int generation) {
+        List<Integer> banned = new ArrayList<>();
+
+        for (Map.Entry<Integer, List<Type>> entry : GlobalConstants.typeLockedAbilities.entrySet()) {
+            boolean hasRequiredType = entry.getValue().stream().anyMatch(t -> pk.hasType(t, false));
+            if (!hasRequiredType) {
+                banned.add(entry.getKey());
+            }
+        }
+
+        if (pk.hasType(Type.WATER, false) && !pk.hasType(Type.FIRE, false)) {
+            banned.add(AbilityIDs.drought);
+        }
+        if (pk.hasType(Type.FIRE, false) && !pk.hasType(Type.WATER, false)) {
+            banned.add(AbilityIDs.drizzle);
+        }
+        if (!pk.hasType(Type.GROUND, false) && !pk.hasType(Type.ROCK, false) && !pk.hasType(Type.STEEL, false)) {
+            banned.add(AbilityIDs.sandStream);
+        }
+        if (!pk.hasType(Type.ICE, false)) {
+            banned.add(AbilityIDs.snowWarning);
+        }
+
+        for (Map.Entry<Integer, List<Type>> entry : GlobalConstants.typeRedundantAbilities.entrySet()) {
+            boolean hasRedundantType = entry.getValue().stream().anyMatch(t -> pk.hasType(t, false));
+            if (hasRedundantType) {
+                banned.add(entry.getKey());
+            }
+        }
+        if (pk.hasType(Type.ELECTRIC, false) && generation >= 6) {
+            banned.add(AbilityIDs.limber);
+        }
+        if (pk.hasType(Type.GRASS, false) && (pk.hasType(Type.GROUND, false) || pk.hasType(Type.ROCK, false)
+                || pk.hasType(Type.STEEL, false) || pk.hasType(Type.ICE, false))) {
+            banned.add(AbilityIDs.overcoat);
+        }
+
+        return banned;
     }
 
     private int pickRandomAbilityVariation(int selectedAbility, int... alreadySetAbilities) {
