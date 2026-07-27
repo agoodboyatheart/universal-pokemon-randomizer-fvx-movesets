@@ -431,26 +431,45 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         changesMade = true;
     }
 
-    // A damaging move's pick weight is a bell curve peaking at centerPower(level) - the effective power expected
-    // at that level - and falling off symmetrically for moves that are too weak OR too strong for the slot. This
-    // needs the widened damaging pool (see createSetsOfMoves / widenDamagingPool): with the narrow isGoodDamaging
-    // pool the curve's low end (centerPower ~45 at Lv1) sits below the pool floor of ~50 and the weight is starved
-    // - see species-power-curve-structural-flaw.md.
-    //
-    // SPREAD is the one knob: the Gaussian's standard deviation as a fraction of centerPower. Smaller = a tighter,
-    // more strongly level-locked curve; larger = looser, preserving more variability (this fork prizes variability
-    // over rigid correctness, so this stays deliberately wide). Status / fixed-damage moves (no base power to place
-    // on the curve) keep full weight. No boss tier or quality-list exemption - the player filters species pools.
-    private static final double SPECIES_POWER_SPREAD = 0.4;
+    // "Sensible Movesets" power guideline (species-tmtutor-moveset-redesign.md P10) - deliberately NOT the
+    // trainer path's continuously level-scaled centerPower curve. Aaron's explicit goal: species learnsets
+    // must stay unpredictable (a good-or-bad roll the player builds around), never pushed toward stronger
+    // moves as level rises. So this is two independent soft gates, not one moving center: a move at or
+    // below LOW_BP_GUIDELINE is (almost) always available regardless of level - only a late taper at very
+    // high level discourages an all-weak moveset, and even then only down to a floor, never to zero. A
+    // move above LOW_BP_GUIDELINE is rare-but-possible at low level and ramps up to full availability by
+    // HIGH_BP_RAMP_END_LEVEL - a soft ceiling, not a hard pool-stage filter (Aaron's explicit ask).
+    private static final double LOW_BP_GUIDELINE = 60.0;
+    private static final int LOW_BP_TAPER_START_LEVEL = 45;
+    private static final int LOW_BP_TAPER_END_LEVEL = 50;
+    private static final double LOW_BP_TAPER_FLOOR = 0.5;
 
-    private static double sensibleMovesetWeight(Move mv, int level) {
+    private static final int HIGH_BP_RAMP_START_LEVEL = 30;
+    private static final int HIGH_BP_RAMP_END_LEVEL = 50;
+    private static final double HIGH_BP_RAMP_FLOOR = 0.12;
+
+    static double sensibleMovesetWeight(Move mv, int level) {
         double effectivePower = mv.power * mv.hitCount;
         if (effectivePower <= 0) {
             return 1.0;
         }
-        double center = centerPower(level);
-        double z = (effectivePower - center) / (SPECIES_POWER_SPREAD * center);
-        return Math.exp(-0.5 * z * z);
+        if (effectivePower <= LOW_BP_GUIDELINE) {
+            double taper = rampFraction(level, LOW_BP_TAPER_START_LEVEL, LOW_BP_TAPER_END_LEVEL);
+            return 1.0 - taper * (1.0 - LOW_BP_TAPER_FLOOR);
+        }
+        double ramp = rampFraction(level, HIGH_BP_RAMP_START_LEVEL, HIGH_BP_RAMP_END_LEVEL);
+        return HIGH_BP_RAMP_FLOOR + ramp * (1.0 - HIGH_BP_RAMP_FLOOR);
+    }
+
+    // 0 at or below startLevel, 1 at or above endLevel, linear in between.
+    private static double rampFraction(int level, int startLevel, int endLevel) {
+        if (level <= startLevel) {
+            return 0.0;
+        }
+        if (level >= endLevel) {
+            return 1.0;
+        }
+        return (level - startLevel) / (double) (endLevel - startLevel);
     }
 
     private boolean checkForUnusedMove(List<Move> potentialList, List<Integer> alreadyUsed) {
