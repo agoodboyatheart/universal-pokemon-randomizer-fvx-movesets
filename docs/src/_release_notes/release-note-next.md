@@ -36,6 +36,11 @@ Download the Randomizer below by clicking on `UPR_FVX-[VERSION]-[OS].zip`. If yo
 ### Pokemon Base Stats
 - [The description of a new feature here.] (Issue #[issue num])
 
+### Pokemon Abilities
+- Added a "Sensible Abilities" checkbox: when abilities are randomized, avoids assigning abilities
+  that would be non-functional or actively work against the Pokemon's own type (e.g. Blaze on a
+  non-Fire Pokemon, Drought on a pure Water-type, Levitate on a Flying-type).
+
 ### Static Pokemon
 - (Gen 3) [The description of a changed feature here.]
 
