@@ -30,6 +30,7 @@ public class SpeciesAbilityRandomizer extends Randomizer {
         boolean weighDuplicatesTogether = settings.isWeighDuplicateAbilitiesTogether();
         boolean ensureTwoAbilities = settings.isEnsureTwoAbilities();
         boolean isMultiBattleOnly = settings.getBattleStyle().isOnlyMultiBattles();
+        boolean sensibleAbilities = settings.isSensibleAbilities();
 
         // Abilities don't exist in some games...
         if (romHandler.abilitiesPerSpecies() == 0) {
@@ -73,13 +74,19 @@ public class SpeciesAbilityRandomizer extends Randomizer {
         copyUpEvolutionsHelper.apply(evolutionSanity, false, pk -> {
             if (pk.getAbility1() != AbilityIDs.wonderGuard && pk.getAbility2() != AbilityIDs.wonderGuard
                     && pk.getAbility3() != AbilityIDs.wonderGuard) {
+                List<Integer> speciesBanned = bannedAbilities;
+                if (sensibleAbilities) {
+                    speciesBanned = new ArrayList<>(bannedAbilities);
+                    speciesBanned.addAll(sensibleBannedAbilitiesFor(pk, romHandler.generationOfPokemon()));
+                }
+
                 // Pick first ability
-                pk.setAbility1(pickRandomAbility(maxAbility, bannedAbilities, weighDuplicatesTogether));
+                pk.setAbility1(pickRandomAbility(maxAbility, speciesBanned, weighDuplicatesTogether));
 
                 // Second ability?
                 if (ensureTwoAbilities || random.nextDouble() < 0.5) {
                     // Yes, second ability
-                    pk.setAbility2(pickRandomAbility(maxAbility, bannedAbilities, weighDuplicatesTogether,
+                    pk.setAbility2(pickRandomAbility(maxAbility, speciesBanned, weighDuplicatesTogether,
                             pk.getAbility1()));
                 } else {
                     // Nope
@@ -88,7 +95,7 @@ public class SpeciesAbilityRandomizer extends Randomizer {
 
                 // Third ability?
                 if (hasHiddenAbilities) {
-                    pk.setAbility3(pickRandomAbility(maxAbility, bannedAbilities, weighDuplicatesTogether,
+                    pk.setAbility3(pickRandomAbility(maxAbility, speciesBanned, weighDuplicatesTogether,
                             pk.getAbility1(), pk.getAbility2()));
                 }
             }
