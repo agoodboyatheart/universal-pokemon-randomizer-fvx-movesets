@@ -334,27 +334,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // (levelAppropriatenessWeight) demotes (never removes) below-level moves at pick time, so a thin STAB pool
     // always has an alternative. Curve: BASE at Lv1 rising linearly to MAX by the saturation level. Tuning knobs
     // (calibrate with -Dbm.sweep).
-    // centerPower and its constants live on the shared Randomizer base (species-power-curve reuses them too).
+    // centerPower, powerCeiling and POWER_FLOOR_FRACTION live on the shared Randomizer base (species learnsets
+    // reuse the same curve - see SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight).
 
-    // A move is culled above centerPower * a level-scaled ceiling multiplier: tight at low level (reproducing the
-    // old ~60 cap), widening at high level so premier nukes (Draco Meteor/Overheat 130) survive and only
-    // 150+ self-KO/gimmick moves fall outside. Floored at the old Low-band cap so a low-level pool is never
-    // tighter than before. Tuning knobs.
-    private static final double POWER_CEILING_MULTIPLIER_LOW = 0.95;
-    private static final double POWER_CEILING_MULTIPLIER_HIGH = 1.63;
-
-    private static double powerCeiling(int level) {
-        double t = Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
-        double mult = POWER_CEILING_MULTIPLIER_LOW + (POWER_CEILING_MULTIPLIER_HIGH - POWER_CEILING_MULTIPLIER_LOW) * t;
-        return Math.max(TIER_LOW_MAX_BP, centerPower(level) * mult);
-    }
-
-    // Below centerPower * this fraction a move starts losing pick weight; the falloff exponent is tier-scaled so
-    // Boss/Important lean firmly level-appropriate while Regular trainers keep weaker, more surprising moves in
-    // play. Also the boss-STAB hard floor (pickStabMove) - non-final so the harness can sweep it (-Dbm.stabfloor).
-    static double POWER_FLOOR_FRACTION = 0.75;
+    // The falloff exponent is tier-scaled so Boss/Important lean firmly level-appropriate while Regular trainers
+    // keep weaker, more surprising moves in play. POWER_FLOOR_EXPONENT_REGULAR lives on the shared Randomizer
+    // base (species learnsets reuse it - they have no Boss/Regular tier split). Also the boss-STAB hard floor
+    // (pickStabMove) - non-final so the harness can sweep it (-Dbm.stabfloor).
     private static final double POWER_FLOOR_EXPONENT_BOSS = 2.0;
-    private static final double POWER_FLOOR_EXPONENT_REGULAR = 0.8;
 
     // Hard sliding ceiling (pool stage): removes attacking moves too strong for the mon's level. Status/gimmick
     // moves and the mon's own level-up moves are exempt; below-level weakness is handled softly elsewhere.

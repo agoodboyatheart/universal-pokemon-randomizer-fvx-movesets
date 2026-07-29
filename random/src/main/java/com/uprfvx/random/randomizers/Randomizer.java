@@ -100,6 +100,26 @@ public abstract class Randomizer {
         return LEVEL_POWER_BASE + (LEVEL_POWER_MAX - LEVEL_POWER_BASE) * t;
     }
 
+    // A move is culled above centerPower * a level-scaled ceiling multiplier: tight at low level (reproducing the
+    // old ~60 cap), widening at high level so premier nukes (Draco Meteor/Overheat 130) survive and only
+    // 150+ self-KO/gimmick moves fall outside. Floored at the old Low-band cap so a low-level pool is never
+    // tighter than before. Shared by both moveset randomizers so trainer and species pacing are calibrated
+    // against the same curve. Tuning knobs.
+    protected static final double POWER_CEILING_MULTIPLIER_LOW = 0.95;
+    protected static final double POWER_CEILING_MULTIPLIER_HIGH = 1.63;
+
+    protected static double powerCeiling(int level) {
+        double t = Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
+        double mult = POWER_CEILING_MULTIPLIER_LOW + (POWER_CEILING_MULTIPLIER_HIGH - POWER_CEILING_MULTIPLIER_LOW) * t;
+        return Math.max(TIER_LOW_MAX_BP, centerPower(level) * mult);
+    }
+
+    // Below centerPower * this fraction a move starts losing pick weight. Shared soft-floor fraction; the
+    // falloff exponent itself stays per-randomizer (trainer has a Boss/Regular split, species doesn't).
+    // Non-final so a calibration harness can sweep it.
+    protected static double POWER_FLOOR_FRACTION = 0.75;
+    protected static final double POWER_FLOOR_EXPONENT_REGULAR = 0.8;
+
     protected CustomNamesSet getCustomNames() {
         // This is not in line with how most /data resources are loaded for randomization.
         // Am not certain whether this or the other ways are more elegant, might be up
