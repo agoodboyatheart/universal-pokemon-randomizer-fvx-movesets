@@ -91,6 +91,28 @@ public abstract class Randomizer {
         return LEVEL_POWER_BASE + (LEVEL_POWER_MAX - LEVEL_POWER_BASE) * t;
     }
 
+    // A move is culled above centerPower * a level-scaled ceiling multiplier: tight at low level (a hard
+    // ~60 cap), widening at high level so premier nukes (Draco Meteor/Overheat 130) survive and only
+    // 150+ self-KO/gimmick moves fall outside. Floored at TIER_LOW_MAX_BP so a low-level pool is never
+    // tighter than before. Mirrors Better Movesets' trainer-side power-band ceiling (2026-07-29: species
+    // learnsets now use the identical mechanism - see SpeciesMovesetRandomizer.applySpeciesPowerCeiling).
+    // Tuning knobs.
+    protected static final double POWER_CEILING_MULTIPLIER_LOW = 0.95;
+    protected static final double POWER_CEILING_MULTIPLIER_HIGH = 1.63;
+
+    protected static double powerCeiling(int level) {
+        double t = Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
+        double mult = POWER_CEILING_MULTIPLIER_LOW + (POWER_CEILING_MULTIPLIER_HIGH - POWER_CEILING_MULTIPLIER_LOW) * t;
+        return Math.max(TIER_LOW_MAX_BP, centerPower(level) * mult);
+    }
+
+    // Below centerPower * this fraction a move starts losing pick weight. Shared soft-floor fraction and
+    // falloff exponent - species has no Boss/Regular tier split, so it always uses this "Regular"-style
+    // gentle exponent (mirrors Better Movesets' trainer path). Non-final so a calibration harness can
+    // sweep it.
+    protected static double POWER_FLOOR_FRACTION = 0.75;
+    protected static final double POWER_FLOOR_EXPONENT_REGULAR = 0.8;
+
     protected CustomNamesSet getCustomNames() {
         // This is not in line with how most /data resources are loaded for randomization.
         // Am not certain whether this or the other ways are more elegant, might be up

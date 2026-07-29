@@ -4,12 +4,20 @@ import com.uprfvx.romio.gamedata.Move;
 import com.uprfvx.romio.gamedata.MoveCategory;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure unit tests for the "Sensible Movesets" two-band power guideline
- * (species-tmtutor-moveset-redesign.md P10). No ROM required.
+ * Pure unit tests for the "Sensible Movesets" power-banding mechanism: a hard sliding ceiling
+ * (species-side {@code applySpeciesPowerCeiling}, mirroring Better Movesets' trainer-side
+ * {@code applyPowerBandFilter}) plus a soft sliding floor ({@code speciesLevelAppropriatenessWeight},
+ * reusing the trainer path's Regular-tier falloff exponent). Replaces the earlier two-band soft-only
+ * guideline (species-tmtutor-moveset-redesign.md P10) per Aaron's 2026-07-29 direction: species
+ * learnsets should follow the same level-vs-power banding as trainer movesets, not a bespoke shape.
+ * No ROM required.
  */
 public class SpeciesMovesetWeightTest {
 
@@ -27,50 +35,71 @@ public class SpeciesMovesetWeightTest {
         return mv;
     }
 
+    // --- soft floor (speciesLevelAppropriatenessWeight) ---
+
     @Test
     public void statusAndFixedDamageMovesAlwaysKeepFullWeight() {
-        assertEquals(1.0, SpeciesMovesetRandomizer.sensibleMovesetWeight(statusMove(), 1));
-        assertEquals(1.0, SpeciesMovesetRandomizer.sensibleMovesetWeight(statusMove(), 50));
+        assertEquals(1.0, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(statusMove(), 1));
+        assertEquals(1.0, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(statusMove(), 50));
     }
 
     @Test
-    public void lowBpMovesKeepFullWeightUntilTheLateTaper() {
-        Move weak = damagingMove(40);
-        assertEquals(1.0, SpeciesMovesetRandomizer.sensibleMovesetWeight(weak, 1));
-        assertEquals(1.0, SpeciesMovesetRandomizer.sensibleMovesetWeight(weak, 44));
-        assertEquals(1.0, SpeciesMovesetRandomizer.sensibleMovesetWeight(weak, 45));
+    public void movesAtOrAboveTheFloorKeepFullWeight() {
+        // centerPower(1) = 45 + 50*(1/50) = 46, floor = 46 * 0.75 = 34.5
+        Move atFloor = damagingMove(35);
+        assertEquals(1.0, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(atFloor, 1));
     }
 
     @Test
-    public void sixtyBpExactlyStillCountsAsLowBand() {
-        Move exactlySixty = damagingMove(60);
-        assertEquals(1.0, SpeciesMovesetRandomizer.sensibleMovesetWeight(exactlySixty, 1));
+    public void movesBelowTheFloorAreDemotedByTheRegularExponent() {
+        // centerPower(1) = 46, floor = 34.5; a 20 BP move is well below it.
+        Move weak = damagingMove(20);
+        double expected = Math.pow(20.0 / 34.5, 0.8);
+        assertEquals(expected, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(weak, 1), 1e-9);
+        assertTrue(expected < 1.0);
     }
 
     @Test
-    public void lowBpMovesTaperToAFloorByLevelFiftyButNeverToZero() {
-        Move weak = damagingMove(40);
-        assertEquals(0.5, SpeciesMovesetRandomizer.sensibleMovesetWeight(weak, 50), 1e-9);
-        assertEquals(0.5, SpeciesMovesetRandomizer.sensibleMovesetWeight(weak, 80), 1e-9);
-        double atFortySeven = SpeciesMovesetRandomizer.sensibleMovesetWeight(weak, 47);
-        assertTrue(atFortySeven > 0.5 && atFortySeven < 1.0,
-                "Expected a mid-taper weight strictly between the floor and full weight, was " + atFortySeven);
+    public void floorRisesWithLevel() {
+        // A 40 BP move sits at/above the Lv1 floor (34.5) but below the Lv50 floor (95*0.75=71.25).
+        Move mv = damagingMove(40);
+        assertEquals(1.0, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(mv, 1));
+        assertTrue(SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(mv, 50) < 1.0);
+    }
+
+    // --- hard ceiling (applySpeciesPowerCeiling) ---
+
+    @Test
+    public void ceilingRemovesMovesAboveItAtLowLevel() {
+        // powerCeiling(1) = max(60, 46*0.95) = 60.
+        List<Move> pool = List.of(damagingMove(40), damagingMove(120));
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, 1);
+        assertEquals(1, capped.size());
+        assertEquals(40, capped.get(0).power);
     }
 
     @Test
-    public void highBpMovesAreRareButPossibleBelowLevelThirty() {
-        Move strong = damagingMove(120);
-        assertEquals(0.12, SpeciesMovesetRandomizer.sensibleMovesetWeight(strong, 1), 1e-9);
-        assertEquals(0.12, SpeciesMovesetRandomizer.sensibleMovesetWeight(strong, 30), 1e-9);
+    public void ceilingWidensAtHighLevel() {
+        // powerCeiling(50) = max(60, 95*1.63) = 154.85, so a 120 BP move clears it at Lv50.
+        List<Move> pool = List.of(damagingMove(120));
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, 50);
+        assertEquals(1, capped.size());
     }
 
     @Test
-    public void highBpMovesRampToFullWeightByLevelFifty() {
-        Move strong = damagingMove(120);
-        double atForty = SpeciesMovesetRandomizer.sensibleMovesetWeight(strong, 40);
-        assertTrue(atForty > 0.12 && atForty < 1.0,
-                "Expected a mid-ramp weight strictly between the floor and full weight, was " + atForty);
-        assertEquals(1.0, SpeciesMovesetRandomizer.sensibleMovesetWeight(strong, 50), 1e-9);
-        assertEquals(1.0, SpeciesMovesetRandomizer.sensibleMovesetWeight(strong, 80), 1e-9);
+    public void ceilingNeverEmptiesAnOnlyStrongPool() {
+        // Every candidate exceeds the Lv1 ceiling (60) - the filter must fall back to the unfiltered
+        // pool rather than returning empty and forcing a null pick downstream.
+        List<Move> pool = List.of(damagingMove(120), damagingMove(150));
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, 1);
+        assertFalse(capped.isEmpty());
+        assertEquals(2, capped.size());
+    }
+
+    @Test
+    public void ceilingExemptsStatusAndFixedDamageMoves() {
+        List<Move> pool = List.of(statusMove());
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, 1);
+        assertEquals(1, capped.size());
     }
 }

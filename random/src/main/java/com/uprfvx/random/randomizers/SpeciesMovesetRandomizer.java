@@ -306,7 +306,8 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                         .filter(candidate -> !learnt.contains(candidate.number))
                         .collect(Collectors.toList());
                 int slotLevel = backfillEffectiveLevels.getOrDefault(i, moves.get(i).level);
-                mv = weightedPick(available, candidate -> sensibleMovesetWeight(candidate, slotLevel));
+                available = applySpeciesPowerCeiling(available, slotLevel);
+                mv = weightedPick(available, candidate -> speciesLevelAppropriatenessWeight(candidate, slotLevel));
             } else {
                 mv = pickList.get(random.nextInt(pickList.size()));
                 while (learnt.contains(mv.number)) {
@@ -452,45 +453,41 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         changesMade = true;
     }
 
-    // "Sensible Movesets" power guideline (species-tmtutor-moveset-redesign.md P10) - deliberately NOT the
-    // trainer path's continuously level-scaled centerPower curve. Aaron's explicit goal: species learnsets
-    // must stay unpredictable (a good-or-bad roll the player builds around), never pushed toward stronger
-    // moves as level rises. So this is two independent soft gates, not one moving center: a move at or
-    // below LOW_BP_GUIDELINE is (almost) always available regardless of level - only a late taper at very
-    // high level discourages an all-weak moveset, and even then only down to a floor, never to zero. A
-    // move above LOW_BP_GUIDELINE is rare-but-possible at low level and ramps up to full availability by
-    // HIGH_BP_RAMP_END_LEVEL - a soft ceiling, not a hard pool-stage filter (Aaron's explicit ask).
-    private static final double LOW_BP_GUIDELINE = 60.0;
-    private static final int LOW_BP_TAPER_START_LEVEL = 45;
-    private static final int LOW_BP_TAPER_END_LEVEL = 50;
-    private static final double LOW_BP_TAPER_FLOOR = 0.5;
+    // "Sensible Movesets" power banding - 2026-07-29: replaces the earlier two-band soft-only guideline
+    // (species-tmtutor-moveset-redesign.md P10) with the SAME hard-ceiling/soft-floor mechanism Better
+    // Movesets uses for trainers (Aaron's explicit direction, after a real log showed a level-1 Minun
+    // rolling Volt Tackle AND Solarbeam - the old soft-only 0.12 weight can't help when the narrowed
+    // type/category candidate pool for a slot happens to contain nothing but high-power moves). Ceiling
+    // and floor are pool-stage/pick-stage respectively - centerPower, powerCeiling and
+    // POWER_FLOOR_FRACTION are shared via the Randomizer base. Species has no Boss/Regular tier split, so
+    // it reuses the trainer path's gentler Regular exponent throughout (Aaron's call), keeping more
+    // surprise at the low end than a Boss trainer's picks get.
 
-    private static final int HIGH_BP_RAMP_START_LEVEL = 30;
-    private static final int HIGH_BP_RAMP_END_LEVEL = 50;
-    private static final double HIGH_BP_RAMP_FLOOR = 0.12;
+    // Hard sliding ceiling (pool stage): removes attacking moves too strong for the slot's level. Status/
+    // fixed-damage moves are exempt. Falls back to the unfiltered pool if capping would leave nothing to
+    // pick from (a narrow type/category pool can otherwise contain only over-ceiling moves) - a soft
+    // floor demotion is still better than a null pick or an unweighted uniform fallback.
+    static List<Move> applySpeciesPowerCeiling(List<Move> available, int level) {
+        double ceiling = powerCeiling(level);
+        List<Move> capped = available.stream()
+                .filter(mv -> mv.power * mv.hitCount <= 0 || mv.power * mv.hitCount <= ceiling)
+                .collect(Collectors.toList());
+        return capped.isEmpty() ? available : capped;
+    }
 
-    static double sensibleMovesetWeight(Move mv, int level) {
+    // Soft sliding floor (pick stage): demotes, never removes, moves weaker than the slot's level
+    // warrants, using the same Regular-tier falloff exponent Better Movesets applies to its Regular
+    // trainers.
+    static double speciesLevelAppropriatenessWeight(Move mv, int level) {
         double effectivePower = mv.power * mv.hitCount;
         if (effectivePower <= 0) {
             return 1.0;
         }
-        if (effectivePower <= LOW_BP_GUIDELINE) {
-            double taper = rampFraction(level, LOW_BP_TAPER_START_LEVEL, LOW_BP_TAPER_END_LEVEL);
-            return 1.0 - taper * (1.0 - LOW_BP_TAPER_FLOOR);
-        }
-        double ramp = rampFraction(level, HIGH_BP_RAMP_START_LEVEL, HIGH_BP_RAMP_END_LEVEL);
-        return HIGH_BP_RAMP_FLOOR + ramp * (1.0 - HIGH_BP_RAMP_FLOOR);
-    }
-
-    // 0 at or below startLevel, 1 at or above endLevel, linear in between.
-    private static double rampFraction(int level, int startLevel, int endLevel) {
-        if (level <= startLevel) {
-            return 0.0;
-        }
-        if (level >= endLevel) {
+        double floor = centerPower(level) * POWER_FLOOR_FRACTION;
+        if (effectivePower >= floor) {
             return 1.0;
         }
-        return (level - startLevel) / (double) (endLevel - startLevel);
+        return Math.pow(effectivePower / floor, POWER_FLOOR_EXPONENT_REGULAR);
     }
 
     // Real vanilla learnsets are per-species standalone tables; an evolved species' table typically

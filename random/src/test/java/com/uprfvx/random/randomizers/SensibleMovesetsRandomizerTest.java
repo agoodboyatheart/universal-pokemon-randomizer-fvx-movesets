@@ -21,9 +21,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * ROM-driven validation for Species "Sensible Movesets" (species-tmtutor-moveset-redesign.md P10-P12: a
- * two-band power guideline, deliberately NOT a continuously level-scaled curve - species pacing must never
- * push toward higher power as level rises, only gate rare strong outliers at low level).
+ * ROM-driven validation for Species "Sensible Movesets". 2026-07-29: now uses the SAME hard-ceiling/
+ * soft-floor power-banding mechanism as Better Movesets' trainer path (Aaron's explicit direction,
+ * replacing the earlier two-band soft-only guideline from species-tmtutor-moveset-redesign.md P10 - a
+ * real log showed the soft-only weight couldn't stop a level-1 Minun rolling Volt Tackle AND Solarbeam
+ * when its narrowed type/category candidate pool held nothing but high-power moves). See
+ * {@link SpeciesMovesetRandomizer#applySpeciesPowerCeiling} / {@code speciesLevelAppropriatenessWeight}
+ * and {@link SpeciesMovesetWeightTest} for the pure-function unit tests of the mechanism itself; this
+ * class checks it holds in real randomized output.
  * <p>
  * Named to match the {@code *Randomizer*Test} filter so it runs under the {@code testROMs} Gradle task. Does NOT
  * extend {@link RandomizerTest} - loads each ROM in {@code roms/} itself, by content, and skips itself if none
@@ -53,13 +58,22 @@ public class SensibleMovesetsRandomizerTest {
         bands.printReport();
 
         assertTrue(bands.lowBpAvailableAtHighLevel() > 0,
-                "Expected some <=60 BP moves to still appear at level 50+ (species pacing must not push "
-                        + "toward higher power as level rises - species-tmtutor-moveset-redesign.md P10), "
-                        + "count=" + bands.lowBpAvailableAtHighLevel());
+                "Expected some <=60 BP moves to still appear at level 50+ (the soft floor only demotes, "
+                        + "never removes, weak moves), count=" + bands.lowBpAvailableAtHighLevel());
         assertTrue(bands.highBpRateBelowThirty() < bands.highBpRateAtFiftyPlus(),
                 "Expected >60 BP moves to be rarer (as a share of picks) below level 30 than at level 50+ "
-                        + "(soft ceiling ramping from L30 to L50), rateBelow30=" + bands.highBpRateBelowThirty()
-                        + " rateAtFiftyPlus=" + bands.highBpRateAtFiftyPlus());
+                        + "(the hard ceiling widens continuously with level), rateBelow30="
+                        + bands.highBpRateBelowThirty() + " rateAtFiftyPlus=" + bands.highBpRateAtFiftyPlus());
+        // The hard ceiling is an exact per-slot cap, unlike the old soft-only weight - verify it actually
+        // holds. Restricted to level>=2 slots: level-1 slots can be re-leveled internally by the backfill
+        // mechanism (an evolved species' relisted pre-evolution move, weighted against its own evolution
+        // level, not level 1 - species-tmtutor-moveset-redesign.md P11/P12) while still being *persisted*
+        // at level 1, so checking powerCeiling(1) against those would false-positive. Level>=2 slots are
+        // never backfill-remapped, so this is an exact check, only loosened for the rare
+        // applySpeciesPowerCeiling empty-pool fallback (a narrow pool with nothing under the ceiling).
+        assertTrue(bands.ceilingViolationRateAboveLevelOne() < 0.02,
+                "Expected the hard power ceiling to (almost) always hold for level>=2 slots, rate="
+                        + bands.ceilingViolationRateAboveLevelOne());
     }
 
     @Test
@@ -77,7 +91,7 @@ public class SensibleMovesetsRandomizerTest {
         bands.printReport();
 
         assertTrue(bands.highBpRateBelowThirty() < bands.highBpRateAtFiftyPlus(),
-                "Expected the >60 BP soft ceiling to hold even with Force Good Damaging off - Sensible "
+                "Expected the >60 BP hard ceiling to hold even with Force Good Damaging off - Sensible "
                         + "Movesets must not depend on that unrelated, older toggle's budget (see "
                         + "species-power-curve-shuffle-and-scope-review.md Finding A). rateBelow30="
                         + bands.highBpRateBelowThirty() + " rateAtFiftyPlus=" + bands.highBpRateAtFiftyPlus());
@@ -128,18 +142,14 @@ public class SensibleMovesetsRandomizerTest {
         private int lowOverpowered = 0, lowTotal = 0;
         private int totalSamples = 0;
 
-        // The three P10 invariants this test actually cares about - see the class doc comment. Unlike the
-        // old Gaussian curve's "power should climb with level" claim (removed - it's the opposite of this
-        // recalibration's goal), none of these assert an average trending upward with level.
-        //
         // Rates, not raw counts: a whole dex has far more learnset slots below level 30 than at level 50+
         // (most non-legendary lines top out well below 50), so a raw count of ">60 BP picks below 30" can
-        // exceed the raw count "at 50+" even when the underlying RATE at 50+ is much higher - confirmed by
-        // running this once with raw counts (below30=318, atFifty=223, i.e. 12% vs 68% once divided by each
-        // band's own total). Comparing rates is what actually tests the soft ceiling.
+        // exceed the raw count "at 50+" even when the underlying RATE at 50+ is much higher. Comparing
+        // rates is what actually tests the ceiling's level-scaling.
         private int lowBpAtHighLevel = 0; // <=60 BP move picks at level >= 50
         private int belowThirtyTotal = 0, highBpBelowThirty = 0;
         private int fiftyPlusTotal = 0, highBpAtFiftyPlus = 0;
+        private int aboveLevelOneTotal = 0, ceilingViolationsAboveLevelOne = 0;
 
         void add(int level, double effectivePower) {
             for (int b = 0; b < BAND_EDGES.length; b++) {
@@ -171,6 +181,12 @@ public class SensibleMovesetsRandomizerTest {
                     highBpAtFiftyPlus++;
                 }
             }
+            if (level > 1) {
+                aboveLevelOneTotal++;
+                if (effectivePower > Randomizer.powerCeiling(level)) {
+                    ceilingViolationsAboveLevelOne++;
+                }
+            }
         }
 
         void assumeEnoughSamples() {
@@ -192,6 +208,10 @@ public class SensibleMovesetsRandomizerTest {
             return (double) highBpAtFiftyPlus / fiftyPlusTotal;
         }
 
+        double ceilingViolationRateAboveLevelOne() {
+            return aboveLevelOneTotal == 0 ? 0.0 : (double) ceilingViolationsAboveLevelOne / aboveLevelOneTotal;
+        }
+
         void printReport() {
             for (int b = 0; b < BAND_EDGES.length; b++) {
                 System.out.printf("  band %-6s avg power: %.1f (n=%d)%n", BAND_NAMES[b],
@@ -203,6 +223,8 @@ public class SensibleMovesetsRandomizerTest {
             System.out.printf("  >60 BP picks below level 30: %d/%d (%.1f%%), at level>=50: %d/%d (%.1f%%)%n",
                     highBpBelowThirty, belowThirtyTotal, 100.0 * highBpRateBelowThirty(),
                     highBpAtFiftyPlus, fiftyPlusTotal, 100.0 * highBpRateAtFiftyPlus());
+            System.out.printf("  hard ceiling violations (level>=2): %d/%d (%.2f%%)%n",
+                    ceilingViolationsAboveLevelOne, aboveLevelOneTotal, 100.0 * ceilingViolationRateAboveLevelOne());
         }
     }
 
