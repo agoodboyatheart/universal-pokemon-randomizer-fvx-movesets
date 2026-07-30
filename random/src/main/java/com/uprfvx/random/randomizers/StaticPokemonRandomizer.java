@@ -96,6 +96,11 @@ public class StaticPokemonRandomizer extends Randomizer {
             legendariesLeft.removeAll(banned);
             nonlegsLeft.removeAll(banned);
             ultraBeastsLeft.removeAll(banned);
+            // Must run after any other pool-narrowing filters (e.g. basicOnly), since the fallback
+            // needs to check emptiness against the final candidate pool, not a wider pre-filter one.
+            excludeClaimedWithFallback(legendariesLeft);
+            excludeClaimedWithFallback(nonlegsLeft);
+            excludeClaimedWithFallback(ultraBeastsLeft);
 
             // Full pools for easier refilling later
             SpeciesSet legendariesPool = new SpeciesSet(legendariesLeft);
@@ -164,6 +169,9 @@ public class StaticPokemonRandomizer extends Randomizer {
             SpeciesSet pokemonLeft = new SpeciesSet(!allowAltFormes ?
                     rSpecService.getAll(false) : listInclFormesExclCosmetics);
             pokemonLeft.removeAll(banned);
+            // Must run after any other pool-narrowing filters (e.g. basicOnly), since the fallback
+            // needs to check emptiness against the final candidate pool, not a wider pre-filter one.
+            excludeClaimedWithFallback(pokemonLeft);
 
             SpeciesSet pokemonPool = new SpeciesSet(pokemonLeft);
 
@@ -257,6 +265,9 @@ public class StaticPokemonRandomizer extends Randomizer {
             SpeciesSet pokemonLeft = new SpeciesSet(!allowAltFormes ?
                     rSpecService.getAll(false) : listInclFormesExclCosmetics);
             pokemonLeft.removeAll(banned);
+            // Must run after any other pool-narrowing filters (e.g. basicOnly), since the fallback
+            // needs to check emptiness against the final candidate pool, not a wider pre-filter one.
+            excludeClaimedWithFallback(pokemonLeft);
 
             SpeciesSet pokemonPool = new SpeciesSet(pokemonLeft);
 
@@ -346,6 +357,7 @@ public class StaticPokemonRandomizer extends Randomizer {
         SpeciesSet pokemonLeft = new SpeciesSet(!allowAltFormes ?
                 rSpecService.getAll(false) : allNonCosmetic);
         pokemonLeft.removeAll(banned);
+        excludeClaimedWithFallback(pokemonLeft);
 
         for (TotemPokemon old : currentTotemPokemon) {
             TotemPokemon newTotem = new TotemPokemon(old);
@@ -425,6 +437,7 @@ public class StaticPokemonRandomizer extends Randomizer {
         if (pokemonLeft.isEmpty()) {
             pokemonLeft.addAll(!allowAltFormes ? rSpecService.getAll(false) : allNonCosmetic);
             pokemonLeft.removeAll(banned);
+            excludeClaimedWithFallback(pokemonLeft);
         }
     }
 
@@ -459,6 +472,7 @@ public class StaticPokemonRandomizer extends Randomizer {
         SpeciesSet megaEvoPokemonLeft = new SpeciesSet(megaEvoPokemon).filter(pokemonLeft::contains);
         if (megaEvoPokemonLeft.isEmpty()) {
             megaEvoPokemonLeft = new SpeciesSet(megaEvoPokemon).filter(fullList::contains);
+            excludeClaimedWithFallback(megaEvoPokemonLeft);
         }
 
         Species newPK = megaEvoPokemonLeft.getRandomSpecies(random);

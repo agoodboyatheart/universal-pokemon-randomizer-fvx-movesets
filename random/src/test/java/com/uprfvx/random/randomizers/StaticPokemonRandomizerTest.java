@@ -1,15 +1,20 @@
 package com.uprfvx.random.randomizers;
 
 import com.uprfvx.random.Settings;
+import com.uprfvx.romio.gamedata.MegaEvolution;
 import com.uprfvx.romio.gamedata.Species;
+import com.uprfvx.romio.gamedata.SpeciesSet;
 import com.uprfvx.romio.gamedata.StaticEncounter;
+import com.uprfvx.romio.gamedata.TotemPokemon;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 public class StaticPokemonRandomizerTest extends RandomizerTest {
@@ -121,6 +126,73 @@ public class StaticPokemonRandomizerTest extends RandomizerTest {
         // small loop in case it just throws sometimes
         for (int i = 0; i < 10; i++) {
             new StaticPokemonRandomizer(romHandler, s, RND).randomizeTotemPokemon();
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void claimedSpeciesAreExcludedFromStatics(String romName) {
+        activateRomHandler(romName);
+
+        List<Species> allSpecies = new ArrayList<>(romHandler.getRestrictedSpeciesService().getAll(false));
+        int staticCount = romHandler.getStaticPokemon().size();
+        SpeciesSet claimed = new SpeciesSet(allSpecies.subList(0, allSpecies.size() - staticCount - 5));
+        // Also keep every Mega Evolution-capable species unclaimed - it's a narrow, fixed sub-pool
+        // (~50-90 species) distinct from the general dex, so the "small surplus" above doesn't
+        // reliably leave any of them unclaimed on its own. Without this, a static encounter forced to
+        // swap to a Mega-capable species would have zero valid (non-fallback) picks - a genuine "pool
+        // exhausted" case per the fallback rule, not a bug, but one this test isn't meant to exercise.
+        SpeciesSet megaCapable = romHandler.getRestrictedSpeciesService().getMegaEvolutions().stream()
+                .filter(MegaEvolution::isNeedsItem)
+                .map(MegaEvolution::getFrom)
+                .collect(Collectors.toCollection(SpeciesSet::new));
+        claimed.removeAll(megaCapable);
+
+        Settings s = new Settings();
+        s.setStaticPokemonMod(Settings.StaticPokemonMod.COMPLETELY_RANDOM);
+        StaticPokemonRandomizer randomizer = new StaticPokemonRandomizer(romHandler, s, RND);
+        randomizer.setExternallyClaimedSpecies(claimed);
+        randomizer.randomizeStaticPokemon();
+
+        for (StaticEncounter se : romHandler.getStaticPokemon()) {
+            assertFalse(claimed.contains(se.getSpecies()),
+                    se.getSpecies().getFullName() + " was claimed elsewhere but placed as a static encounter");
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void claimedSpeciesFallBackInsteadOfThrowingForStatics(String romName) {
+        activateRomHandler(romName);
+
+        SpeciesSet claimed = new SpeciesSet(romHandler.getRestrictedSpeciesService().getAll(false));
+
+        Settings s = new Settings();
+        s.setStaticPokemonMod(Settings.StaticPokemonMod.COMPLETELY_RANDOM);
+        StaticPokemonRandomizer randomizer = new StaticPokemonRandomizer(romHandler, s, RND);
+        randomizer.setExternallyClaimedSpecies(claimed);
+        randomizer.randomizeStaticPokemon(); // must not throw
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void claimedSpeciesAreExcludedFromTotems(String romName) {
+        activateRomHandler(romName);
+        assumeTrue(romHandler.hasTotemPokemon());
+
+        List<Species> allSpecies = new ArrayList<>(romHandler.getRestrictedSpeciesService().getAll(false));
+        int totemCount = romHandler.getTotemPokemon().size();
+        SpeciesSet claimed = new SpeciesSet(allSpecies.subList(0, allSpecies.size() - totemCount - 5));
+
+        Settings s = new Settings();
+        s.setTotemPokemonMod(Settings.TotemPokemonMod.RANDOM);
+        StaticPokemonRandomizer randomizer = new StaticPokemonRandomizer(romHandler, s, RND);
+        randomizer.setExternallyClaimedSpecies(claimed);
+        randomizer.randomizeTotemPokemon();
+
+        for (TotemPokemon totem : romHandler.getTotemPokemon()) {
+            assertFalse(claimed.contains(totem.getSpecies()),
+                    totem.getSpecies().getFullName() + " was claimed elsewhere but placed as a totem");
         }
     }
 
