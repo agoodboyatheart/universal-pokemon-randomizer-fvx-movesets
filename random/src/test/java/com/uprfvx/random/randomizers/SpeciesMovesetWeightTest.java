@@ -73,7 +73,7 @@ public class SpeciesMovesetWeightTest {
     public void ceilingRemovesMovesAboveItAtLowLevel() {
         // powerCeiling(1) = max(60, 46*0.95) = 60.
         List<Move> pool = List.of(damagingMove(40), damagingMove(120));
-        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, 1);
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, List.of(), 1);
         assertEquals(1, capped.size());
         assertEquals(40, capped.get(0).power);
     }
@@ -82,24 +82,48 @@ public class SpeciesMovesetWeightTest {
     public void ceilingWidensAtHighLevel() {
         // powerCeiling(50) = max(60, 95*1.63) = 154.85, so a 120 BP move clears it at Lv50.
         List<Move> pool = List.of(damagingMove(120));
-        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, 50);
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, List.of(), 50);
         assertEquals(1, capped.size());
     }
 
     @Test
-    public void ceilingNeverEmptiesAnOnlyStrongPool() {
-        // Every candidate exceeds the Lv1 ceiling (60) - the filter must fall back to the unfiltered
-        // pool rather than returning empty and forcing a null pick downstream.
-        List<Move> pool = List.of(damagingMove(120), damagingMove(150));
-        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, 1);
+    public void ceilingFallsBackToWiderPoolWhenNarrowPoolIsAllOverCeiling() {
+        // The real Fire-Special/Steel-Physical/Psychic-Special case: a type's whole damaging pool is
+        // naturally weak-move-poor (e.g. vanilla Fire Red: only 3/12 Fire-type damaging moves are
+        // <=60 BP), but the global damaging pool isn't. powerCeiling(1) = 60.
+        List<Move> narrow = List.of(damagingMove(120), damagingMove(150));
+        List<Move> wider = List.of(damagingMove(40), damagingMove(120));
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(narrow, wider, 1);
+        assertEquals(1, capped.size());
+        assertEquals(40, capped.get(0).power);
+    }
+
+    @Test
+    public void ceilingNeverEmptiesWhenBothPoolsAreAllOverCeiling() {
+        // Even the wider fallback pool has nothing under the ceiling - must still fall back to the
+        // unfiltered narrow pool rather than returning empty and forcing a null pick downstream.
+        List<Move> narrow = List.of(damagingMove(120), damagingMove(150));
+        List<Move> wider = List.of(damagingMove(130));
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(narrow, wider, 1);
         assertFalse(capped.isEmpty());
         assertEquals(2, capped.size());
     }
 
     @Test
+    public void ceilingPrefersNarrowPoolWhenItAlreadySatisfiesTheCeiling() {
+        // The wider pool must never override a narrow pool that already has a valid (under-ceiling)
+        // candidate - the fallback only kicks in when the narrow pool is exhausted.
+        List<Move> narrow = List.of(damagingMove(40));
+        List<Move> wider = List.of(damagingMove(35));
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(narrow, wider, 1);
+        assertEquals(1, capped.size());
+        assertEquals(40, capped.get(0).power);
+    }
+
+    @Test
     public void ceilingExemptsStatusAndFixedDamageMoves() {
         List<Move> pool = List.of(statusMove());
-        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, 1);
+        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, List.of(), 1);
         assertEquals(1, capped.size());
     }
 }

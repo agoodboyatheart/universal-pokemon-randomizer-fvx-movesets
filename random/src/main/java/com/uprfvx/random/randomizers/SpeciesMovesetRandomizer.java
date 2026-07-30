@@ -305,8 +305,16 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 List<Move> available = pickList.stream()
                         .filter(candidate -> !learnt.contains(candidate.number))
                         .collect(Collectors.toList());
+                // Same pool the attemptDamaging/type-theming branch above would have fallen back to if
+                // the type pool had run out of unused moves - reused here as the ceiling's own fallback
+                // pool, so a type-themed pick that's blocked by the ceiling degrades to "on-type theming
+                // lost" rather than "ceiling ignored."
+                List<Move> widerFallbackPool = attemptDamaging ? validDamagingMoves : validMoves;
+                List<Move> widerAvailable = widerFallbackPool.stream()
+                        .filter(candidate -> !learnt.contains(candidate.number))
+                        .collect(Collectors.toList());
                 int slotLevel = backfillEffectiveLevels.getOrDefault(i, moves.get(i).level);
-                available = applySpeciesPowerCeiling(available, slotLevel);
+                available = applySpeciesPowerCeiling(available, widerAvailable, slotLevel);
                 mv = weightedPick(available, candidate -> speciesLevelAppropriatenessWeight(candidate, slotLevel));
             } else {
                 mv = pickList.get(random.nextInt(pickList.size()));
@@ -464,15 +472,29 @@ public class SpeciesMovesetRandomizer extends Randomizer {
     // surprise at the low end than a Boss trainer's picks get.
 
     // Hard sliding ceiling (pool stage): removes attacking moves too strong for the slot's level. Status/
-    // fixed-damage moves are exempt. Falls back to the unfiltered pool if capping would leave nothing to
-    // pick from (a narrow type/category pool can otherwise contain only over-ceiling moves) - a soft
-    // floor demotion is still better than a null pick or an unweighted uniform fallback.
-    static List<Move> applySpeciesPowerCeiling(List<Move> available, int level) {
+    // fixed-damage moves are exempt. Two-stage fallback if capping the narrow (type/category-restricted)
+    // pool would leave it empty: first try capping the wider pool the slot's pick would otherwise have
+    // come from (the type theme is sacrificed, but the ceiling still holds) - some type x category
+    // slices of the real movepool are naturally weak-move-poor (e.g. vanilla Fire Red: only 3/12
+    // Fire-type damaging moves are <=60 BP) even though the global pool isn't. Only if that wider pool
+    // is ALSO all over-ceiling does this fall back to the narrow pool unfiltered, same as before.
+    static List<Move> applySpeciesPowerCeiling(List<Move> available, List<Move> widerFallbackPool, int level) {
         double ceiling = powerCeiling(level);
-        List<Move> capped = available.stream()
+        List<Move> capped = filterUnderCeiling(available, ceiling);
+        if (!capped.isEmpty()) {
+            return capped;
+        }
+        List<Move> widerCapped = filterUnderCeiling(widerFallbackPool, ceiling);
+        if (!widerCapped.isEmpty()) {
+            return widerCapped;
+        }
+        return available;
+    }
+
+    private static List<Move> filterUnderCeiling(List<Move> moves, double ceiling) {
+        return moves.stream()
                 .filter(mv -> mv.power * mv.hitCount <= 0 || mv.power * mv.hitCount <= ceiling)
                 .collect(Collectors.toList());
-        return capped.isEmpty() ? available : capped;
     }
 
     // Soft sliding floor (pick stage): demotes, never removes, moves weaker than the slot's level
