@@ -16,7 +16,17 @@ public class TradeRandomizer extends Randomizer {
     }
 
     public void randomizeIngameTrades() {
-        boolean randomizeRequest = settings.getInGameTradesMod() == Settings.InGameTradesMod.RANDOMIZE_GIVEN_AND_REQUESTED;
+        randomizeGivenTrades();
+        randomizeRequestedTrades(null);
+    }
+
+    /**
+     * Randomizes the "given" species of every in-game trade (plus nickname/OT/IVs/held item, which
+     * aren't species-obtainability-sensitive). Does not touch requested species at all, except to
+     * keep it equal to the new given species for trades where it was already equal to the old given
+     * species (i.e. trades that don't really have a distinct "want", they're a straight handout).
+     */
+    public void randomizeGivenTrades() {
         boolean randomNickname = settings.isRandomizeInGameTradesNicknames();
         boolean randomOT = settings.isRandomizeInGameTradesOTs();
         boolean randomStats = settings.isRandomizeInGameTradesIVs();
@@ -63,7 +73,6 @@ public class TradeRandomizer extends Randomizer {
             speciesPool = speciesPool.filterBasic(false);
         }
         SpeciesSet givenLeft = new SpeciesSet(speciesPool);
-        SpeciesSet requestLeft = new SpeciesSet(speciesPool);
 
         int nickCount = nicknames.size();
         int trnameCount = trainerNames.size();
@@ -79,15 +88,6 @@ public class TradeRandomizer extends Randomizer {
             if (oldgiven == trade.getRequestedSpecies()) {
                 // preserve trades for the same pokemon
                 trade.setRequestedSpecies(given);
-            } else if (randomizeRequest) {
-                if (trade.getRequestedSpecies() != null) {
-                    Species oldrequested = trade.getRequestedSpecies();
-                    SpeciesSet requestCandidates = requestLeft.contains(given) && requestLeft.size() > 1 ?
-                            requestLeft.filter(sp -> sp != given) : requestLeft;
-                    Species request = pickTradeSpecies(requestCandidates, requestLeft, speciesPool, oldrequested,
-                            similarStrength);
-                    trade.setRequestedSpecies(request);
-                }
             }
 
             // nickname?
@@ -126,6 +126,59 @@ public class TradeRandomizer extends Randomizer {
         }
 
         // things that the game doesn't support should just be ignored
+        romHandler.setInGameTrades(trades);
+        changesMade = true;
+    }
+
+    /**
+     * Randomizes the "requested" species of every in-game trade that has a distinct one (skipped
+     * entirely unless "Randomize Given and Requested" is on). Must run after {@link #randomizeGivenTrades()}.
+     * @param obtainablePool If non-null/non-empty, requested species are preferentially drawn from the
+     *                       intersection of the normal filtered pool and this set (falling back to the
+     *                       unrestricted filtered pool if that intersection is empty). Pass null for the
+     *                       old, unrestricted behavior.
+     */
+    public void randomizeRequestedTrades(SpeciesSet obtainablePool) {
+        boolean randomizeRequest = settings.getInGameTradesMod() == Settings.InGameTradesMod.RANDOMIZE_GIVEN_AND_REQUESTED;
+        if (!randomizeRequest) {
+            return;
+        }
+        boolean similarStrength = settings.isTradeSimilarStrength();
+        boolean basicOnly = settings.isTradeBasicOnly();
+        boolean noLegendaries = settings.isTradeNoLegendaries();
+
+        SpeciesSet speciesPool = new SpeciesSet(rSpecService.getSpecies(noLegendaries, false, false));
+        if (basicOnly) {
+            speciesPool = speciesPool.filterBasic(false);
+        }
+        if (obtainablePool != null && !obtainablePool.isEmpty()) {
+            SpeciesSet obtainableAndFiltered = new SpeciesSet(speciesPool);
+            obtainableAndFiltered.retainAll(obtainablePool);
+            if (!obtainableAndFiltered.isEmpty()) {
+                speciesPool = obtainableAndFiltered;
+            }
+            // else: fall back to the unrestricted (but still legendary/basic-filtered) pool - an
+            // extremely restrictive settings combo could otherwise leave nothing pickable.
+        }
+        SpeciesSet requestLeft = new SpeciesSet(speciesPool);
+
+        List<InGameTrade> trades = romHandler.getInGameTrades();
+        for (InGameTrade trade : trades) {
+            Species given = trade.getGivenSpecies();
+            if (given == trade.getRequestedSpecies()) {
+                // already aligned by randomizeGivenTrades() - nothing left to do
+                continue;
+            }
+            if (trade.getRequestedSpecies() != null) {
+                Species oldrequested = trade.getRequestedSpecies();
+                SpeciesSet requestCandidates = requestLeft.contains(given) && requestLeft.size() > 1 ?
+                        requestLeft.filter(sp -> sp != given) : requestLeft;
+                Species request = pickTradeSpecies(requestCandidates, requestLeft, speciesPool, oldrequested,
+                        similarStrength);
+                trade.setRequestedSpecies(request);
+            }
+        }
+
         romHandler.setInGameTrades(trades);
         changesMade = true;
     }
