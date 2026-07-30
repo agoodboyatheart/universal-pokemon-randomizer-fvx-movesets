@@ -48,13 +48,13 @@ public class MovesetProfileRandomizerTest {
 
     /** One game per generation, mirroring the golden-master list. {@code {gameName, fileBaseName}}. */
     private static final String[][] GAMES = {
-            {"Red", "Pokemon Red"},
-            {"Crystal", "Pokemon Crystal"},
-            {"Emerald", "Pokemon Emerald"},
-            {"Platinum", "Pokemon Platinum"},
-            {"Black 2", "Pokemon Black 2"},
-            {"Alpha Sapphire", "Pokemon Alpha Sapphire (Europe) (En,Ja,Fr,De,Es,It,Ko) (Rev 2)-decrypted"},
-            {"Ultra Sun", "Pokemon Ultra Sun-decrypted"},
+            {"Red", "Red (U)"},
+            {"Crystal", "Crystal (U)"},
+            {"Emerald", "Emerald (U)"},
+            {"Platinum", "Platinum (U)"},
+            {"Black 2", "Black 2 (U)"},
+            {"Alpha Sapphire", "Alpha Sapphire"},
+            {"Ultra Sun", "Ultra Sun"},
     };
 
     /** Fixed/proportional-damage moves that count as attacks despite storing no usable base power. */

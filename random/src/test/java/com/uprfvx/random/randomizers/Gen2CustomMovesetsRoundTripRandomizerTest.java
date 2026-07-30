@@ -31,7 +31,7 @@ public class Gen2CustomMovesetsRoundTripRandomizerTest {
     private static final long SEED = 987654321L;
 
     @ParameterizedTest
-    @ValueSource(strings = {"Pokemon Gold.gbc", "Pokemon Silver.gbc", "Pokemon Crystal.gbc"})
+    @ValueSource(strings = {"Gold (U).gbc", "Silver (U).gbc", "Crystal (U).gbc"})
     public void bossImportantGetCustomMovesRegularStaysVanilla(String fileName) throws Exception {
         String src = ROMS_PATH + "/" + fileName;
         assumeTrue(new java.io.File(src).exists(), "ROM not present: " + src);
