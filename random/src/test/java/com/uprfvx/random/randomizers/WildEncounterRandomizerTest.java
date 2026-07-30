@@ -1770,4 +1770,26 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
         }
     }
 
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void claimedSpeciesAreExcludedFromWild(String romName) {
+        activateRomHandler(romName);
+
+        Settings settings = getStandardSettings(romName);
+        // Claim a handful of species that are definitely eligible for wild encounters otherwise.
+        SpeciesSet eligible = new SpeciesSet(romHandler.getRestrictedSpeciesService().getSpecies(false, false, false));
+        SpeciesSet claimed = new SpeciesSet(new ArrayList<>(eligible).subList(0, Math.min(20, eligible.size())));
+
+        WildEncounterRandomizer randomizer = new WildEncounterRandomizer(romHandler, settings, RND);
+        randomizer.setExternallyClaimedSpecies(claimed);
+        randomizer.randomizeEncounters();
+
+        for (EncounterArea area : romHandler.getEncounters(settings.isUseTimeBasedEncounters())) {
+            for (Encounter enc : area) {
+                assertFalse(claimed.contains(enc.getSpecies()),
+                        enc.getSpecies().getFullName() + " was claimed elsewhere but appears in the wild");
+            }
+        }
+    }
+
 }

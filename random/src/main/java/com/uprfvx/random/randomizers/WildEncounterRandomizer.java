@@ -65,6 +65,11 @@ public class WildEncounterRandomizer extends Randomizer {
         SpeciesSet banned = getBannedForWildEncounters(banIrregularAltFormes, abilitiesAreRandomized);
         SpeciesSet allowed = new SpeciesSet(rSpecService.getSpecies(noLegendaries, allowAltFormes, false));
         allowed.removeAll(banned);
+        // Species claimed by Starters/Totem/Static/Trade(given) are excluded here (not added to
+        // `banned`) so Catch 'Em All's "leave banned species at their original vanilla wild slot"
+        // behavior does NOT apply to them - they must be genuinely replaced, not preserved. See
+        // project_memory\encounter-anti-duplication-design.md.
+        excludeClaimedWithFallback(allowed);
 
         // apply level modifier
         applyLevelModifier(levelModifier, encounterAreas);
