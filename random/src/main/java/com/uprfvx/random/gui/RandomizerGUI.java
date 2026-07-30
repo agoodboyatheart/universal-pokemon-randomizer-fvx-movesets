@@ -123,6 +123,9 @@ public class RandomizerGUI {
     private JCheckBox igtRandomizeOTsCheckBox;
     private JCheckBox igtRandomizeIVsCheckBox;
     private JCheckBox igtRandomizeItemsCheckBox;
+    private JCheckBox igtSimilarStrengthCheckBox;
+    private JCheckBox igtBasicOnlyCheckBox;
+    private JCheckBox igtDontUseLegendariesCheckBox;
     private JCheckBox mdRandomizeMovePowerCheckBox;
     private JCheckBox mdRandomizeMoveAccuracyCheckBox;
     private JCheckBox mdRandomizeMovePPCheckBox;
@@ -297,6 +300,7 @@ public class RandomizerGUI {
     private JCheckBox stpPercentageLevelModifierCheckBox;
     private SpinSlider stpPercentageLevelModifierSpinSlider;
     private JCheckBox stpFixMusicCheckBox;
+    private JCheckBox stpBasicOnlyCheckBox;
     private JCheckBox miscFasterHPAndEXPBarsCheckBox;
     private JCheckBox tpBossTrainersItemsCheckBox;
     private JCheckBox tpImportantTrainersItemsCheckBox;
@@ -1942,6 +1946,7 @@ public class RandomizerGUI {
         stpPercentageLevelModifierCheckBox.setSelected(settings.isStaticLevelModified());
         stpPercentageLevelModifierSpinSlider.setValue(settings.getStaticLevelModifier());
         stpFixMusicCheckBox.setSelected(settings.isCorrectStaticMusic());
+        stpBasicOnlyCheckBox.setSelected(settings.isStaticBasicOnly());
 
         thcRandomCompletelyRadioButton
                 .setSelected(settings.getTmsHmsCompatibilityMod() == Settings.TMsHMsCompatibilityMod.COMPLETELY_RANDOM);
@@ -1984,6 +1989,9 @@ public class RandomizerGUI {
         igtRandomizeIVsCheckBox.setSelected(settings.isRandomizeInGameTradesIVs());
         igtRandomizeNicknamesCheckBox.setSelected(settings.isRandomizeInGameTradesNicknames());
         igtRandomizeOTsCheckBox.setSelected(settings.isRandomizeInGameTradesOTs());
+        igtSimilarStrengthCheckBox.setSelected(settings.isTradeSimilarStrength());
+        igtBasicOnlyCheckBox.setSelected(settings.isTradeBasicOnly());
+        igtDontUseLegendariesCheckBox.setSelected(settings.isTradeNoLegendaries());
         igtUnchangedRadioButton.setSelected(settings.getInGameTradesMod() == Settings.InGameTradesMod.UNCHANGED);
 
         fiRandomRadioButton.setSelected(settings.getFieldItemsMod() == Settings.FieldItemsMod.RANDOM);
@@ -2208,6 +2216,7 @@ public class RandomizerGUI {
         settings.setStaticLevelModified(stpPercentageLevelModifierCheckBox.isSelected());
         settings.setStaticLevelModifier(stpPercentageLevelModifierSpinSlider.getValue());
         settings.setCorrectStaticMusic(stpFixMusicCheckBox.isSelected() && stpFixMusicCheckBox.isVisible());
+        settings.setStaticBasicOnly(stpBasicOnlyCheckBox.isSelected() && stpBasicOnlyCheckBox.isVisible());
 
         settings.setTmsMod(tmUnchangedRadioButton.isSelected(), tmRandomRadioButton.isSelected());
 
@@ -2236,6 +2245,9 @@ public class RandomizerGUI {
         settings.setRandomizeInGameTradesIVs(igtRandomizeIVsCheckBox.isSelected());
         settings.setRandomizeInGameTradesNicknames(igtRandomizeNicknamesCheckBox.isSelected());
         settings.setRandomizeInGameTradesOTs(igtRandomizeOTsCheckBox.isSelected());
+        settings.setTradeSimilarStrength(igtSimilarStrengthCheckBox.isSelected());
+        settings.setTradeBasicOnly(igtBasicOnlyCheckBox.isSelected());
+        settings.setTradeNoLegendaries(igtDontUseLegendariesCheckBox.isSelected());
 
         settings.setFieldItemsMod(fiUnchangedRadioButton.isSelected(), fiShuffleRadioButton.isSelected(), fiRandomRadioButton.isSelected(), fiRandomEvenDistributionRadioButton.isSelected());
         settings.setBanBadRandomFieldItems(fiBanBadItemsCheckBox.isSelected());
@@ -2420,14 +2432,15 @@ public class RandomizerGUI {
         setInitialButtonState(stpUnchangedRadioButton, stpSwapLegendariesSwapStandardsRadioButton,
 				stpRandomCompletelyRadioButton, stpRandomSimilarStrengthRadioButton, stpPercentageLevelModifierCheckBox,
 				stpLimitMainGameLegendariesCheckBox, stpRandomize600BSTCheckBox, stpAllowAltFormesCheckBox,
-				stpSwapMegaEvosCheckBox, stpFixMusicCheckBox);
+				stpSwapMegaEvosCheckBox, stpFixMusicCheckBox, stpBasicOnlyCheckBox);
 		stpPercentageLevelModifierSpinSlider.setVisible(true);
 		stpPercentageLevelModifierSpinSlider.setEnabled(false);
 		stpPercentageLevelModifierSpinSlider.setValue(0);
 
         setInitialButtonState(igtUnchangedRadioButton, igtRandomizeGivenPokemonOnlyRadioButton,
 				igtRandomizeBothRequestedGivenRadioButton, igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox,
-				igtRandomizeIVsCheckBox, igtRandomizeItemsCheckBox);
+				igtRandomizeIVsCheckBox, igtRandomizeItemsCheckBox, igtSimilarStrengthCheckBox,
+				igtBasicOnlyCheckBox, igtDontUseLegendariesCheckBox);
 
         setInitialButtonState(mdRandomizeMovePowerCheckBox, mdRandomizeMoveAccuracyCheckBox, mdRandomizeMovePPCheckBox,
             mdRandomizeMoveTypesCheckBox, mdRandomizeMoveCategoryCheckBox, mdUpdateMovesCheckBox, mdRandomizeMoveNamesCheckBox);
@@ -2817,6 +2830,7 @@ public class RandomizerGUI {
                 stpPercentageLevelModifierCheckBox.setVisible(false);
                 stpPercentageLevelModifierSpinSlider.setVisible(false);
                 stpFixMusicCheckBox.setVisible(false);
+                stpBasicOnlyCheckBox.setVisible(false);
             }
 
             igtUnchangedRadioButton.setEnabled(true);
@@ -2828,6 +2842,9 @@ public class RandomizerGUI {
             igtRandomizeOTsCheckBox.setEnabled(false);
             igtRandomizeIVsCheckBox.setEnabled(false);
             igtRandomizeItemsCheckBox.setEnabled(false);
+            igtSimilarStrengthCheckBox.setEnabled(false);
+            igtBasicOnlyCheckBox.setEnabled(false);
+            igtDontUseLegendariesCheckBox.setEnabled(false);
 
             if (pokemonGeneration == 1) {
                 igtRandomizeOTsCheckBox.setVisible(false);
@@ -3375,10 +3392,10 @@ public class RandomizerGUI {
 
         if (stpUnchangedRadioButton.isSelected()) {
             disableAndDeselectButtons(stpRandomize600BSTCheckBox, stpAllowAltFormesCheckBox,
-                    stpSwapMegaEvosCheckBox, stpFixMusicCheckBox);
+                    stpSwapMegaEvosCheckBox, stpFixMusicCheckBox, stpBasicOnlyCheckBox);
         } else {
             enableButtons(stpRandomize600BSTCheckBox, stpAllowAltFormesCheckBox,
-                    stpSwapMegaEvosCheckBox, stpFixMusicCheckBox);
+                    stpSwapMegaEvosCheckBox, stpFixMusicCheckBox, stpBasicOnlyCheckBox);
         }
 
         if (stpRandomSimilarStrengthRadioButton.isSelected()) {
@@ -3396,10 +3413,12 @@ public class RandomizerGUI {
 
         if (igtUnchangedRadioButton.isSelected()) {
             disableAndDeselectButtons(igtRandomizeItemsCheckBox, igtRandomizeIVsCheckBox,
-                    igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox);
+                    igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox, igtSimilarStrengthCheckBox,
+                    igtBasicOnlyCheckBox, igtDontUseLegendariesCheckBox);
         } else {
             enableButtons(igtRandomizeItemsCheckBox, igtRandomizeIVsCheckBox,
-                    igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox);
+                    igtRandomizeNicknamesCheckBox, igtRandomizeOTsCheckBox, igtSimilarStrengthCheckBox,
+                    igtBasicOnlyCheckBox, igtDontUseLegendariesCheckBox);
         }
 
         if (mdUpdateMovesCheckBox.isSelected()) {

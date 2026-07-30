@@ -18,6 +18,11 @@
 .idea/
 *.iml
 
+# Local copy of random/src/main/resources/data, for test/testROMs' default working directory to find
+# getCustomNames()'s relative-path reads (random:launch/relaunch set workingDir to the packaged release
+# dir instead, which already bundles data/ - tests have no such override)
+/random/data/
+
 # Gradle project-specific cache directory
 .gradle
 

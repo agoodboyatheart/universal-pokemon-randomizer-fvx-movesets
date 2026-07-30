@@ -59,6 +59,7 @@ public class StaticPokemonRandomizer extends Randomizer {
         boolean abilitiesAreRandomized = settings.getAbilitiesMod() == Settings.AbilitiesMod.RANDOMIZE;
         int levelModifier = settings.isStaticLevelModified() ? settings.getStaticLevelModifier() : 0;
         boolean correctStaticMusic = settings.isCorrectStaticMusic();
+        boolean basicOnly = settings.isStaticBasicOnly();
 
         // Load
         List<StaticEncounter> currentStaticPokemon = romHandler.getStaticPokemon();
@@ -96,6 +97,11 @@ public class StaticPokemonRandomizer extends Randomizer {
             legendariesLeft.removeAll(banned);
             nonlegsLeft.removeAll(banned);
             ultraBeastsLeft.removeAll(banned);
+            if (basicOnly) {
+                legendariesLeft = legendariesLeft.filterBasic(false);
+                nonlegsLeft = nonlegsLeft.filterBasic(false);
+                ultraBeastsLeft = ultraBeastsLeft.filterBasic(false);
+            }
             // Must run after any other pool-narrowing filters (e.g. basicOnly), since the fallback
             // needs to check emptiness against the final candidate pool, not a wider pre-filter one.
             excludeClaimedWithFallback(legendariesLeft);
@@ -169,6 +175,9 @@ public class StaticPokemonRandomizer extends Randomizer {
             SpeciesSet pokemonLeft = new SpeciesSet(!allowAltFormes ?
                     rSpecService.getAll(false) : listInclFormesExclCosmetics);
             pokemonLeft.removeAll(banned);
+            if (basicOnly) {
+                pokemonLeft = pokemonLeft.filterBasic(false);
+            }
             // Must run after any other pool-narrowing filters (e.g. basicOnly), since the fallback
             // needs to check emptiness against the final candidate pool, not a wider pre-filter one.
             excludeClaimedWithFallback(pokemonLeft);
@@ -265,6 +274,9 @@ public class StaticPokemonRandomizer extends Randomizer {
             SpeciesSet pokemonLeft = new SpeciesSet(!allowAltFormes ?
                     rSpecService.getAll(false) : listInclFormesExclCosmetics);
             pokemonLeft.removeAll(banned);
+            if (basicOnly) {
+                pokemonLeft = pokemonLeft.filterBasic(false);
+            }
             // Must run after any other pool-narrowing filters (e.g. basicOnly), since the fallback
             // needs to check emptiness against the final candidate pool, not a wider pre-filter one.
             excludeClaimedWithFallback(pokemonLeft);

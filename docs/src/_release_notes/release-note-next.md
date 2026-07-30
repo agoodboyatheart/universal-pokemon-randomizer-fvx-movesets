@@ -38,6 +38,15 @@ Download the Randomizer below by clicking on `UPR_FVX-[VERSION]-[OS].zip`. If yo
 
 ### Static Pokemon
 - (Gen 3) [The description of a changed feature here.]
+- Added a "Basic Pokemon Only" checkbox. When checked, static Pokemon are only replaced with
+  Pokemon that nothing else evolves into, regardless of which randomization mode (Swap
+  Legendaries for Legendaries, Completely Random, or Similar Strength) is active.
+
+### In-Game Trades
+- Added "Similar Strength", "Basic Pokemon Only", and "Don't Use Legendaries" checkboxes. These
+  restrict which Pokemon can be chosen for a trade's given (and, when "Randomize Both Given and
+  Requested" is active, requested) species, matching the equivalent options already available for
+  Wild Pokemon and Static Pokemon.
 
 ### Misc. Tweaks
 - (Gen 4+5) [The description of a misc. tweak addition or change here.]

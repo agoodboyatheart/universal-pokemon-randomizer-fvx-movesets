@@ -95,6 +95,24 @@ public class StaticPokemonRandomizerTest extends RandomizerTest {
         }
     }
 
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void basicOnlyOnlyPicksBasicPokemon(String romName) {
+        activateRomHandler(romName);
+
+        Settings s = new Settings();
+        s.setStaticPokemonMod(Settings.StaticPokemonMod.COMPLETELY_RANDOM);
+        s.setStaticBasicOnly(true);
+        new StaticPokemonRandomizer(romHandler, s, RND).randomizeStaticPokemon();
+
+        for (StaticEncounter se : romHandler.getStaticPokemon()) {
+            Species pk = se.getSpecies();
+            System.out.println(pk.getFullName());
+            assertEquals(0, pk.getPreEvolvedSpecies(false).size(),
+                    pk.getFullName() + " is not a basic Pokemon");
+        }
+    }
+
     private boolean isUltraBeast(Species pk) {
         return romHandler.getRestrictedSpeciesService().getUltrabeasts(false).contains(pk);
     }
