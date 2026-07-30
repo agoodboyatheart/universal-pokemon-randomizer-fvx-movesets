@@ -1143,4 +1143,42 @@ public class TrainerRandomizersTest extends RandomizerTest {
         System.out.println(ubiquitous);
         assertTrue(ubiquitous.isEmpty());
     }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void useLocalPokemonAlsoAllowsExternallyClaimedSpecies(String romName) {
+        activateRomHandler(romName);
+
+        SpeciesSet localWithRelatives = romHandler.getMainGameWildPokemonSpecies(true).buildFullFamilies(false);
+        SpeciesSet nonLocal = new SpeciesSet(romHandler.getSpeciesSet());
+        nonLocal.removeAll(localWithRelatives);
+        assumeTrue(!nonLocal.isEmpty(), "Every species is wild-obtainable in " + romName);
+
+        // Claim every non-local species, so "local" is widened to the whole dex if the extension works.
+        SpeciesSet claimed = new SpeciesSet(nonLocal);
+        SpeciesSet allowedAfterWidening = new SpeciesSet(localWithRelatives);
+        allowedAfterWidening.addAll(claimed.buildFullFamilies(false));
+
+        Settings s = new Settings();
+        s.setTrainersMod(Settings.TrainersMod.RANDOM);
+        s.setTrainersUseLocalPokemon(true);
+        s.setUseTimeBasedEncounters(true);
+        TrainerPokemonRandomizer randomizer = new TrainerPokemonRandomizer(romHandler, s, RND);
+        randomizer.setExternallyClaimedSpecies(claimed);
+        randomizer.randomizeTrainerPokes();
+
+        boolean anyClaimedUsed = false;
+        for (Trainer tr : romHandler.getTrainers()) {
+            for (TrainerPokemon tp : tr.getPokemon()) {
+                assertTrue(allowedAfterWidening.contains(tp.getSpecies()),
+                        tp.getSpecies().getFullName() + " is neither local nor externally claimed");
+                if (claimed.contains(tp.getSpecies())) {
+                    anyClaimedUsed = true;
+                }
+            }
+        }
+        // With every non-local species claimed, the pool is effectively the whole dex, so across all
+        // trainers at least one claimed (non-local) species is essentially certain to be picked.
+        assertTrue(anyClaimedUsed, "No externally-claimed species was used, so the pool was not widened");
+    }
 }
