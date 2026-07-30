@@ -12,6 +12,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TradeRandomizerTest extends RandomizerTest {
 
@@ -97,6 +98,45 @@ public class TradeRandomizerTest extends RandomizerTest {
             assertFalse(claimed.contains(trade.getGivenSpecies()),
                     trade.getGivenSpecies().getFullName() + " was claimed elsewhere but given in a trade");
         }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void requestedTradesAreDrawnFromObtainablePoolWhenGiven(String romName) {
+        activateRomHandler(romName);
+
+        Settings s = new Settings();
+        s.setInGameTradesMod(Settings.InGameTradesMod.RANDOMIZE_GIVEN_AND_REQUESTED);
+        TradeRandomizer randomizer = new TradeRandomizer(romHandler, s, RND);
+        randomizer.randomizeGivenTrades();
+
+        // A small, deliberately narrow "obtainable" pool - only the species just given by trades.
+        SpeciesSet obtainable = new SpeciesSet();
+        for (InGameTrade trade : romHandler.getInGameTrades()) {
+            obtainable.add(trade.getGivenSpecies());
+        }
+        randomizer.randomizeRequestedTrades(obtainable);
+
+        for (InGameTrade trade : romHandler.getInGameTrades()) {
+            if (trade.getRequestedSpecies() != null && trade.getRequestedSpecies() != trade.getGivenSpecies()) {
+                assertTrue(obtainable.contains(trade.getRequestedSpecies()),
+                        trade.getRequestedSpecies().getFullName() + " was requested but not in the obtainable pool");
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void requestedTradesFallBackWhenObtainablePoolTooNarrow(String romName) {
+        activateRomHandler(romName);
+
+        Settings s = new Settings();
+        s.setInGameTradesMod(Settings.InGameTradesMod.RANDOMIZE_GIVEN_AND_REQUESTED);
+        TradeRandomizer randomizer = new TradeRandomizer(romHandler, s, RND);
+        randomizer.randomizeGivenTrades();
+
+        // An empty obtainable pool must not cause a crash - it should fall back to the unrestricted pool.
+        randomizer.randomizeRequestedTrades(new SpeciesSet());
     }
 
     private void assertBasic(Species pk) {
