@@ -32,6 +32,10 @@ import com.uprfvx.random.updaters.TypeEffectivenessUpdater;
 import com.uprfvx.random.updaters.Updater;
 import com.uprfvx.romio.MiscTweak;
 import com.uprfvx.romio.gamedata.GenRestrictions;
+import com.uprfvx.romio.gamedata.InGameTrade;
+import com.uprfvx.romio.gamedata.SpeciesSet;
+import com.uprfvx.romio.gamedata.StaticEncounter;
+import com.uprfvx.romio.gamedata.TotemPokemon;
 import com.uprfvx.romio.graphics.packs.CustomPlayerGraphics;
 import com.uprfvx.romio.romhandlers.Gen1RomHandler;
 import com.uprfvx.romio.romhandlers.RomHandler;
@@ -296,11 +300,29 @@ public class GameRandomizer {
         maybeRandomizeMoveTutorMoves();
         maybeRandomizeMoveTutorCompatibility();
 
+        // Anti-duplication: Starters -> Totem -> Static -> Trade(given) each claim species in turn,
+        // excluded from every later pool in this list and from Wild. See
+        // project_memory\encounter-anti-duplication-design.md.
+        SpeciesSet claimedForEncounters = new SpeciesSet(romHandler.getStarters());
+
+        maybeRandomizeTotemPokemon(claimedForEncounters);
+        addTotemSpeciesTo(claimedForEncounters);
+
+        maybeRandomizeStaticPokemon(claimedForEncounters);
+        addStaticSpeciesTo(claimedForEncounters);
+
+        maybeRandomizeGivenTrades(claimedForEncounters);
+        addTradeGivenSpeciesTo(claimedForEncounters);
+
         // Applied before trainer randomization so "trainers use local pokémon"
         // may be based on new "local pokémon".
-        maybeRandomizeWildPokemon();
+        maybeRandomizeWildPokemon(claimedForEncounters);
 
-        maybeRandomizeTrainerPokemon();
+        SpeciesSet obtainablePool = new SpeciesSet(claimedForEncounters);
+        obtainablePool.addAll(romHandler.getMainGameWildPokemonSpecies(settings.isUseTimeBasedEncounters()));
+        maybeRandomizeRequestedTrades(obtainablePool);
+
+        maybeRandomizeTrainerPokemon(claimedForEncounters);
         maybeRandomizeTrainerMovesets();
         maybeFixTrainerZCrystals();
 
@@ -311,11 +333,6 @@ public class GameRandomizer {
         if (settings.getMovesetsMod() == Settings.MovesetsMod.METRONOME_ONLY) {
             speciesMovesetRandomizer.metronomeOnlyMode();
         }
-
-        maybeRandomizeStaticPokemon();
-        maybeRandomizeTotemPokemon();
-
-        maybeRandomizeInGameTrades();
 
         maybeRandomizeFieldItems();
         maybeRandomizeShops();
@@ -545,7 +562,7 @@ public class GameRandomizer {
         }
     }
 
-    private void maybeRandomizeTrainerPokemon() {
+    private void maybeRandomizeTrainerPokemon(SpeciesSet claimedForEncounters) {
         // Trainer Pokemon
         // 1. Modify levels first to get larger level variety if additional Pokemon are added in the next step
         // 2. Add extra Trainer Pokemon with level between lowest and highest original trainer Pokemon
@@ -575,6 +592,7 @@ public class GameRandomizer {
         }
 
         if (settings.getTrainersMod() != Settings.TrainersMod.UNCHANGED || additionalPokemonAdded) {
+            trainerPokeRandomizer.setExternallyClaimedSpecies(claimedForEncounters);
             trainerPokeRandomizer.randomizeTrainerPokes();
         } else if (settings.isTrainersEvolveTheirPokemon()) {
             trainerPokeRandomizer.evolveTrainerPokemonAsFarAsLegal();
@@ -617,9 +635,10 @@ public class GameRandomizer {
         }
     }
 
-    private void maybeRandomizeStaticPokemon() {
+    private void maybeRandomizeStaticPokemon(SpeciesSet claimedForEncounters) {
         if (romHandler.canChangeStaticPokemon()) {
             if (settings.getStaticPokemonMod() != Settings.StaticPokemonMod.UNCHANGED) { // Legendary for L
+                staticPokeRandomizer.setExternallyClaimedSpecies(claimedForEncounters);
                 staticPokeRandomizer.randomizeStaticPokemon();
             } else if (settings.isStaticLevelModified()) {
                 staticPokeRandomizer.onlyChangeStaticLevels();
@@ -627,7 +646,7 @@ public class GameRandomizer {
         }
     }
 
-    private void maybeRandomizeTotemPokemon() {
+    private void maybeRandomizeTotemPokemon(SpeciesSet claimedForEncounters) {
         if (romHandler.hasTotemPokemon()) {
             if (settings.getTotemPokemonMod() != Settings.TotemPokemonMod.UNCHANGED ||
                     settings.getAllyPokemonMod() != Settings.AllyPokemonMod.UNCHANGED ||
@@ -635,26 +654,65 @@ public class GameRandomizer {
                     settings.isRandomizeTotemHeldItems() ||
                     settings.isTotemLevelsModified()) {
 
+                staticPokeRandomizer.setExternallyClaimedSpecies(claimedForEncounters);
                 staticPokeRandomizer.randomizeTotemPokemon();
             }
         }
     }
 
-    private void maybeRandomizeWildPokemon() {
+    private void maybeRandomizeWildPokemon(SpeciesSet claimedForEncounters) {
         if (settings.isUseMinimumCatchRate()) {
             wildEncounterRandomizer.changeCatchRates();
         }
 
         if (settings.isRandomizeWildPokemon() || settings.isWildLevelsModified()) {
+            wildEncounterRandomizer.setExternallyClaimedSpecies(claimedForEncounters);
             wildEncounterRandomizer.randomizeEncounters();
         }
     }
 
-    private void maybeRandomizeInGameTrades() {
+    private void maybeRandomizeGivenTrades(SpeciesSet claimedForEncounters) {
         switch (settings.getInGameTradesMod()) {
             case RANDOMIZE_GIVEN:
             case RANDOMIZE_GIVEN_AND_REQUESTED:
-                tradeRandomizer.randomizeIngameTrades();
+                tradeRandomizer.setExternallyClaimedSpecies(claimedForEncounters);
+                tradeRandomizer.randomizeGivenTrades();
+        }
+    }
+
+    private void maybeRandomizeRequestedTrades(SpeciesSet obtainablePool) {
+        if (settings.getInGameTradesMod() == Settings.InGameTradesMod.RANDOMIZE_GIVEN_AND_REQUESTED) {
+            tradeRandomizer.randomizeRequestedTrades(obtainablePool);
+        }
+    }
+
+    private void addTotemSpeciesTo(SpeciesSet claimed) {
+        if (!romHandler.hasTotemPokemon()) {
+            return;
+        }
+        for (TotemPokemon totem : romHandler.getTotemPokemon()) {
+            claimed.add(totem.getSpecies());
+            for (StaticEncounter ally : totem.getAllies().values()) {
+                claimed.add(ally.getSpecies());
+            }
+        }
+    }
+
+    private void addStaticSpeciesTo(SpeciesSet claimed) {
+        if (!romHandler.canChangeStaticPokemon()) {
+            return;
+        }
+        for (StaticEncounter se : romHandler.getStaticPokemon()) {
+            claimed.add(se.getSpecies());
+            for (StaticEncounter linked : se.getLinkedEncounters()) {
+                claimed.add(linked.getSpecies());
+            }
+        }
+    }
+
+    private void addTradeGivenSpeciesTo(SpeciesSet claimed) {
+        for (InGameTrade trade : romHandler.getInGameTrades()) {
+            claimed.add(trade.getGivenSpecies());
         }
     }
 
