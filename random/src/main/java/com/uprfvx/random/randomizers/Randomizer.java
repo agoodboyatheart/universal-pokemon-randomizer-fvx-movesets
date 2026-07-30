@@ -4,6 +4,7 @@ import com.uprfvx.random.Settings;
 import com.uprfvx.random.customnames.CustomNamesSet;
 import com.uprfvx.random.exceptions.RandomizationException;
 import com.uprfvx.romio.gamedata.Species;
+import com.uprfvx.romio.gamedata.SpeciesSet;
 import com.uprfvx.romio.gamedata.cueh.CopyUpEvolutionsHelper;
 import com.uprfvx.romio.romhandlers.RomHandler;
 import com.uprfvx.romio.services.RestrictedSpeciesService;
@@ -26,6 +27,37 @@ public abstract class Randomizer {
     protected final Random random;
 
     protected boolean changesMade;
+
+    /**
+     * Species already placed by an earlier randomizer in this same game-randomization pass (e.g.
+     * Starters before Static, Static before Trade). Empty by default (no-op) so existing callers of
+     * any randomizer are unaffected unless {@link #setExternallyClaimedSpecies} is explicitly called.
+     */
+    protected SpeciesSet externallyClaimedSpecies = new SpeciesSet();
+
+    /**
+     * Sets the species this randomizer must avoid picking, because they were already placed by an
+     * earlier randomizer in the same pass. Pass {@code null} to clear back to "no exclusion."
+     */
+    public void setExternallyClaimedSpecies(SpeciesSet claimed) {
+        this.externallyClaimedSpecies = claimed == null ? new SpeciesSet() : claimed;
+    }
+
+    /**
+     * Removes {@link #externallyClaimedSpecies} from {@code pool} in place, unless doing so would
+     * leave {@code pool} empty - in which case {@code pool} is left untouched (duplicates allowed
+     * for that pick rather than crashing or hanging).
+     */
+    protected void excludeClaimedWithFallback(SpeciesSet pool) {
+        if (externallyClaimedSpecies.isEmpty() || pool.isEmpty()) {
+            return;
+        }
+        SpeciesSet withoutClaimed = new SpeciesSet(pool);
+        withoutClaimed.removeAll(externallyClaimedSpecies);
+        if (!withoutClaimed.isEmpty()) {
+            pool.retainAll(withoutClaimed);
+        }
+    }
 
     public Randomizer(RomHandler romHandler, Settings settings, Random random) {
         this.romHandler = romHandler;

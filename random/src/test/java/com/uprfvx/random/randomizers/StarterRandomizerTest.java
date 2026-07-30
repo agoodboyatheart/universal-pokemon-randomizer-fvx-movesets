@@ -2,6 +2,7 @@ package com.uprfvx.random.randomizers;
 
 import com.uprfvx.random.Settings;
 import com.uprfvx.romio.gamedata.Species;
+import com.uprfvx.romio.gamedata.SpeciesSet;
 import com.uprfvx.romio.gamedata.Type;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -514,5 +515,45 @@ public class StarterRandomizerTest extends RandomizerTest {
         for (int i = 0; i < customCount; i++) {
             assertEquals(starters.get(i), allPokes.get(custom[i]));
         }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void claimedSpeciesAreExcludedFromStarters(String romName) {
+        activateRomHandler(romName);
+
+        Settings s = new Settings();
+        StarterRandomizer randomizer = new StarterRandomizer(romHandler, s, RND);
+
+        List<Species> allSpecies = new ArrayList<>(romHandler.getRestrictedSpeciesService().getAll(false));
+        int starterCount = romHandler.starterCount();
+        // Claim everything except a small surplus, so the pick is still easily satisfiable
+        // without the fallback kicking in - this test is specifically about exclusion, not fallback.
+        SpeciesSet claimed = new SpeciesSet(allSpecies.subList(0, allSpecies.size() - starterCount - 5));
+        randomizer.setExternallyClaimedSpecies(claimed);
+
+        randomizer.randomizeStarters();
+
+        for (Species starter : romHandler.getStarters()) {
+            assertFalse(claimed.contains(starter),
+                    starter.getFullName() + " was claimed elsewhere but picked as a starter");
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void claimedSpeciesFallBackInsteadOfThrowingWhenPoolExhausted(String romName) {
+        activateRomHandler(romName);
+
+        Settings s = new Settings();
+        StarterRandomizer randomizer = new StarterRandomizer(romHandler, s, RND);
+
+        // Claim the entire dex - starters must still be produced via the fallback, not throw.
+        SpeciesSet claimed = new SpeciesSet(romHandler.getRestrictedSpeciesService().getAll(false));
+        randomizer.setExternallyClaimedSpecies(claimed);
+
+        randomizer.randomizeStarters();
+
+        assertEquals(romHandler.starterCount(), romHandler.getStarters().size());
     }
 }

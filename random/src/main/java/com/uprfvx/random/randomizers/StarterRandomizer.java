@@ -310,6 +310,7 @@ public class StarterRandomizer extends Randomizer {
         }
 
         available.removeAll(alreadyChosen);
+        excludeClaimedWithFallback(available);
 
         if (noDualTypes) {
             available.removeIf(p -> p.hasSecondaryType(false));
