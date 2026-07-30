@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -35,14 +36,14 @@ public class TMTutorMoveRandomizerTest {
     /** Game name (a {@link Generation} key) → the ROM file's base name in the roms folder. */
     static String[][] gamesToVerify() {
         return new String[][]{
-                {"Red", "Pokemon Red"},
-                {"Crystal", "Pokemon Crystal"},
-                {"Emerald", "Pokemon Emerald"},
-                {"Fire Red", "Pokemon Fire Red"},
-                {"Platinum", "Pokemon Platinum"},
-                {"HeartGold", "Pokemon HeartGold"},
-                {"White", "Pokemon White"},
-                {"White 2", "Pokemon White 2"},
+                {"Red", "Red (U)"},
+                {"Crystal", "Crystal (U)"},
+                {"Emerald", "Emerald (U)"},
+                {"Fire Red", "Fire Red (U) 1.0"},
+                {"Platinum", "Platinum (U)"},
+                {"HeartGold", "HeartGold (U)"},
+                {"White", "White (U)"},
+                {"White 2", "White 2 (U)"},
         };
     }
 
@@ -133,6 +134,47 @@ public class TMTutorMoveRandomizerTest {
             }
             assertEquals(tmsBefore.get(i), tmsAfter.get(i),
                     gameName + ": non-gym TM" + (i + 1) + " should be untouched by the type-lock step");
+        }
+    }
+
+    /**
+     * Regression test for the real observed bug: with Gym Leader TMs Match Type + Tutor moves both
+     * randomized, a gym leader's reward TM could be type-locked onto a move already assigned to a
+     * Move Tutor, producing the same move on both (e.g. Rock Throw). typeLockGymLeaderTMs() must
+     * exclude Tutor moves from its candidate pool, not just other TM moves.
+     * <p>
+     * Note the base randomization already keeps the two disjoint - randomizeMoveTutorMoves() excludes
+     * TM moves - so any overlap seen here was introduced by the type-lock step.
+     */
+    @ParameterizedTest
+    @MethodSource("gamesToVerify")
+    public void gymLeaderTMsMatchTypeNeverDuplicatesATutorMove(String gameName, String fileBaseName) {
+        RomHandler romHandler = loadRom(gameName, fileBaseName);
+        Map<String, Integer> gymTMs = romHandler.getGymLeaderTMs();
+        assumeFalse(gymTMs.isEmpty(), "No gym-leader TM data for " + gameName);
+        assumeTrue(romHandler.hasMoveTutors(), "No Move Tutors for " + gameName);
+
+        Settings s = new Settings();
+        s.setTmsMod(Settings.TMsMod.RANDOM);
+        s.setMoveTutorMovesMod(Settings.MoveTutorMovesMod.RANDOM);
+        s.setTrainersMod(Settings.TrainersMod.KEEP_THEMED);
+        s.setGymLeaderTMsFollowTheme(true);
+
+        TMTutorMoveRandomizer tmRandomizer = new TMTutorMoveRandomizer(romHandler, s, RND);
+        tmRandomizer.randomizeTMMoves();
+        tmRandomizer.randomizeMoveTutorMoves();
+
+        TrainerPokemonRandomizer trainerRandomizer = new TrainerPokemonRandomizer(romHandler, s, RND);
+        trainerRandomizer.randomizeTrainerPokes();
+
+        tmRandomizer.typeLockGymLeaderTMs(trainerRandomizer.getGymAndEliteThemesUsed());
+
+        List<Integer> tmMoves = romHandler.getTMMoves();
+        List<Integer> tutorMoves = romHandler.getMoveTutorMoves();
+        List<Move> allMoves = romHandler.getMoves();
+        for (Integer tmMove : tmMoves) {
+            assertFalse(tutorMoves.contains(tmMove), gameName + ": " + allMoves.get(tmMove).name
+                    + " is taught by both a TM and a Move Tutor after the gym type-lock step");
         }
     }
 }

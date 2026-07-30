@@ -142,6 +142,10 @@ public class TMTutorMoveRandomizer extends Randomizer {
         List<Move> allMoves = romHandler.getMoves();
         List<Integer> hms = romHandler.getHMMoves();
         List<Integer> currentTMs = new ArrayList<>(romHandler.getTMMoves());
+        // Move Tutor moves are finalized before this step runs, so they must be excluded too -
+        // otherwise a type-locked gym TM can teach a move already available from a Tutor.
+        List<Integer> currentTutorMoves = romHandler.hasMoveTutors() ?
+                romHandler.getMoveTutorMoves() : Collections.emptyList();
         List<Integer> fieldMoves = romHandler.getFieldMoves();
         int tmCount = romHandler.getTMCount();
 
@@ -168,7 +172,8 @@ public class TMTutorMoveRandomizer extends Randomizer {
             }
 
             // Pool of usable moves of the gym's type, excluding moves already taught by another TM
-            // (to keep TM moves unique). The move currently on this TM stays eligible.
+            // or by a Move Tutor (to keep TM and Tutor moves unique). The move currently on this TM
+            // stays eligible.
             List<Move> pool = new ArrayList<>();
             for (Move mv : allMoves) {
                 if (mv == null || mv.number == 0 || mv.type != type) {
@@ -179,6 +184,9 @@ public class TMTutorMoveRandomizer extends Randomizer {
                     continue;
                 }
                 if (mv.number != oldMove && currentTMs.contains(mv.number)) {
+                    continue;
+                }
+                if (mv.number != oldMove && currentTutorMoves.contains(mv.number)) {
                     continue;
                 }
                 pool.add(mv);
@@ -236,13 +244,22 @@ public class TMTutorMoveRandomizer extends Randomizer {
         usableMoves.remove(0); // remove null entry
         Set<Move> unusableMoves = new HashSet<>();
         Set<Move> unusableDamagingMoves = new HashSet<>();
+        // Moves that are legal in themselves and excluded only because a TM already teaches them.
+        // Tracked separately so they can be reinstated if the TM-exclusive pool runs out below.
+        Set<Move> tmOnlyExcludedMoves = new HashSet<>();
 
         for (Move mv : usableMoves) {
-            if (GlobalConstants.bannedRandomMoves[mv.number] || tms.contains(mv.number) || hms.contains(mv.number)
+            if (GlobalConstants.bannedRandomMoves[mv.number] || hms.contains(mv.number)
                     || banned.contains(mv.number) || GlobalConstants.zMoves.contains(mv.number)) {
                 unusableMoves.add(mv);
-            } else if (GlobalConstants.bannedForDamagingMove[mv.number] || !mv.isGoodDamaging(romHandler.getPerfectAccuracy())) {
+                continue;
+            }
+            if (GlobalConstants.bannedForDamagingMove[mv.number] || !mv.isGoodDamaging(romHandler.getPerfectAccuracy())) {
                 unusableDamagingMoves.add(mv);
+            }
+            if (tms.contains(mv.number)) {
+                unusableMoves.add(mv);
+                tmOnlyExcludedMoves.add(mv);
             }
         }
 
@@ -257,6 +274,27 @@ public class TMTutorMoveRandomizer extends Randomizer {
         int goodDamagingLeft = (int) Math.round(goodDamagingPercentage * (mtCount - preservedFieldMoveCount));
 
         for (int i = 0; i < mtCount - preservedFieldMoveCount; i++) {
+            if (usableMoves.isEmpty()) {
+                // The TM-exclusive pool ran dry - only reachable on a ROM whose legal move set is
+                // tiny relative to its combined TM + Tutor count. Reinstate the moves that were held
+                // back purely for overlapping a TM: those are still unpicked, so Tutor moves remain
+                // unique among themselves. Only once those are gone do we allow repeating an
+                // already-picked move. Without this the pick below would throw on an empty pool.
+                if (!tmOnlyExcludedMoves.isEmpty()) {
+                    usableMoves = new ArrayList<>(tmOnlyExcludedMoves);
+                    tmOnlyExcludedMoves.clear();
+                } else {
+                    usableMoves = new ArrayList<>(allMoves);
+                    usableMoves.remove(0); // remove null entry
+                    usableMoves.removeAll(unusableMoves);
+                }
+                if (usableMoves.isEmpty()) {
+                    // No legal move exists at all; leave the remaining tutors untouched.
+                    break;
+                }
+                usableDamagingMoves = new ArrayList<>(usableMoves);
+                usableDamagingMoves.removeAll(unusableDamagingMoves);
+            }
             Move chosenMove;
             if (goodDamagingLeft > 0 && !usableDamagingMoves.isEmpty()) {
                 chosenMove = usableDamagingMoves.get(random.nextInt(usableDamagingMoves.size()));
@@ -281,8 +319,11 @@ public class TMTutorMoveRandomizer extends Randomizer {
         for (Integer oldMT : oldMTs) {
             if (preserveField && fieldMoves.contains(oldMT)) {
                 newMTs.add(oldMT);
-            } else {
+            } else if (pickedMoveIndex < pickedMoves.size()) {
                 newMTs.add(pickedMoves.get(pickedMoveIndex++));
+            } else {
+                // Fewer moves picked than tutor slots, i.e. the pool ran out entirely above.
+                newMTs.add(oldMT);
             }
         }
 
