@@ -40,9 +40,9 @@ public class SpeciesMetadataExtractionRandomizerTest {
     @Test
     public void dumpPlannedSpeciesMetadata() {
         assumeTrue(ROMS_PATH != null, "romsPath not set (run via the testROMs task)");
-        RomHandler ultraSun = tryLoad("Ultra Sun", "Pokemon Ultra Sun-decrypted");
+        RomHandler ultraSun = tryLoad("Ultra Sun", "Ultra Sun");
         assumeTrue(ultraSun != null, "ROM absent: Ultra Sun");
-        RomHandler red = tryLoad("Red", "Pokemon Red");
+        RomHandler red = tryLoad("Red", "Red (U)");
         assumeTrue(red != null, "ROM absent: Red");
 
         Map<Integer, Integer> gen1Special = new HashMap<>();
