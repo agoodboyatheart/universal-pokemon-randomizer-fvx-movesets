@@ -35,10 +35,10 @@ public class SensibleHeldItemsGoldenMasterRandomizerTest {
 
     static String[][] gamesToVerify() {
         return new String[][]{
-                {"Platinum", "Pokemon Platinum"},
-                {"Black 2", "Pokemon Black 2"},
-                {"Alpha Sapphire", "Pokemon Alpha Sapphire (Europe) (En,Ja,Fr,De,Es,It,Ko) (Rev 2)-decrypted"},
-                {"Ultra Sun", "Pokemon Ultra Sun-decrypted"},
+                {"Platinum", "Platinum (U)"},
+                {"Black 2", "Black 2 (U)"},
+                {"Alpha Sapphire", "Alpha Sapphire"},
+                {"Ultra Sun", "Ultra Sun"},
         };
     }
 
