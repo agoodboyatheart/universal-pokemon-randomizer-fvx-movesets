@@ -72,6 +72,7 @@ public class TradeRandomizer extends Randomizer {
         if (basicOnly) {
             speciesPool = speciesPool.filterBasic(false);
         }
+        excludeClaimedWithFallback(speciesPool);
         SpeciesSet givenLeft = new SpeciesSet(speciesPool);
 
         int nickCount = nicknames.size();

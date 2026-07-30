@@ -3,8 +3,12 @@ package com.uprfvx.random.randomizers;
 import com.uprfvx.random.Settings;
 import com.uprfvx.romio.gamedata.InGameTrade;
 import com.uprfvx.romio.gamedata.Species;
+import com.uprfvx.romio.gamedata.SpeciesSet;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -72,6 +76,27 @@ public class TradeRandomizerTest extends RandomizerTest {
         s.setTradeBasicOnly(true);
         s.setTradeNoLegendaries(true);
         new TradeRandomizer(romHandler, s, RND).randomizeIngameTrades();
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void claimedSpeciesAreExcludedFromGivenTrades(String romName) {
+        activateRomHandler(romName);
+
+        List<Species> allSpecies = new ArrayList<>(romHandler.getRestrictedSpeciesService().getAll(false));
+        int tradeCount = romHandler.getInGameTrades().size();
+        SpeciesSet claimed = new SpeciesSet(allSpecies.subList(0, allSpecies.size() - tradeCount - 5));
+
+        Settings s = new Settings();
+        s.setInGameTradesMod(Settings.InGameTradesMod.RANDOMIZE_GIVEN);
+        TradeRandomizer randomizer = new TradeRandomizer(romHandler, s, RND);
+        randomizer.setExternallyClaimedSpecies(claimed);
+        randomizer.randomizeGivenTrades();
+
+        for (InGameTrade trade : romHandler.getInGameTrades()) {
+            assertFalse(claimed.contains(trade.getGivenSpecies()),
+                    trade.getGivenSpecies().getFullName() + " was claimed elsewhere but given in a trade");
+        }
     }
 
     private void assertBasic(Species pk) {
