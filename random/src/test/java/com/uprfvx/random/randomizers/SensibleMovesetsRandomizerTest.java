@@ -4,6 +4,7 @@ import com.uprfvx.random.Settings;
 import com.uprfvx.romio.gamedata.GenRestrictions;
 import com.uprfvx.romio.gamedata.Move;
 import com.uprfvx.romio.gamedata.MoveLearnt;
+import com.uprfvx.romio.gamedata.Species;
 import com.uprfvx.romio.romhandlers.Generation;
 import com.uprfvx.romio.romhandlers.RomHandler;
 import org.junit.jupiter.api.Test;
@@ -11,12 +12,16 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -111,6 +116,124 @@ public class SensibleMovesetsRandomizerTest {
                 assertTrue(ml.move > 0, "Species " + entry.getKey() + " has an unfilled move slot");
             }
         }
+    }
+
+    @Test
+    public void sensibleMovesetsHoldsCeilingAtGenuineLevelOneSlotsWithPreferSameType() {
+        // Deliberately NOT loadAnyRom(): this bug is unreachable before gen 4. In gen 1-3 a move's category is
+        // derived from its type (Gen3RomHandler: physicalTypes.contains(move.type)), so a type's whole damaging
+        // pool is one category and randomizeMovesLearntForSpecies' forcedCategory filter can never narrow it -
+        // the type pool therefore never starves under the ceiling. Only the gen 4+ physical/special split
+        // produces genuinely thin type x category slices, which is what makes applySpeciesPowerCeiling reach
+        // its fallback at all. Measured pre-fix: gen 3 (Emerald/Fire Red/Ruby) 0 violations, gen 4/5
+        // (Platinum/HeartGold/SoulSilver/Black 2) 0.31%-3.04%.
+        RomHandler rom = loadAnyRomOfGenerationAtLeast(4);
+
+        // Snapshot vanilla move IDs per species BEFORE randomizing, so backfill-remapped level-1 slots
+        // can be excluded from this check the same way SpeciesMovesetRandomizer excludes them
+        // internally - without this, a correctly-remapped high-power backfill slot (weighted against
+        // its species' evolution level, not level 1) would show up as a false-positive "violation."
+        Map<Integer, List<MoveLearnt>> vanillaMovesets = rom.getMovesLearnt();
+        Map<Integer, Set<Integer>> vanillaMoveIdsBySpecies = new HashMap<>();
+        Map<Integer, List<MoveLearnt>> vanillaSnapshot = new HashMap<>();
+        for (Map.Entry<Integer, List<MoveLearnt>> entry : vanillaMovesets.entrySet()) {
+            Set<Integer> ids = new HashSet<>();
+            List<MoveLearnt> copy = new ArrayList<>();
+            for (MoveLearnt ml : entry.getValue()) {
+                ids.add(ml.move);
+                copy.add(new MoveLearnt(ml.move, ml.level));
+            }
+            vanillaMoveIdsBySpecies.put(entry.getKey(), ids);
+            vanillaSnapshot.put(entry.getKey(), copy);
+        }
+
+        Settings s = new Settings();
+        s.setMovesetsMod(Settings.MovesetsMod.RANDOM_PREFER_SAME_TYPE);
+        s.setSensibleMovesets(true);
+        s.setMovesetsForceGoodDamaging(false);
+        new SpeciesMovesetRandomizer(rom, s, new Random(20260731L)).randomizeMovesLearnt();
+
+        List<Move> allMoves = rom.getMoves();
+        double ceiling1 = Randomizer.powerCeiling(1);
+        int genuineLevel1Total = 0, genuineLevel1Violations = 0;
+
+        for (Map.Entry<Integer, List<MoveLearnt>> entry : rom.getMovesLearnt().entrySet()) {
+            Species pkmn = findSpeciesById(rom, entry.getKey());
+            if (pkmn == null) {
+                continue;
+            }
+            List<MoveLearnt> vanillaMoves = vanillaSnapshot.get(entry.getKey());
+            Map<Integer, Integer> backfill = vanillaMoves == null ? Collections.emptyMap()
+                    : SpeciesMovesetRandomizer.computeBackfillEffectiveLevels(pkmn, vanillaMoves, 0,
+                            vanillaMoveIdsBySpecies);
+            List<MoveLearnt> moves = entry.getValue();
+            for (int i = 0; i < moves.size(); i++) {
+                MoveLearnt ml = moves.get(i);
+                if (ml.level != 1 || backfill.containsKey(i)) {
+                    continue;
+                }
+                Move mv = allMoves.get(ml.move);
+                if (mv == null || mv.power <= 0) {
+                    continue;
+                }
+                genuineLevel1Total++;
+                if (mv.power * mv.hitCount > ceiling1) {
+                    genuineLevel1Violations++;
+                }
+            }
+        }
+
+        assumeTrue(genuineLevel1Total > 50,
+                "Not enough genuine level-1 slots sampled (n=" + genuineLevel1Total + ")");
+        System.out.printf("genuine level-1 ceiling violations: %d/%d (%.2f%%)%n",
+                genuineLevel1Violations, genuineLevel1Total,
+                100.0 * genuineLevel1Violations / genuineLevel1Total);
+        // Exact zero, not a tolerance: applySpeciesPowerCeiling's wider-pool fallback is the whole global
+        // damaging pool, roughly half of which is <=60 BP, so it is never exhausted at a level-1 slot - the
+        // ceiling has no reason to ever be waived here. Verified 0 across 7 ROMs x 2 seeds post-fix, vs
+        // 2-14 violations per ROM pre-fix. A tolerance would have let the gen 5 pre-fix rate (0.31%) through.
+        assertEquals(0, genuineLevel1Violations,
+                "Expected the hard power ceiling to always hold for genuine level-1 slots under Prefer Same "
+                        + "Type, but " + genuineLevel1Violations + "/" + genuineLevel1Total + " exceeded it");
+    }
+
+    /**
+     * Loads the smallest loadable ROM of at least {@code minGeneration}, so a test can target a mechanic that
+     * only exists in later generations. Separate from {@link #loadAnyRom()} rather than replacing it - the
+     * other tests in this class are generation-agnostic and shouldn't pay the cost of a larger ROM.
+     */
+    private RomHandler loadAnyRomOfGenerationAtLeast(int minGeneration) {
+        String romsDir = System.getProperty("romsPath");
+        assumeTrue(romsDir != null, "romsPath not set");
+        File dir = new File(romsDir);
+        assumeTrue(dir.isDirectory(), "roms dir missing: " + romsDir);
+        File[] files = dir.listFiles();
+        assumeTrue(files != null && files.length > 0, "roms dir empty: " + romsDir);
+        List<File> candidates = new ArrayList<>(Arrays.asList(files));
+        candidates.sort(Comparator.comparingLong(File::length));
+
+        for (File f : candidates) {
+            if (!f.isFile() || f.getName().equalsIgnoreCase("readme.txt") || f.length() > MAX_ROM_BYTES
+                    || f.length() < MIN_ROM_BYTES) {
+                continue;
+            }
+            RomHandler rom = tryLoad(f.getAbsolutePath());
+            if (rom != null && rom.generationOfPokemon() >= minGeneration) {
+                System.out.println("  [using " + f.getName() + ", gen " + rom.generationOfPokemon() + "]");
+                return rom;
+            }
+        }
+        assumeTrue(false, "No loadable gen " + minGeneration + "+ ROM found in " + romsDir);
+        return null;
+    }
+
+    private Species findSpeciesById(RomHandler rom, int speciesId) {
+        for (Species sp : rom.getRestrictedSpeciesService().getAll(true)) {
+            if (sp.getNumber() == speciesId) {
+                return sp;
+            }
+        }
+        return null;
     }
 
     private PowerBands collectPowerBands(RomHandler rom) {
