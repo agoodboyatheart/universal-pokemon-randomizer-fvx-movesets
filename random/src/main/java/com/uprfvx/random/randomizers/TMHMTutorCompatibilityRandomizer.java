@@ -159,6 +159,74 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
      */
     public static double TMC_LEVELUP_IDENTITY_MULT = 2.2;
 
+    // ---- Move Tutor pool -----------------------------------------------------------------------
+    // The tutor pool takes the same model, but not the same numbers. Everything about a species -
+    // its BST ladder, its legendary bonus, the spread around it - carries over unchanged, and is
+    // deliberately shared rather than duplicated: vanilla's tutor ladder is 0.73 / 0.87 / 0.98 /
+    // 1.10 / 1.09 / 1.37 of the mean on Ultra Sun against the TM pool's 0.73 / 0.91 / 0.98 / 1.08 /
+    // 1.11 / 1.29, which is the same shape. What differs is everything about the *pool*.
+
+    /**
+     * Tutor breadth tiers, same meaning as {@link #TMC_TIER_MULTIPLIERS} but far more skewed.
+     * <p>
+     * The tutor pool has essentially no universal tier - Ultra Sun's is one move (Snore, 98.0%), and
+     * everything else is below 37% - and a very fat narrow tier: 1 / 0 / 10 / 45 / 11 of its 67
+     * tutors, against the TM pool's much flatter 13 / 3 / 26 / 45 / 13 of 100. Tutors are where a
+     * game parks its single-species content, and that has to survive randomization or the pool stops
+     * being a tutor pool and becomes a second TM list.
+     */
+    public static double[] TUTORC_TIER_MULTIPLIERS = {14.0, 5.0, 2.0, 0.75, 0.15};
+    public static final double[] TUTORC_TIER_SHARES = {0.02, 0.01, 0.14, 0.66, 0.17};
+
+    /**
+     * Smallest tutor roster that gets tiered at all. Below this the tiers are skipped and every move
+     * shares one breadth.
+     * <p>
+     * Crystal ships three tutor moves. Slicing five tiers across three moves cannot reproduce a
+     * distribution - it just decides which single move becomes the rare one, and on a three-move
+     * roster that is a move the player has essentially lost. Vanilla puts all three at 26-34%, i.e.
+     * no tiering at all, which is what this reproduces.
+     */
+    public static int TUTORC_MIN_TIERED_POOL = 10;
+
+    /**
+     * Tutor type lifts. <b>Status is the stronger one here, which is the reverse of the TM pool.</b>
+     * <p>
+     * Vanilla Ultra Sun measures tutor on/off-type at 3.70x for damaging moves and 5.36x for status
+     * ones; the same inversion holds on Platinum (3.30x / 8.06x), Black 2 (3.66x / 4.71x) and Omega
+     * Ruby (3.70x / 4.53x). The TM pool runs the other way round - 3.42x damaging against 1.93x
+     * status - because its status half is dominated by the universal tier of teach-anyone utility
+     * moves. Tutor status moves have no such tier: they are things like Heal Bell and Magic Coat,
+     * handed to the specific families that thematically own them.
+     */
+    public static double TUTORC_STAB_MULT = 6.5;
+    public static double TUTORC_STATUS_STAB_MULT = 21.0;
+
+    /**
+     * Breadth bonus for a Normal-typed tutor move. Unlike {@link #TMC_NORMAL_MULT} this does
+     * <i>not</i> replace the type lift - a Normal-type species still gets STAB on it.
+     * <p>
+     * C6's "Normal is the null case" is a TM-pool fact, not a general one. It holds there because
+     * eleven of the thirteen universal TMs are Normal-typed, so every species learns them and the
+     * on/off-type ratio collapses to 1.00-1.06x. The tutor pool has no universal tier to flatten it,
+     * and vanilla duly measures a real Normal-typed lift of 1.51-1.63x on the Gen 4-7 ROMs. Normal
+     * tutors are still somewhat broader than average, which is what this carries.
+     */
+    public static double TUTORC_NORMAL_MULT = 1.2;
+
+    /**
+     * Extra breadth for status tutors over damaging ones. <b>Below 1.0</b> - again the reverse of
+     * the TM pool, where status moves are the broad ones. Vanilla Ultra Sun reaches 10.4% of the dex
+     * with an off-type status tutor against 15.8% with an off-type damaging one.
+     */
+    public static double TUTORC_STATUS_BREADTH_MULT = 0.8;
+
+    /**
+     * Tutor form of {@link #TMC_LEVELUP_IDENTITY_MULT}, and weaker. Vanilla's off-type level-up
+     * identity lift is 2.11x on Ultra Sun tutors against 3.04x on its TMs.
+     */
+    public static double TUTORC_LEVELUP_IDENTITY_MULT = 1.15;
+
     /**
      * Multiplier on the chance of learning a move needed early on to avoid a softlock (the HM
      * equivalents). Unchanged from the pre-budget model, and deliberately applied <i>after</i> the
@@ -173,15 +241,49 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
     private boolean tutorChangesMade;
 
     /**
+     * The parts of the model that differ between the TM pool and the tutor pool. Read from the
+     * mutable constants each time a model is built, not cached, so a swept {@code -D} override still
+     * reaches it.
+     * <p>
+     * What is <i>not</i> here is as deliberate as what is: the density base, its spread, the BST
+     * ladder and the legendary bonus are all shared, because they describe the species rather than
+     * the pool and measurement says they have the same shape in both.
+     *
+     * @param normalIsNullCase whether a Normal-typed move gets {@code normalMult} <i>instead of</i>
+     *                         any type lift (the TM pool, where Normal is universal filler) or
+     *                         <i>as well as</i> it (the tutor pool, which has no such filler)
+     * @param floorGymTMs      whether {@link #floorGymLeaderTMs} applies - TM pool only, since a gym
+     *                         reward is always a TM
+     */
+    private record PoolTuning(double[] tierMultipliers, double[] tierShares, int minTieredPool,
+                              double stabMult, double statusStabMult, double normalMult,
+                              boolean normalIsNullCase, double statusBreadthMult,
+                              double levelUpIdentityMult, boolean floorGymTMs) {
+
+        static PoolTuning forTMs() {
+            return new PoolTuning(TMC_TIER_MULTIPLIERS, TMC_TIER_SHARES, 0,
+                    TMC_STAB_MULT, TMC_STATUS_STAB_MULT, TMC_NORMAL_MULT, true,
+                    TMC_STATUS_BREADTH_MULT, TMC_LEVELUP_IDENTITY_MULT, true);
+        }
+
+        static PoolTuning forTutors() {
+            return new PoolTuning(TUTORC_TIER_MULTIPLIERS, TUTORC_TIER_SHARES, TUTORC_MIN_TIERED_POOL,
+                    TUTORC_STAB_MULT, TUTORC_STATUS_STAB_MULT, TUTORC_NORMAL_MULT, false,
+                    TUTORC_STATUS_BREADTH_MULT, TUTORC_LEVELUP_IDENTITY_MULT, false);
+        }
+    }
+
+    /**
      * Everything the budget model rolls once per pool, shared by every species in it. Bundled rather
      * than passed as four more parameters, since all of it has the same lifetime.
      *
      * @param budgets    how many moves of the pool each species should end up with (C1, C2)
      * @param breadths   per-move breadth multiplier, by index into the pool (C3)
      * @param levelUpTypes attacking types each species already has by level-up, by species number (C4)
+     * @param tuning     which pool's constants this model was built with
      */
     private record BudgetModel(Map<Species, Integer> budgets, double[] breadths,
-                               Map<Integer, Set<Type>> levelUpTypes) {
+                               Map<Integer, Set<Type>> levelUpTypes, PoolTuning tuning) {
     }
 
     public TMHMTutorCompatibilityRandomizer(RomHandler romHandler, Settings settings, Random random) {
@@ -217,7 +319,7 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
         // pipeline to touch it (GameRandomizer.maybeRandomizeTMHMCompatibility).
         int tmCount = romHandler.getTMCount();
         BudgetModel model = usesBudgetModel(preferSameType)
-                ? buildModel(compat, tmHMs, tmCount) : null;
+                ? buildModel(compat, tmHMs, tmCount, PoolTuning.forTMs()) : null;
 
         if (followEvolutions) {
             copyUpEvolutionsHelper.apply(true, false,
@@ -286,7 +388,7 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
         Set<Type> knownTypes = model.levelUpTypes().getOrDefault(pkmn.getNumber(), Set.of());
         double[] weights = new double[budgetedCount];
         for (int i = 0; i < budgetedCount; i++) {
-            weights[i] = model.breadths()[i] * pairWeight(pkmn, moveData.get(moveIDs.get(i)), knownTypes);
+            weights[i] = model.breadths()[i] * pairWeight(pkmn, moveData.get(moveIDs.get(i)), knownTypes, model.tuning());
         }
         double scale = fitScale(weights, budget);
         for (int i = 0; i < budgetedCount; i++) {
@@ -331,7 +433,7 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
                 // which would otherwise spend part of the budget on moves it cannot gain.
                 weights[i] = 0;
             } else {
-                weights[i] = model.breadths()[i] * pairWeight(pkmn, moveData.get(moveIDs.get(i)), knownTypes);
+                weights[i] = model.breadths()[i] * pairWeight(pkmn, moveData.get(moveIDs.get(i)), knownTypes, model.tuning());
             }
         }
 
@@ -351,33 +453,41 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
      * Relative likelihood of this species learning this move, before the per-species scaling that
      * turns it into a probability. Only ratios matter here, not the absolute level.
      */
-    private double pairWeight(Species pkmn, Move mv, Set<Type> levelUpAttackingTypes) {
+    private double pairWeight(Species pkmn, Move mv, Set<Type> levelUpAttackingTypes, PoolTuning tuning) {
         boolean status = mv.category == MoveCategory.STATUS;
-        double weight = status ? TMC_STATUS_BREADTH_MULT : 1.0;
+        double weight = status ? tuning.statusBreadthMult() : 1.0;
 
-        if (mv.type != null && mv.type.equals(Type.NORMAL)) {
-            // C6. Normal is the null case: vanilla learns Normal-typed TMs at 64.7% on-type against
-            // 63.1% off-type, a lift of 1.03x, and the same 1.00-1.06x holds on all seven profile
-            // ROMs. Normal TMs are universal filler carrying no type identity, so a Normal-type
-            // species gets no advantage on them - it just gets the broad base every species gets.
-            // The old model tested the on-type branch first and so handed Normal types 0.9 against
-            // 0.5, producing a 1.79x lift on every ROM measured.
-            return weight * TMC_NORMAL_MULT;
+        boolean normal = mv.type != null && mv.type.equals(Type.NORMAL);
+        if (normal) {
+            weight *= tuning.normalMult();
+            if (tuning.normalIsNullCase()) {
+                // C6, TM pool only. Normal is the null case there: vanilla learns Normal-typed TMs
+                // at 64.7% on-type against 63.1% off-type, a lift of 1.03x, and the same 1.00-1.06x
+                // holds on all seven profile ROMs. Normal TMs are universal filler carrying no type
+                // identity, so a Normal-type species gets no advantage on them - it just gets the
+                // broad base every species gets. The old model tested the on-type branch first and
+                // so handed Normal types 0.9 against 0.5, producing a 1.79x lift on every ROM.
+                // The tutor pool has no universal filler and does show a real 1.5-1.6x Normal lift,
+                // so it falls through to the ordinary type handling below.
+                return weight;
+            }
         }
         boolean onType = pkmn.getPrimaryType(false).equals(mv.type)
                 || (pkmn.getSecondaryType(false) != null && pkmn.getSecondaryType(false).equals(mv.type));
         if (onType) {
-            // C5. STAB is not one rule: vanilla's on/off-type lift is 2.9-3.4x for damaging moves but
+            // C5. STAB is not one rule: vanilla's on/off-type lift is 2.9-3.4x for damaging TMs but
             // only 1.8-2.0x for status ones - type matching is about weapons, not utility. The old
-            // model applied a single lift to both, over-typing the status half.
-            weight *= status ? TMC_STATUS_STAB_MULT : TMC_STAB_MULT;
+            // model applied a single lift to both, over-typing the status half. The tutor pool
+            // inverts this (3.7x damaging against 5.4x status), which is why the two multipliers are
+            // per-pool rather than one pair of constants.
+            weight *= status ? tuning.statusStabMult() : tuning.stabMult();
         } else if (levelUpAttackingTypes.contains(mv.type)) {
             // C4, and deliberately only for off-type moves. A species nearly always has an attacking
             // move of its own type by level-up, so applying this on top of STAB compounds the two and
             // inflates the STAB lift - measured at 4.00x against vanilla's 3.42x on Ultra Sun when it
             // was applied to both. Off-type is also where the report frames the effect as living: it
             // is what makes a species' *coverage* identity consistent across the two layers.
-            weight *= TMC_LEVELUP_IDENTITY_MULT;
+            weight *= tuning.levelUpIdentityMult();
         }
         return weight;
     }
@@ -470,11 +580,12 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
      *                 {@link #randomizePokemonMoveCompatibility}.
      */
     /** Rolls everything the budget model needs for one pool. */
-    private BudgetModel buildModel(Map<Species, boolean[]> compat, List<Integer> moveIDs, int poolSize) {
+    private BudgetModel buildModel(Map<Species, boolean[]> compat, List<Integer> moveIDs, int poolSize,
+                                   PoolTuning tuning) {
         List<Move> moveData = romHandler.getMoves();
         return new BudgetModel(computeBudgets(compat, poolSize),
-                rollBreadths(moveIDs, moveData, poolSize),
-                levelUpAttackingTypes(moveData));
+                rollBreadths(moveIDs, moveData, poolSize, tuning),
+                levelUpAttackingTypes(moveData), tuning);
     }
 
     private Map<Species, Integer> computeBudgets(Map<Species, boolean[]> compat, int poolSize) {
@@ -518,7 +629,17 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
      *
      * @param count how many leading entries of {@code moveIDs} to tier (TMs, excluding HMs)
      */
-    private double[] rollBreadths(List<Integer> moveIDs, List<Move> moveData, int count) {
+    private double[] rollBreadths(List<Integer> moveIDs, List<Move> moveData, int count, PoolTuning tuning) {
+        double[] tierShares = tuning.tierShares();
+        double[] tierMultipliers = tuning.tierMultipliers();
+        if (count < tuning.minTieredPool()) {
+            // Too few moves to describe a distribution with - see TUTORC_MIN_TIERED_POOL. One flat
+            // breadth, which still leaves the budget and the type weights doing their work.
+            double[] flat = new double[count];
+            Arrays.fill(flat, 1.0);
+            return flat;
+        }
+
         Integer[] order = new Integer[count];
         double[] key = new double[count];
         for (int i = 0; i < count; i++) {
@@ -537,17 +658,19 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
 
         double[] breadths = new double[count];
         int assigned = 0;
-        for (int tier = 0; tier < TMC_TIER_SHARES.length; tier++) {
+        for (int tier = 0; tier < tierShares.length; tier++) {
             // The last tier takes whatever is left, so rounding cannot drop or duplicate a move.
-            int size = tier == TMC_TIER_SHARES.length - 1
+            int size = tier == tierShares.length - 1
                     ? count - assigned
-                    : Math.min((int) Math.round(TMC_TIER_SHARES[tier] * count), count - assigned);
+                    : Math.min((int) Math.round(tierShares[tier] * count), count - assigned);
             for (int i = 0; i < size; i++) {
-                breadths[order[assigned + i]] = TMC_TIER_MULTIPLIERS[tier];
+                breadths[order[assigned + i]] = tierMultipliers[tier];
             }
             assigned += size;
         }
-        floorGymLeaderTMs(breadths, count);
+        if (tuning.floorGymTMs()) {
+            floorGymLeaderTMs(breadths, count, tierMultipliers);
+        }
         return breadths;
     }
 
@@ -559,12 +682,12 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
      * are the thing C3 is measured on, and quietly inflating the mid tier to protect eight slots
      * would trade one visible error for another.
      */
-    private void floorGymLeaderTMs(double[] breadths, int count) {
+    private void floorGymLeaderTMs(double[] breadths, int count, double[] tierMultipliers) {
         Map<String, Integer> gymLeaderTMs = romHandler.getGymLeaderTMs();
         if (gymLeaderTMs.isEmpty()) {
             return;
         }
-        double minimum = TMC_TIER_MULTIPLIERS[Math.min(TMC_GYM_TM_MIN_TIER, TMC_TIER_MULTIPLIERS.length - 1)];
+        double minimum = tierMultipliers[Math.min(TMC_GYM_TM_MIN_TIER, tierMultipliers.length - 1)];
 
         List<Integer> gymIndices = new ArrayList<>();
         for (int tmNumber : gymLeaderTMs.values()) {
@@ -783,17 +906,25 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
         // Empty list
         List<Integer> priorityTutors = new ArrayList<>();
 
+        // Read while `compat` still holds the ROM's own vanilla tutor data, as on the TM side. The
+        // whole roster is budgeted - there is no HM-equivalent tail to leave out - and the per-ROM
+        // base is what makes one model fit both a 3-move Crystal roster at 29.2% density and a
+        // 67-move Ultra Sun one at 18.0%.
+        int tutorCount = mts.size();
+        BudgetModel model = usesBudgetModel(preferSameType)
+                ? buildModel(compat, mts, tutorCount, PoolTuning.forTutors()) : null;
+
         if (followEvolutions) {
             copyUpEvolutionsHelper.apply(true, true,
                     pk -> randomizePokemonMoveCompatibility(pk, compat.get(pk), mts, priorityTutors, preferSameType,
-                            null, 0),
+                            model, tutorCount),
                     (evFrom, evTo, toMonIsFinalEvo) -> copyPokemonMoveCompatibilityUpEvolutions(evFrom, evTo,
-                            compat.get(evFrom), compat.get(evTo), mts, preferSameType, null, 0));
+                            compat.get(evFrom), compat.get(evTo), mts, preferSameType, model, tutorCount));
         }
         else {
             for (Map.Entry<Species, boolean[]> compatEntry : compat.entrySet()) {
                 randomizePokemonMoveCompatibility(compatEntry.getKey(), compatEntry.getValue(), mts, priorityTutors,
-                        preferSameType, null, 0);
+                        preferSameType, model, tutorCount);
             }
         }
 

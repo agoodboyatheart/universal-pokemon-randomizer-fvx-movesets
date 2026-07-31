@@ -171,6 +171,31 @@ public class TMTutorPoolProfileRandomizerTest {
         TMHMTutorCompatibilityRandomizer.TMC_LEGENDARY_MULT =
                 Double.parseDouble(System.getProperty("tm.legendaryMult",
                         String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_LEGENDARY_MULT)));
+        // Tutor pool. Same "read the default off the constant" rule as above.
+        String tutorTierMults = System.getProperty("tm.tutorTierMults");
+        if (tutorTierMults != null) {
+            String[] parts = tutorTierMults.split(",");
+            double[] values = new double[parts.length];
+            for (int i = 0; i < parts.length; i++) {
+                values[i] = Double.parseDouble(parts[i].trim());
+            }
+            TMHMTutorCompatibilityRandomizer.TUTORC_TIER_MULTIPLIERS = values;
+        }
+        TMHMTutorCompatibilityRandomizer.TUTORC_STAB_MULT =
+                Double.parseDouble(System.getProperty("tm.tutorStabMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TUTORC_STAB_MULT)));
+        TMHMTutorCompatibilityRandomizer.TUTORC_STATUS_STAB_MULT =
+                Double.parseDouble(System.getProperty("tm.tutorStatusStabMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TUTORC_STATUS_STAB_MULT)));
+        TMHMTutorCompatibilityRandomizer.TUTORC_NORMAL_MULT =
+                Double.parseDouble(System.getProperty("tm.tutorNormalMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TUTORC_NORMAL_MULT)));
+        TMHMTutorCompatibilityRandomizer.TUTORC_STATUS_BREADTH_MULT =
+                Double.parseDouble(System.getProperty("tm.tutorStatusBreadthMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TUTORC_STATUS_BREADTH_MULT)));
+        TMHMTutorCompatibilityRandomizer.TUTORC_LEVELUP_IDENTITY_MULT =
+                Double.parseDouble(System.getProperty("tm.tutorLevelUpIdentityMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TUTORC_LEVELUP_IDENTITY_MULT)));
         System.out.printf("  tuning: damagingShare=%.3f tutorDamagingShare=%.3f accExp=%.2f"
                         + " center=%.0f sigmaLow=%.0f sigmaHigh=%.0f floor=%.2f%n",
                 TMTutorMoveRandomizer.TM_DAMAGING_SHARE, TMTutorMoveRandomizer.TUTOR_DAMAGING_SHARE,
@@ -234,6 +259,7 @@ public class TMTutorPoolProfileRandomizerTest {
         List<Map<Species, boolean[]>> plainRandomTMCompat = new ArrayList<>();
         List<Map<Species, boolean[]>> preferTypeFollowEvoTMCompat = new ArrayList<>();
         List<Map<Species, boolean[]>> preferTypeTutorCompat = new ArrayList<>();
+        List<Map<Species, boolean[]>> preferTypeFollowEvoTutorCompat = new ArrayList<>();
 
         for (int run = 0; run < REPEATS; run++) {
             // Put the ROM's vanilla compatibility back before each run. getTMHMCompatibility()
@@ -289,9 +315,15 @@ public class TMTutorPoolProfileRandomizerTest {
             romHandler.setTMHMCompatibility(deepCopy(vanillaTMCompat.get(0)));
             settings.setTmsHmsCompatibilityMod(Settings.TMsHMsCompatibilityMod.RANDOM_PREFER_TYPE);
             settings.setTmsFollowEvolutions(true);
+            settings.setTutorFollowEvolutions(true);
             compat = new TMHMTutorCompatibilityRandomizer(romHandler, settings, random);
             compat.randomizeTMHMCompatibility();
             preferTypeFollowEvoTMCompat.add(deepCopy(romHandler.getTMHMCompatibility()));
+            if (hasTutors) {
+                romHandler.setMoveTutorCompatibility(deepCopy(vanillaTutorCompat.get(0)));
+                compat.randomizeMoveTutorCompatibility();
+                preferTypeFollowEvoTutorCompat.add(deepCopy(romHandler.getMoveTutorCompatibility()));
+            }
         }
 
         // ---- Content tables (L1 - L6) ------------------------------------------------------
@@ -384,6 +416,7 @@ public class TMTutorPoolProfileRandomizerTest {
             int tutorCount = vanillaTutors.size();
             row("tutors vanilla", densityLine(vanillaTutorCompat, species, tutorCount));
             row("tutors prefer-type", densityLine(preferTypeTutorCompat, species, tutorCount));
+            row("  + follow evolutions", densityLine(preferTypeFollowEvoTutorCompat, species, tutorCount));
         }
         System.out.println();
         System.out.println("      per-species TM count histogram, buckets of 10% (species per run)");
@@ -452,6 +485,34 @@ public class TMTutorPoolProfileRandomizerTest {
         printStabTable("vanilla", vanillaTMCompat, species, List.of(vanillaTMs), allMoves);
         printStabTable("prefer-type", preferTypeTMCompat, species, randomTMs, allMoves);
         printStabTable("plain random", plainRandomTMCompat, species, randomTMs, allMoves);
+
+        // ---- Tutor compatibility -----------------------------------------------------------
+        // The same marginals as C1-C6, on the other pool. Kept in its own section rather than as
+        // more rows above because a tutor roster is a different animal: 3 moves on Crystal against
+        // 67 on Ultra Sun, and vanilla breadth far more skewed - the report measures a universal
+        // tier of exactly one move (Snore) with everything else below 37%.
+        if (hasTutors) {
+            int tutorCount = vanillaTutors.size();
+            section("T2  tutor count by BST bucket                  [report: 9.0 / 10.6 / 12.1 / 13.4 /"
+                    + " 13.3 / 17.5 of 78]");
+            printBstLadder("vanilla", vanillaTutorCompat, species, tutorCount);
+            printBstLadder("prefer-type", preferTypeTutorCompat, species, tutorCount);
+            printBstLadder("+follow evos", preferTypeFollowEvoTutorCompat, species, tutorCount);
+
+            section("T3  per-tutor breadth tiers (moves per run)    [report: 1 universal / 0 wide /"
+                    + " 9 mid / 46 narrow / 22 rare of 78]");
+            printBreadthTiers("vanilla", vanillaTutorCompat, species, tutorCount);
+            printBreadthTiers("prefer-type", preferTypeTutorCompat, species, tutorCount);
+            printBreadthTiers("+follow evos", preferTypeFollowEvoTutorCompat, species, tutorCount);
+
+            section("T4  tutor learn rate by level-up type identity");
+            printIdentityTable("vanilla", vanillaTutorCompat, species, List.of(vanillaTutors), allMoves, identity);
+            printIdentityTable("prefer-type", preferTypeTutorCompat, species, randomTutors, allMoves, identity);
+
+            section("T5/T6  tutor on-type vs off-type learn rate");
+            printStabTable("vanilla", vanillaTutorCompat, species, List.of(vanillaTutors), allMoves);
+            printStabTable("prefer-type", preferTypeTutorCompat, species, randomTutors, allMoves);
+        }
 
         System.out.println();
     }
