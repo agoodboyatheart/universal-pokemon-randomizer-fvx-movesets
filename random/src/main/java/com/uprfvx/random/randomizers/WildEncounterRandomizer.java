@@ -503,6 +503,7 @@ public class WildEncounterRandomizer extends Randomizer {
                 EncounterArea area;
                 Type areaType;
                 Map<Species, Species> areaMap;
+                Map<Species, Integer> lowestLevels;
             }
 
             Map<Encounter, AreaWithData> encountersToAreas = new IdentityHashMap<>();
@@ -518,9 +519,11 @@ public class WildEncounterRandomizer extends Randomizer {
                 awd.areaType = pickZoneType(dummyZone);
 
                 awd.areaMap = new HashMap<>();
+                awd.lowestLevels = new HashMap<>();
 
                 for(Encounter enc : area) {
                     encountersToAreas.put(enc, awd);
+                    awd.lowestLevels.merge(enc.getSpecies(), enc.getLevel(), Math::min);
                 }
             }
 
@@ -536,20 +539,25 @@ public class WildEncounterRandomizer extends Randomizer {
                 Species current = enc.getSpecies();
                 Species replacement;
 
-                if(!awd.areaMap.containsKey(current) || dexNavLoad < ORAS_CRASH_THRESHOLD) {
+                boolean alreadyMapped = awd.areaMap.containsKey(current);
+                if(!alreadyMapped || dexNavLoad < ORAS_CRASH_THRESHOLD) {
                     //get new species
-                    SpeciesSet allowedForReplacement = setupAllowedForReplacement(current, awd.area, awd.areaType, enc.getLevel());
+                    //A replacement that goes in the areaMap is reused for every Encounter of this Species in
+                    //the area, so it must be valid at the lowest level any of them has. A replacement that is
+                    //not stored is used just once, so it only has to suit this Encounter.
+                    int levelForReplacement = alreadyMapped ? enc.getLevel() : awd.lowestLevels.get(current);
+                    SpeciesSet allowedForReplacement = setupAllowedForReplacement(current, awd.area, awd.areaType, levelForReplacement);
                     replacement = pickReplacement(current, allowedForReplacement);
                     removeFromRemaining(replacement);
 
                     //either put it in the map, or increase DexNav load
-                    if(!awd.areaMap.containsKey(current)) {
+                    if(!alreadyMapped) {
                         awd.areaMap.put(current, replacement);
                     } else {
                         dexNavLoad++;
                     }
                 } else {
-                    replacement = awd.areaMap.get(enc.getSpecies());
+                    replacement = awd.areaMap.get(current);
                 }
 
                 enc.getSpeciesHolder().setSpecies(replacement);
@@ -684,7 +692,10 @@ public class WildEncounterRandomizer extends Randomizer {
             if(areaInformationMap == null) {
                 allowedForReplacement = setupAllowedForReplacementNoInfoMap(current, area, zoneType, level);
             } else {
-                allowedForReplacement = setupAllowedForReplacementUsingInfoMap(current, zoneType, level);
+                //the info map is only used when mapping, in which case the replacement is reused for every
+                //Encounter of this Species in the zone; the info map knows all their levels, so it is used
+                //instead of this Encounter's level.
+                allowedForReplacement = setupAllowedForReplacementUsingInfoMap(current, zoneType);
             }
 
             if (allowedForReplacement.isEmpty()) {
@@ -702,13 +713,12 @@ public class WildEncounterRandomizer extends Randomizer {
          * otherwise. To find replacements for an unmapped Species, use setupAllowedForReplacementNoInfoMap().
          * @param current The {@link Species} to replace.
          * @param theme A {@link Type} that the allowed replacements should all be. Overrides any other type themes.
-         * @param level The level of the given {@link Species}.
          * @return A {@link SpeciesSet} of valid replacements for the given {@link Species}. Warning: May be a reference
          * to a local variable; do not modify!
          * @throws NullPointerException if the info map was not set up.
          * @throws IllegalStateException if the info map did not contain a non-null value for the given {@link Species}.
          */
-        private SpeciesSet setupAllowedForReplacementUsingInfoMap(Species current, Type theme, int level) {
+        private SpeciesSet setupAllowedForReplacementUsingInfoMap(Species current, Type theme) {
             SpeciesAreaInformation info = areaInformationMap.get(current);
             if(info == null) {
                 throw new IllegalStateException("Info was null for encounter's species!");
@@ -721,7 +731,7 @@ public class WildEncounterRandomizer extends Randomizer {
             SpeciesSet possiblyAllowed;
             possiblyAllowed = (typeForReplacement == null) ? remaining : remainingByType.get(typeForReplacement);
             if(needsInner) {
-                possiblyAllowed = setupAllowedForReplacementInnerInfoMap(info, possiblyAllowed, level);
+                possiblyAllowed = setupAllowedForReplacementInnerInfoMap(info, possiblyAllowed);
             }
             if(!possiblyAllowed.isEmpty()) {
                 return possiblyAllowed;
@@ -730,7 +740,7 @@ public class WildEncounterRandomizer extends Randomizer {
 
             possiblyAllowed = (typeForReplacement == null) ? allowed : allowedByType.get(typeForReplacement);
             if(needsInner) {
-                possiblyAllowed = setupAllowedForReplacementInnerInfoMap(info, possiblyAllowed, level);
+                possiblyAllowed = setupAllowedForReplacementInnerInfoMap(info, possiblyAllowed);
             }
             return possiblyAllowed;
             //If it didn't work for allowed, we have no recourse; let the calling function deal with it.
@@ -780,11 +790,10 @@ public class WildEncounterRandomizer extends Randomizer {
          * Assumes all type restrictions have already been applied.
          * @param info The restrictions for the current encounter.
          * @param startingPool The pool to start from.
-         * @param level The level of the given {@link Species}.
          * @return startingPool if no additional restrictions were applied, a new {@link SpeciesSet} with the narrowed
          * set otherwise.
          */
-        private SpeciesSet setupAllowedForReplacementInnerInfoMap(SpeciesAreaInformation info, SpeciesSet startingPool, int level) {
+        private SpeciesSet setupAllowedForReplacementInnerInfoMap(SpeciesAreaInformation info, SpeciesSet startingPool) {
             SpeciesSet allowedForReplacement;
             if(!info.getBannedForReplacement().isEmpty()) {
                 allowedForReplacement = new SpeciesSet(startingPool);
@@ -804,6 +813,9 @@ public class WildEncounterRandomizer extends Randomizer {
             }
 
             if(noPrematureEvolutions) {
+                //the replacement is reused for every Encounter of this Species in the zone,
+                //so it has to be legal at the lowest-leveled one
+                int level = info.getLowestEncounterLevel();
                 allowedForReplacement = allowedForReplacement.filter(sp -> sp.isLegalEvolutionAtLevel(level, 1));
             }
             return allowedForReplacement;
@@ -1061,12 +1073,14 @@ public class WildEncounterRandomizer extends Randomizer {
                     info.addTypeTheme(areaTheme, areaSize);
                     info.banAll(area.getBannedSpecies());
                 }
-                if(balanceLowLevelEncounters) {
-                    //TODO: either verify that this IS a shaking grass encounter,
-                    // or rename the setting.
-                    // (Leaning towards the latter.)
-                    for (Encounter enc : area) {
-                        SpeciesAreaInformation info = areaInformationMap.get(enc.getSpecies());
+                for (Encounter enc : area) {
+                    SpeciesAreaInformation info = areaInformationMap.get(enc.getSpecies());
+                    info.setEncounterLevelIfLower(enc.getLevel());
+
+                    if(balanceLowLevelEncounters) {
+                        //TODO: either verify that this IS a shaking grass encounter,
+                        // or rename the setting.
+                        // (Leaning towards the latter.)
                         info.setLevelIfLower((enc.getLevel() + enc.getMaxLevel()) / 2);
                         //TODO: *Should* this be average level? Or should it be lowest?
                     }
@@ -1084,6 +1098,7 @@ public class WildEncounterRandomizer extends Randomizer {
             private final SpeciesSet family = new SpeciesSet();
             private final Species species;
             private int lowestLevel = 100;
+            private int lowestEncounterLevel = Integer.MAX_VALUE;
 
             /**
              * Creates a new RandomizationInformation with the given data.
@@ -1226,6 +1241,24 @@ public class WildEncounterRandomizer extends Randomizer {
              */
             public int getLowestLevel() {
                 return lowestLevel;
+            }
+
+            /**
+             * Notes the level of an Encounter with this Species, if it is lower than any noted so far.
+             * @param level The level of the Encounter.
+             */
+            void setEncounterLevelIfLower(int level) {
+                lowestEncounterLevel = Math.min(level, lowestEncounterLevel);
+            }
+
+            /**
+             * Gets the level of the lowest-leveled Encounter with this Species in the zone. <br>
+             * Unlike {@link #getLowestLevel()}, this is the actual minimum level rather than an average,
+             * and it is tracked whatever the settings are.
+             * @return The lowest Encounter level.
+             */
+            public int getLowestEncounterLevel() {
+                return lowestEncounterLevel;
             }
         }
     }

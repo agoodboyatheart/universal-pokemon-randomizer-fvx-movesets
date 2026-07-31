@@ -172,6 +172,39 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
         }
     }
 
+    /**
+     * The zone mapping modes reuse one replacement for every Encounter of a Species in the zone,
+     * so that replacement must be legal at the lowest level any of those Encounters has.
+     */
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void doNotUsePrematureEvosWorksWithZoneMapping(String romName) {
+        activateRomHandler(romName);
+
+        for (Settings.WildPokemonZoneMod zoneMod : new Settings.WildPokemonZoneMod[]{
+                Settings.WildPokemonZoneMod.ENCOUNTER_SET, Settings.WildPokemonZoneMod.MAP,
+                Settings.WildPokemonZoneMod.NAMED_LOCATION, Settings.WildPokemonZoneMod.GAME}) {
+            System.out.println("Zone mod: " + zoneMod);
+            romHandler.reset();
+            romHandler.prepare();
+
+            Settings settings = getStandardSettings(romName);
+            settings.setBanPrematureEvos(true);
+            settings.setWildPokemonZoneMod(zoneMod);
+
+            new WildEncounterRandomizer(romHandler, settings, RND).randomizeEncounters();
+
+            for (EncounterArea area : romHandler.getEncounters(true)) {
+                for (Encounter enc : area) {
+                    for (Evolution evo : enc.getSpecies().getEvolutionsTo()) {
+                        System.out.println(enc + " with Evo " + evo);
+                        assertTrue(evo.getEstimatedEvoLvl() <= enc.getLevel());
+                    }
+                }
+            }
+        }
+    }
+
     // since alt formes are not guaranteed, this test can be considered "reverse";
     // any success is a success for the test as a whole
     @ParameterizedTest
