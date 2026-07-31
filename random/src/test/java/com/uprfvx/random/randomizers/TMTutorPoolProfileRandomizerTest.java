@@ -122,12 +122,70 @@ public class TMTutorPoolProfileRandomizerTest {
                 Double.parseDouble(System.getProperty("tm.sigmaHigh", "45"));
         TMTutorMoveRandomizer.TM_POWER_BAND_FLOOR =
                 Double.parseDouble(System.getProperty("tm.floor", "0.05"));
+        // Compatibility (C-series). Same "tm." prefix, since that is what the testROMs task forwards.
+        // Each default is read from the constant itself rather than repeated as a literal: a
+        // duplicated default silently overrode the shipped values here for several calibration runs,
+        // so the harness was reporting numbers the randomizer would never actually produce.
+        TMHMTutorCompatibilityRandomizer.TMC_DENSITY_SIGMA =
+                Double.parseDouble(System.getProperty("tm.densitySigma",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_DENSITY_SIGMA)));
+        TMHMTutorCompatibilityRandomizer.TMC_BST_MULT_MIN =
+                Double.parseDouble(System.getProperty("tm.bstMultMin",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_BST_MULT_MIN)));
+        TMHMTutorCompatibilityRandomizer.TMC_BST_MULT_MAX =
+                Double.parseDouble(System.getProperty("tm.bstMultMax",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_BST_MULT_MAX)));
+        String tierMults = System.getProperty("tm.tierMults");
+        if (tierMults != null) {
+            String[] parts = tierMults.split(",");
+            double[] values = new double[parts.length];
+            for (int i = 0; i < parts.length; i++) {
+                values[i] = Double.parseDouble(parts[i].trim());
+            }
+            TMHMTutorCompatibilityRandomizer.TMC_TIER_MULTIPLIERS = values;
+        }
+        TMHMTutorCompatibilityRandomizer.TMC_LEVELUP_IDENTITY_MULT =
+                Double.parseDouble(System.getProperty("tm.levelUpIdentityMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_LEVELUP_IDENTITY_MULT)));
+        TMHMTutorCompatibilityRandomizer.TMC_STAB_MULT =
+                Double.parseDouble(System.getProperty("tm.stabMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_STAB_MULT)));
+        TMHMTutorCompatibilityRandomizer.TMC_STATUS_STAB_MULT =
+                Double.parseDouble(System.getProperty("tm.statusStabMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_STATUS_STAB_MULT)));
+        TMHMTutorCompatibilityRandomizer.TMC_NORMAL_MULT =
+                Double.parseDouble(System.getProperty("tm.normalMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_NORMAL_MULT)));
+        TMHMTutorCompatibilityRandomizer.TMC_STATUS_BREADTH_MULT =
+                Double.parseDouble(System.getProperty("tm.statusBreadthMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_STATUS_BREADTH_MULT)));
+        TMHMTutorCompatibilityRandomizer.TMC_UNIVERSAL_NORMAL_WEIGHT =
+                Double.parseDouble(System.getProperty("tm.universalNormalWeight",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_UNIVERSAL_NORMAL_WEIGHT)));
+        TMHMTutorCompatibilityRandomizer.TMC_UNIVERSAL_STATUS_WEIGHT =
+                Double.parseDouble(System.getProperty("tm.universalStatusWeight",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_UNIVERSAL_STATUS_WEIGHT)));
+        TMHMTutorCompatibilityRandomizer.TMC_BST_NORM_SPAN =
+                Double.parseDouble(System.getProperty("tm.bstNormSpan",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_BST_NORM_SPAN)));
+        TMHMTutorCompatibilityRandomizer.TMC_LEGENDARY_MULT =
+                Double.parseDouble(System.getProperty("tm.legendaryMult",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TMC_LEGENDARY_MULT)));
         System.out.printf("  tuning: damagingShare=%.3f tutorDamagingShare=%.3f accExp=%.2f"
                         + " center=%.0f sigmaLow=%.0f sigmaHigh=%.0f floor=%.2f%n",
                 TMTutorMoveRandomizer.TM_DAMAGING_SHARE, TMTutorMoveRandomizer.TUTOR_DAMAGING_SHARE,
                 TMTutorMoveRandomizer.TM_ACCURACY_EXPONENT, TMTutorMoveRandomizer.TM_POWER_CENTER,
                 TMTutorMoveRandomizer.TM_POWER_SIGMA_LOW, TMTutorMoveRandomizer.TM_POWER_SIGMA_HIGH,
                 TMTutorMoveRandomizer.TM_POWER_BAND_FLOOR);
+        System.out.printf("  tuning: densitySigma=%.3f bstMult=%.2f-%.2f over %.0f legendaryMult=%.2f"
+                        + " universalWeights=%.1f/%.1f%n",
+                TMHMTutorCompatibilityRandomizer.TMC_DENSITY_SIGMA,
+                TMHMTutorCompatibilityRandomizer.TMC_BST_MULT_MIN,
+                TMHMTutorCompatibilityRandomizer.TMC_BST_MULT_MAX,
+                TMHMTutorCompatibilityRandomizer.TMC_BST_NORM_SPAN,
+                TMHMTutorCompatibilityRandomizer.TMC_LEGENDARY_MULT,
+                TMHMTutorCompatibilityRandomizer.TMC_UNIVERSAL_NORMAL_WEIGHT,
+                TMHMTutorCompatibilityRandomizer.TMC_UNIVERSAL_STATUS_WEIGHT);
     }
 
     private RomHandler loadRom(String gameName, String fileBaseName) {
@@ -177,6 +235,16 @@ public class TMTutorPoolProfileRandomizerTest {
         List<Map<Species, boolean[]>> preferTypeTutorCompat = new ArrayList<>();
 
         for (int run = 0; run < REPEATS; run++) {
+            // Put the ROM's vanilla compatibility back before each run. getTMHMCompatibility()
+            // re-reads the ROM and setTMHMCompatibility() writes back, so without this, run N sees
+            // run N-1's randomised output where the vanilla data should be. That is harmless for a
+            // model which overwrites every flag without reading it, and silently poisons any model
+            // whose own target is derived from the vanilla matrix.
+            romHandler.setTMHMCompatibility(deepCopy(vanillaTMCompat.get(0)));
+            if (hasTutors) {
+                romHandler.setMoveTutorCompatibility(deepCopy(vanillaTutorCompat.get(0)));
+            }
+
             Random random = new Random(SEED_BASE + run);
             Settings settings = new Settings();
             settings.setTmsMod(Settings.TMsMod.RANDOM);
@@ -333,6 +401,20 @@ public class TMTutorPoolProfileRandomizerTest {
         printIdentityTable("prefer-type", preferTypeTMCompat, species, randomTMs, allMoves, identity);
         printIdentityTable("+levelup sanity", preferTypeSanityTMCompat, species, randomTMs, allMoves, identity);
         printIdentityTable("plain random", plainRandomTMCompat, species, randomTMs, allMoves, identity);
+
+        // ---- HMs -------------------------------------------------------------------------
+        // Not a lever, a safety check. HMs gate progress through the game, so what matters is not
+        // their mean breadth but the tail: how many species can carry a given HM at all, and how
+        // many are useless as an HM slave. The early-required subset is the softlock risk proper -
+        // those are the ones getMoveCompatibilityProbability boosts.
+        List<Integer> hmMoves = romHandler.getHMMoves();
+        if (!hmMoves.isEmpty()) {
+            section("HM  compatibility (progression safety, not a lever)   [" + hmMoves.size()
+                    + " HMs, of which " + romHandler.getEarlyRequiredHMMoves().size() + " required early]");
+            printHmTable("vanilla", vanillaTMCompat, species, tmCount, hmMoves, allMoves, romHandler);
+            printHmTable("prefer-type", preferTypeTMCompat, species, tmCount, hmMoves, allMoves, romHandler);
+            printHmTable("plain random", plainRandomTMCompat, species, tmCount, hmMoves, allMoves, romHandler);
+        }
 
         section("C5/C6  on-type vs off-type learn rate          [report: damaging 74.4/20.9 (3.56x),"
                 + " status 77.8/39.3 (1.98x), Normal-typed 64.7/63.1 (1.03x)]");
@@ -677,6 +759,64 @@ public class TMTutorPoolProfileRandomizerTest {
         }
         sb.append(String.format("   span %.1f%%-%.1f%%", 100 * min, 100 * max));
         System.out.println(sb);
+    }
+
+    /**
+     * Per-HM breadth plus the two figures that actually matter for finishing a playthrough: the
+     * scarcest HM, and how many species can learn no HM at all.
+     * <p>
+     * HM flags live in the same array as the TM flags, at indices {@code tmCount+1} onward.
+     */
+    private void printHmTable(String label, List<Map<Species, boolean[]>> compats, List<Species> species,
+                              int tmCount, List<Integer> hmMoves, List<Move> allMoves, RomHandler romHandler) {
+        List<Integer> earlyRequired = romHandler.getEarlyRequiredHMMoves();
+        int[] learners = new int[hmMoves.size()];
+        int noHmAtAll = 0;
+        int noEarlyHm = 0;
+        for (Map<Species, boolean[]> compat : compats) {
+            for (Species pk : species) {
+                boolean[] flags = compat.get(pk);
+                if (flags == null) {
+                    continue;
+                }
+                boolean any = false;
+                boolean anyEarly = false;
+                for (int h = 0; h < hmMoves.size(); h++) {
+                    int index = tmCount + 1 + h;
+                    if (index < flags.length && flags[index]) {
+                        learners[h]++;
+                        any = true;
+                        if (earlyRequired.contains(hmMoves.get(h))) {
+                            anyEarly = true;
+                        }
+                    }
+                }
+                if (!any) {
+                    noHmAtAll++;
+                }
+                if (!anyEarly) {
+                    noEarlyHm++;
+                }
+            }
+        }
+        StringBuilder sb = new StringBuilder(String.format("      %-14s", label));
+        int scarcest = Integer.MAX_VALUE;
+        String scarcestName = "-";
+        for (int h = 0; h < hmMoves.size(); h++) {
+            Move mv = allMoves.get(hmMoves.get(h));
+            double share = 100.0 * learners[h] / (compats.size() * (double) species.size());
+            boolean early = earlyRequired.contains(hmMoves.get(h));
+            sb.append(String.format("  %s%s:%.0f%%", mv.name, early ? "*" : "", share));
+            if (learners[h] < scarcest) {
+                scarcest = learners[h];
+                scarcestName = mv.name;
+            }
+        }
+        System.out.println(sb);
+        System.out.printf("      %-14s   -> scarcest %s at %.1f%% of the dex;  species with NO HM"
+                        + " %.1f/run;  with no early-required HM %.1f/run   (* = required early)%n",
+                "", scarcestName, 100.0 * scarcest / (compats.size() * (double) species.size()),
+                (double) noHmAtAll / compats.size(), (double) noEarlyHm / compats.size());
     }
 
     /** The attacking types a species already has from its level-up learnset (report §7c). */
