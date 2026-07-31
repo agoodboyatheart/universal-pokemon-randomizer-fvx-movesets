@@ -45,16 +45,11 @@ public class SpeciesMovesetRandomizer extends Randomizer {
             vanillaMoveIdsBySpecies.put(entry.getKey(), ids);
         }
 
-        // Build sets of moves
-        List<Move> validMoves = new ArrayList<>();
-        List<Move> validDamagingMoves = new ArrayList<>();
-        Map<Type, List<Move>> validTypeMoves = new HashMap<>();
-        Map<Type, List<Move>> validTypeDamagingMoves = new HashMap<>();
         // When Sensible Movesets is on, widen the damaging pool to include weak (sub-isGoodDamaging) moves so the
         // level curve can actually reach its low end. Without this the pool floor (~50 effective power) sits above
         // centerPower at low levels and the curve is starved - see species-power-curve-structural-flaw.md.
-        createSetsOfMoves(noBroken, sensibleMovesets, validMoves, validDamagingMoves, validTypeMoves,
-                validTypeDamagingMoves);
+        MovePools pools = createSetsOfMoves(noBroken, sensibleMovesets);
+        List<Type> allTypes = new ArrayList<>(pools.typeDamaging().keySet());
 
         if (movesetsFollowEvolutions) {
             // Basic species are randomized exactly like the plain (non-follow) path below - only evolved
@@ -69,8 +64,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                     return;
                 }
                 randomizeMovesLearntForSpecies(pkmn, moves, 0, typeThemed, sensibleMovesets, goodDamagingPercentage,
-                        validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves,
-                        vanillaMoveIdsBySpecies);
+                        pools, allTypes, vanillaMoveIdsBySpecies);
             };
 
             // An evolved species inherits its pre-evolution's already-finalized picks, earliest-learned first,
@@ -95,8 +89,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 }
                 if (copyCount < toMoves.size()) {
                     randomizeMovesLearntForSpecies(evTo, toMoves, copyCount, typeThemed, sensibleMovesets,
-                            goodDamagingPercentage, validMoves, validDamagingMoves, validTypeMoves,
-                            validTypeDamagingMoves, vanillaMoveIdsBySpecies);
+                            goodDamagingPercentage, pools, allTypes, vanillaMoveIdsBySpecies);
                 }
             };
 
@@ -113,8 +106,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                     continue;
                 }
                 randomizeMovesLearntForSpecies(pkmn, moves, 0, typeThemed, sensibleMovesets, goodDamagingPercentage,
-                        validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves,
-                        vanillaMoveIdsBySpecies);
+                        pools, allTypes, vanillaMoveIdsBySpecies);
             }
         }
 
@@ -172,10 +164,13 @@ public class SpeciesMovesetRandomizer extends Randomizer {
     // leftover tail of an evolved species whose own slot count exceeds what its pre-evolution had to offer.
     private void randomizeMovesLearntForSpecies(Species pkmn, List<MoveLearnt> moves, int startIndex,
                                                 boolean typeThemed, boolean sensibleMovesets,
-                                                double goodDamagingPercentage, List<Move> validMoves,
-                                                List<Move> validDamagingMoves, Map<Type, List<Move>> validTypeMoves,
-                                                Map<Type, List<Move>> validTypeDamagingMoves,
+                                                double goodDamagingPercentage, MovePools pools,
+                                                List<Type> allTypes,
                                                 Map<Integer, Set<Integer>> vanillaMoveIdsBySpecies) {
+        List<Move> validMoves = pools.all();
+        List<Move> validDamagingMoves = pools.damaging();
+        Map<Type, List<Move>> validTypeMoves = pools.typeAll();
+        Map<Type, List<Move>> validTypeDamagingMoves = pools.typeDamaging();
         List<Integer> learnt = new ArrayList<>();
         for (int i = 0; i < startIndex; i++) {
             learnt.add(moves.get(i).move);
@@ -186,6 +181,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 : Collections.emptyMap();
 
         double atkSpAtkRatio = pkmn.getAttackSpecialAttackRatio();
+        double powerScale = sensibleMovesets ? speciesPowerScale(pkmn) : 1.0;
 
         // Find last lv1 move
         // lv1index ends up as the index of the first non-lv1 move
@@ -215,7 +211,9 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         // Collections.shuffle existed, and why it broke the level curve instead).
         int goodDamagingCount = (int) Math.round(goodDamagingPercentage * (moves.size() - startIndex));
         Set<Integer> damagingSlotIndices = new HashSet<>();
-        if (lv1index >= startIndex) {
+        // Sensible Movesets guarantees an early STAB attacker through role assignment instead. Pinning the
+        // level-1 slot to damaging as well would double-load the band vanilla actually keeps ~43% status.
+        if (lv1index >= startIndex && !sensibleMovesets) {
             damagingSlotIndices.add(lv1index);
         }
         if (goodDamagingCount > 0) {
@@ -230,10 +228,30 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                     eligibleIndices.subList(0, Math.min(goodDamagingCount, eligibleIndices.size())));
         }
 
+        // The whole learnset's shape is decided before any slot is filled, so composition (how much status,
+        // how much STAB, how wide the coverage palette) is a property of the species rather than an
+        // accident of what each independent draw happened to return. Type structure is gated on Prefer Same
+        // Type: plain Random means the player asked for type-blind learnsets.
+        boolean typeStructured = sensibleMovesets && typeThemed;
+        SpeciesLearnsetProfile profile = sensibleMovesets
+                ? SpeciesLearnsetProfile.of(pkmn, allTypes, romHandler.generationOfPokemon(), random)
+                : null;
+        SlotRole[] roles = sensibleMovesets
+                ? assignSlotRoles(moves, startIndex, profile, damagingSlotIndices, typeStructured, random)
+                : null;
+
         // Replace moves as needed
         for (int i = startIndex; i < moves.size(); i++) {
             // should this move be forced damaging?
             boolean attemptDamaging = damagingSlotIndices.contains(i);
+
+            Move mv;
+            if (sensibleMovesets && moves.get(i).level > 0) {
+                mv = pickComposedMove(roles[i], i, moves, backfillEffectiveLevels, profile, powerScale,
+                        learnt, pools);
+                learnt.add(mv.number);
+                continue;
+            }
 
             // type themed?
             Type typeOfMove = null;
@@ -282,7 +300,8 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                     pickList = validDamagingMoves;
                 }
                 MoveCategory forcedCategory = random.nextDouble() < atkSpAtkRatio ? MoveCategory.PHYSICAL : MoveCategory.SPECIAL;
-                List<Move> filteredList = pickList.stream().filter(mv -> mv.category == forcedCategory).collect(Collectors.toList());
+                List<Move> filteredList = pickList.stream()
+                        .filter(candidate -> candidate.category == forcedCategory).collect(Collectors.toList());
                 if (!filteredList.isEmpty() && checkForUnusedMove(filteredList, learnt)) {
                     pickList = filteredList;
                 }
@@ -294,33 +313,9 @@ public class SpeciesMovesetRandomizer extends Randomizer {
             }
 
             // now pick a move until we get a valid one
-            Move mv;
-            // Weight every slot's pick toward centerPower(level), not just attemptDamaging ones -
-            // Sensible Movesets is deliberately decoupled from Force Good Damaging's slot budget (see
-            // species-power-curve-shuffle-and-scope-review.md Finding A). This does not change which
-            // slots are damaging vs status - pickList above already fixed that - it only re-weights
-            // which move wins within whatever pool was already selected; status/fixed-damage moves get
-            // weight 1.0 from sensibleMovesetWeight, so they're unaffected.
-            if (sensibleMovesets && moves.get(i).level > 0) {
-                List<Move> available = pickList.stream()
-                        .filter(candidate -> !learnt.contains(candidate.number))
-                        .collect(Collectors.toList());
-                // Same pool the attemptDamaging/type-theming branch above would have fallen back to if
-                // the type pool had run out of unused moves - reused here as the ceiling's own fallback
-                // pool, so a type-themed pick that's blocked by the ceiling degrades to "on-type theming
-                // lost" rather than "ceiling ignored."
-                List<Move> widerFallbackPool = attemptDamaging ? validDamagingMoves : validMoves;
-                List<Move> widerAvailable = widerFallbackPool.stream()
-                        .filter(candidate -> !learnt.contains(candidate.number))
-                        .collect(Collectors.toList());
-                int slotLevel = backfillEffectiveLevels.getOrDefault(i, moves.get(i).level);
-                available = applySpeciesPowerCeiling(available, widerAvailable, slotLevel);
-                mv = weightedPick(available, candidate -> speciesLevelAppropriatenessWeight(candidate, slotLevel));
-            } else {
+            mv = pickList.get(random.nextInt(pickList.size()));
+            while (learnt.contains(mv.number)) {
                 mv = pickList.get(random.nextInt(pickList.size()));
-                while (learnt.contains(mv.number)) {
-                    mv = pickList.get(random.nextInt(pickList.size()));
-                }
             }
 
             learnt.add(mv.number);
@@ -346,14 +341,13 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         // Get current sets
         Map<Integer, List<Integer>> movesets = romHandler.getEggMoves();
 
-        // Build sets of moves
-        List<Move> validMoves = new ArrayList<>();
-        List<Move> validDamagingMoves = new ArrayList<>();
-        Map<Type, List<Move>> validTypeMoves = new HashMap<>();
-        Map<Type, List<Move>> validTypeDamagingMoves = new HashMap<>();
         // Egg moves are out of Sensible Movesets' scope (no per-move level to weight against), so keep the narrow
         // isGoodDamaging pool here - no widening.
-        createSetsOfMoves(noBroken, false, validMoves, validDamagingMoves, validTypeMoves, validTypeDamagingMoves);
+        MovePools eggPools = createSetsOfMoves(noBroken, false);
+        List<Move> validMoves = eggPools.all();
+        List<Move> validDamagingMoves = eggPools.damaging();
+        Map<Type, List<Move>> validTypeMoves = eggPools.typeAll();
+        Map<Type, List<Move>> validTypeDamagingMoves = eggPools.typeDamaging();
 
         for (Integer pkmnNum : movesets.keySet()) {
             List<Integer> learnt = new ArrayList<>();
@@ -478,8 +472,29 @@ public class SpeciesMovesetRandomizer extends Randomizer {
     // slices of the real movepool are naturally weak-move-poor (e.g. vanilla Fire Red: only 3/12
     // Fire-type damaging moves are <=60 BP) even though the global pool isn't. Only if that wider pool
     // is ALSO all over-ceiling does this fall back to the narrow pool unfiltered, same as before.
+    // A species that never evolves is compensated in vanilla with a materially better kit than one still
+    // on its way up - a stronger effect than evolution stage or raw BST alone.
+    static double speciesPowerScale(Species pkmn) {
+        double normBst = Math.clamp(
+                (pkmn.getBSTForPowerLevels() - SPECIES_POWER_BST_FLOOR)
+                        / (SPECIES_POWER_BST_CEILING - SPECIES_POWER_BST_FLOOR), 0.0, 1.0);
+        double scale = SPECIES_POWER_SCALE_MIN + SPECIES_POWER_SCALE_BST_RANGE * normBst;
+        if (pkmn.getEvolutionsTo().isEmpty() && pkmn.getEvolutionsFrom().isEmpty()) {
+            scale += SPECIES_POWER_SCALE_STANDALONE_BONUS;
+        }
+        if (pkmn.isLegendary()) {
+            scale += SPECIES_POWER_SCALE_LEGENDARY_BONUS;
+        }
+        return Math.clamp(scale, SPECIES_POWER_SCALE_MIN, SPECIES_POWER_SCALE_MAX);
+    }
+
     static List<Move> applySpeciesPowerCeiling(List<Move> available, List<Move> widerFallbackPool, int level) {
-        double ceiling = powerCeiling(level);
+        return applySpeciesPowerCeiling(available, widerFallbackPool, level, 1.0);
+    }
+
+    static List<Move> applySpeciesPowerCeiling(List<Move> available, List<Move> widerFallbackPool, int level,
+                                               double speciesPowerScale) {
+        double ceiling = powerCeiling(level, speciesPowerScale);
         List<Move> capped = filterUnderCeiling(available, ceiling);
         if (!capped.isEmpty()) {
             return capped;
@@ -501,15 +516,128 @@ public class SpeciesMovesetRandomizer extends Randomizer {
     // warrants, using the same Regular-tier falloff exponent Better Movesets applies to its Regular
     // trainers.
     static double speciesLevelAppropriatenessWeight(Move mv, int level) {
+        return speciesLevelAppropriatenessWeight(mv, level, 1.0);
+    }
+
+    static double speciesLevelAppropriatenessWeight(Move mv, int level, double speciesPowerScale) {
         double effectivePower = mv.power * mv.hitCount;
         if (effectivePower <= 0) {
             return 1.0;
         }
-        double floor = centerPower(level) * POWER_FLOOR_FRACTION;
+        double floor = centerPower(level, speciesPowerScale) * POWER_FLOOR_FRACTION;
         if (effectivePower >= floor) {
             return 1.0;
         }
         return Math.pow(effectivePower / floor, POWER_FLOOR_EXPONENT_REGULAR);
+    }
+
+    /**
+     * What a learnset slot is for. STAB and COVERAGE are only used when the movesets mod is
+     * Prefer Same Type - under plain Random every attacking slot is an untyped ATTACK instead, so a
+     * player who asked for type-blind learnsets still gets them.
+     */
+    enum SlotRole { STATUS, STAB, COVERAGE, ATTACK, WILDCARD }
+
+    /**
+     * Labels every slot in {@code [startIndex, moves.size())} before any move is picked, so a learnset is
+     * composed rather than drawn slot-by-slot. {@code forcedDamagingSlots} (the guaranteed first attacker
+     * plus whatever Force Good Damaging reserved) are never labelled STATUS.
+     */
+    static SlotRole[] assignSlotRoles(List<MoveLearnt> moves, int startIndex, SpeciesLearnsetProfile profile,
+                                      Set<Integer> forcedDamagingSlots, boolean typeStructured,
+                                      Random random) {
+        int n = moves.size();
+        SlotRole[] roles = new SlotRole[n];
+        List<Integer> unassigned = new ArrayList<>();
+        for (int i = startIndex; i < n; i++) {
+            if (!forcedDamagingSlots.contains(i)) {
+                unassigned.add(i);
+            }
+        }
+
+        int wildcardCount = (int) Math.round(SPECIES_WILDCARD_SHARE * unassigned.size());
+        Collections.shuffle(unassigned, random);
+        for (int w = 0; w < Math.min(wildcardCount, unassigned.size()); w++) {
+            roles[unassigned.get(w)] = SlotRole.WILDCARD;
+        }
+        List<Integer> statusEligible = new ArrayList<>(unassigned.subList(
+                Math.min(wildcardCount, unassigned.size()), unassigned.size()));
+
+        // Measured against every slot, not just the eligible ones - wildcards and Force Good Damaging's
+        // reservations still count toward the species' target share, so excluding them from the denominator
+        // would systematically undershoot it.
+        int statusCount = Math.min((int) Math.round(profile.statusShare() * (n - startIndex)),
+                statusEligible.size());
+        for (int s = 0; s < statusCount && !statusEligible.isEmpty(); s++) {
+            int chosen = pickStatusSlot(statusEligible, moves, random);
+            roles[statusEligible.remove(chosen)] = SlotRole.STATUS;
+        }
+
+        for (int i = startIndex; i < n; i++) {
+            if (roles[i] == null) {
+                roles[i] = attackingRoleFor(moves.get(i).level, typeStructured, random);
+            }
+        }
+        if (typeStructured) {
+            guaranteeFirstAttackerIsStab(roles, startIndex, n);
+        }
+        return roles;
+    }
+
+    // Weighted by the level band's status density, so utility clusters where vanilla puts it rather than
+    // spreading evenly up the learnset.
+    private static int pickStatusSlot(List<Integer> eligible, List<MoveLearnt> moves, Random random) {
+        double total = 0;
+        double[] weights = new double[eligible.size()];
+        for (int i = 0; i < eligible.size(); i++) {
+            weights[i] = SPECIES_STATUS_BAND_MULTIPLIER[speciesLevelBand(moves.get(eligible.get(i)).level)];
+            total += weights[i];
+        }
+        double roll = random.nextDouble() * total;
+        for (int i = 0; i < weights.length; i++) {
+            roll -= weights[i];
+            if (roll <= 0) {
+                return i;
+            }
+        }
+        return eligible.size() - 1;
+    }
+
+    private static SlotRole attackingRoleFor(int level, boolean typeStructured, Random random) {
+        if (!typeStructured) {
+            return SlotRole.ATTACK;
+        }
+        double stabShare = SPECIES_STAB_SHARE_BASE
+                + SPECIES_STAB_SHARE_RANGE * Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
+        return random.nextDouble() < stabShare ? SlotRole.STAB : SlotRole.COVERAGE;
+    }
+
+    // Vanilla's median first STAB attack lands at level 1 - a species' identity move should not be gated
+    // behind a coin-flip that can push it to level 40.
+    private static void guaranteeFirstAttackerIsStab(SlotRole[] roles, int startIndex, int n) {
+        for (int i = startIndex; i < n; i++) {
+            if (roles[i] == SlotRole.STAB) {
+                return;
+            }
+            if (roles[i] == SlotRole.COVERAGE || roles[i] == SlotRole.ATTACK) {
+                roles[i] = SlotRole.STAB;
+                return;
+            }
+        }
+    }
+
+    // Atk/(Atk+SpA), amplified toward whichever stat the species actually commits to. Clamped short of
+    // 0/1 so even a Shuckle-tier split keeps a small chance at the other category.
+    static double speciesCategoryLean(double atkSpAtkRatio) {
+        return Math.clamp(0.5 + (atkSpAtkRatio - 0.5) * SPECIES_CATEGORY_LEAN_AMPLIFIER, 0.05, 0.95);
+    }
+
+    // Status moves are category-neutral - a species' Atk/SpA split says nothing about which Growl it wants.
+    static double categoryLeanWeight(Move mv, MoveCategory preferred) {
+        if (preferred == null || mv.category == MoveCategory.STATUS) {
+            return 1.0;
+        }
+        return mv.category == preferred ? SPECIES_CATEGORY_BONUS : 1.0;
     }
 
     // Real vanilla learnsets are per-species standalone tables; an evolved species' table typically
@@ -554,6 +682,101 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         return effectiveLevels;
     }
 
+    /**
+     * Fills one slot under Sensible Movesets: role-scoped pool, hard level/quality ceiling, then a
+     * weighted pick over the soft power floor and the species' physical/special lean.
+     */
+    private Move pickComposedMove(SlotRole role, int slotIndex, List<MoveLearnt> moves,
+                                  Map<Integer, Integer> backfillEffectiveLevels,
+                                  SpeciesLearnsetProfile profile, double powerScale, List<Integer> learnt,
+                                  MovePools pools) {
+        int slotLevel = backfillEffectiveLevels.getOrDefault(slotIndex, moves.get(slotIndex).level);
+        List<Move> available = candidatesForRole(role, slotLevel, profile, learnt, pools);
+        List<Move> wider = unused(
+                role == SlotRole.STATUS || role == SlotRole.WILDCARD ? pools.all() : pools.damaging(), learnt);
+
+        // Coverage is the weaker half of a vanilla learnset, so only its ceiling tightens - pulling the
+        // floor down too would push coverage moves toward junk from both directions.
+        double ceilingScale = role == SlotRole.COVERAGE
+                ? powerScale * SPECIES_COVERAGE_CEILING_FACTOR : powerScale;
+        available = applySpeciesPowerCeiling(available, wider, slotLevel, ceilingScale);
+
+        MoveCategory preferredCategory = random.nextDouble() < profile.categoryLean()
+                ? MoveCategory.PHYSICAL : MoveCategory.SPECIAL;
+        return weightedPick(available,
+                candidate -> speciesLevelAppropriatenessWeight(candidate, slotLevel, powerScale)
+                        * categoryLeanWeight(candidate, preferredCategory)
+                        * abilityAffinityWeight(candidate, profile)
+                        * priorityWeight(candidate, profile));
+    }
+
+    static double abilityAffinityWeight(Move mv, SpeciesLearnsetProfile profile) {
+        return profile.abilityAffinity() != null && profile.abilityAffinity().test(mv)
+                ? SPECIES_ABILITY_AFFINITY_BONUS : 1.0;
+    }
+
+    // Priority moves are weak by design, so the soft power floor would otherwise bury them at high level -
+    // the species path has no goodWeakMoves exemption to lean on, since that would be a curated list.
+    static double priorityWeight(Move mv, SpeciesLearnsetProfile profile) {
+        return mv.priority > 0 ? profile.priorityBonus() : 1.0;
+    }
+
+    /**
+     * The candidate pool for one role, narrowest first, widening until something is usable. Returns the
+     * unused-move-filtered list; never empty unless the whole movepool is exhausted.
+     */
+    private List<Move> candidatesForRole(SlotRole role, int level, SpeciesLearnsetProfile profile,
+                                         List<Integer> learnt, MovePools pools) {
+        List<Move> candidates = switch (role) {
+            case STATUS -> unused(pools.status(), learnt);
+            case STAB -> unused(pools.byType(profile.stabTypeFor(random)), learnt);
+            case COVERAGE -> unused(pools.byType(coverageTypeFor(level, profile)), learnt);
+            case ATTACK, WILDCARD -> List.of();
+        };
+        if (!candidates.isEmpty()) {
+            return candidates;
+        }
+        // A type x category slice can be genuinely empty (or fully consumed) on a small movepool; losing
+        // the theme is always preferable to leaving the slot unfilled.
+        List<Move> wider = role == SlotRole.WILDCARD ? pools.all() : pools.damaging();
+        candidates = unused(wider, learnt);
+        if (!candidates.isEmpty()) {
+            return candidates;
+        }
+        candidates = unused(pools.all(), learnt);
+        // Only reachable if a species has more slots than the ROM has legal moves. Allowing a duplicate
+        // beats returning nothing, which would leave the slot empty in the written ROM.
+        return candidates.isEmpty() ? pools.all() : candidates;
+    }
+
+    // Normal is vanilla's generic filler and it is front-loaded, so an early coverage slot is more likely
+    // to reach for it than a late one.
+    private Type coverageTypeFor(int level, SpeciesLearnsetProfile profile) {
+        double fillerChance = SPECIES_GENERIC_FILLER_EARLY
+                + (SPECIES_GENERIC_FILLER_LATE - SPECIES_GENERIC_FILLER_EARLY)
+                        * Math.min(1.0, level / LEVEL_POWER_SATURATION_LEVEL);
+        if (random.nextDouble() < fillerChance || profile.coverageTypes().isEmpty()) {
+            return Type.NORMAL;
+        }
+        List<Type> palette = new ArrayList<>(profile.coverageTypes());
+        return palette.get(random.nextInt(palette.size()));
+    }
+
+    private static List<Move> unused(List<Move> pool, List<Integer> learnt) {
+        if (pool == null || pool.isEmpty()) {
+            return List.of();
+        }
+        return pool.stream().filter(mv -> !learnt.contains(mv.number)).collect(Collectors.toList());
+    }
+
+    /** The move pools a species' slots draw from, built once per randomization run. */
+    record MovePools(List<Move> all, List<Move> damaging, List<Move> status,
+                     Map<Type, List<Move>> typeAll, Map<Type, List<Move>> typeDamaging) {
+        List<Move> byType(Type type) {
+            return type == null ? List.of() : typeDamaging.getOrDefault(type, List.of());
+        }
+    }
+
     private boolean checkForUnusedMove(List<Move> potentialList, List<Integer> alreadyUsed) {
         for (Move mv : potentialList) {
             if (!alreadyUsed.contains(mv.number)) {
@@ -563,9 +786,12 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         return false;
     }
 
-    private void createSetsOfMoves(boolean noBroken, boolean widenDamagingPool, List<Move> validMoves,
-                                   List<Move> validDamagingMoves, Map<Type, List<Move>> validTypeMoves,
-                                   Map<Type, List<Move>> validTypeDamagingMoves) {
+    private MovePools createSetsOfMoves(boolean noBroken, boolean widenDamagingPool) {
+        List<Move> validMoves = new ArrayList<>();
+        List<Move> validDamagingMoves = new ArrayList<>();
+        List<Move> validStatusMoves = new ArrayList<>();
+        Map<Type, List<Move>> validTypeMoves = new HashMap<>();
+        Map<Type, List<Move>> validTypeDamagingMoves = new HashMap<>();
         List<Move> allMoves = romHandler.getMoves();
         List<Integer> hms = romHandler.getHMMoves();
         Set<Integer> allBanned = new HashSet<>(noBroken ? romHandler.getGameBreakingMoves() : Collections.emptySet());
@@ -582,6 +808,10 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                         validTypeMoves.put(mv.type, new ArrayList<>());
                     }
                     validTypeMoves.get(mv.type).add(mv);
+                }
+
+                if (mv.category == MoveCategory.STATUS) {
+                    validStatusMoves.add(mv);
                 }
 
                 if (!GlobalConstants.bannedForDamagingMove[mv.number]) {
@@ -673,6 +903,9 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 iterLoops++;
             }
         }
+
+        return new MovePools(validMoves, validDamagingMoves, validStatusMoves, validTypeMoves,
+                validTypeDamagingMoves);
     }
 
     // Note that this is slow and somewhat hacky.

@@ -154,7 +154,6 @@ public class SensibleMovesetsRandomizerTest {
         new SpeciesMovesetRandomizer(rom, s, new Random(20260731L)).randomizeMovesLearnt();
 
         List<Move> allMoves = rom.getMoves();
-        double ceiling1 = Randomizer.powerCeiling(1);
         int genuineLevel1Total = 0, genuineLevel1Violations = 0;
 
         for (Map.Entry<Integer, List<MoveLearnt>> entry : rom.getMovesLearnt().entrySet()) {
@@ -177,7 +176,10 @@ public class SensibleMovesetsRandomizerTest {
                     continue;
                 }
                 genuineLevel1Total++;
-                if (mv.power * mv.hitCount > ceiling1) {
+                // The ceiling is per-species: a pseudo-legendary's whole curve is scaled up relative to an
+                // early-route mon's, so a fixed powerCeiling(1) would misjudge both ends.
+                if (mv.power * mv.hitCount
+                        > Randomizer.powerCeiling(1, SpeciesMovesetRandomizer.speciesPowerScale(pkmn))) {
                     genuineLevel1Violations++;
                 }
             }
@@ -239,8 +241,13 @@ public class SensibleMovesetsRandomizerTest {
     private PowerBands collectPowerBands(RomHandler rom) {
         PowerBands bands = new PowerBands();
         List<Move> allMoves = rom.getMoves();
-        for (List<MoveLearnt> learnt : rom.getMovesLearnt().values()) {
-            for (MoveLearnt ml : learnt) {
+        for (Map.Entry<Integer, List<MoveLearnt>> entry : rom.getMovesLearnt().entrySet()) {
+            Species pkmn = findSpeciesById(rom, entry.getKey());
+            if (pkmn == null) {
+                continue;
+            }
+            double powerScale = SpeciesMovesetRandomizer.speciesPowerScale(pkmn);
+            for (MoveLearnt ml : entry.getValue()) {
                 if (ml.level <= 0) {
                     continue;
                 }
@@ -248,7 +255,7 @@ public class SensibleMovesetsRandomizerTest {
                 if (mv == null || mv.power <= 0) {
                     continue;
                 }
-                bands.add(ml.level, mv.power * mv.hitCount);
+                bands.add(ml.level, mv.power * mv.hitCount, powerScale);
             }
         }
         return bands;
@@ -274,7 +281,7 @@ public class SensibleMovesetsRandomizerTest {
         private int fiftyPlusTotal = 0, highBpAtFiftyPlus = 0;
         private int aboveLevelOneTotal = 0, ceilingViolationsAboveLevelOne = 0;
 
-        void add(int level, double effectivePower) {
+        void add(int level, double effectivePower, double speciesPowerScale) {
             for (int b = 0; b < BAND_EDGES.length; b++) {
                 if (level <= BAND_EDGES[b]) {
                     bandSum[b] += effectivePower;
@@ -306,7 +313,7 @@ public class SensibleMovesetsRandomizerTest {
             }
             if (level > 1) {
                 aboveLevelOneTotal++;
-                if (effectivePower > Randomizer.powerCeiling(level)) {
+                if (effectivePower > Randomizer.powerCeiling(level, speciesPowerScale)) {
                     ceilingViolationsAboveLevelOne++;
                 }
             }
