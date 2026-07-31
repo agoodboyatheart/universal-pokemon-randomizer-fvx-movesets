@@ -224,7 +224,7 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
                     pk -> randomizePokemonMoveCompatibility(pk, compat.get(pk), tmHMs, requiredEarlyOn, preferSameType,
                             model, tmCount),
                     (evFrom, evTo, toMonIsFinalEvo) -> copyPokemonMoveCompatibilityUpEvolutions(evFrom, evTo,
-                            compat.get(evFrom), compat.get(evTo), tmHMs, preferSameType));
+                            compat.get(evFrom), compat.get(evTo), tmHMs, preferSameType, model, tmCount));
         } else {
             for (Map.Entry<Species, boolean[]> compatEntry : compat.entrySet()) {
                 randomizePokemonMoveCompatibility(compatEntry.getKey(), compatEntry.getValue(), tmHMs, requiredEarlyOn,
@@ -297,6 +297,53 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
                 probability = Math.min(1.0, probability * TMC_EARLY_REQUIRED_BOOST);
             }
             moveCompatibilityFlags[i + 1] = this.random.nextDouble() < probability;
+        }
+    }
+
+    /**
+     * The "Follow Evolutions" form of {@link #randomizeToBudget}: the evolution keeps everything its
+     * pre-evolution could learn, and then draws whatever its own budget has left over on top.
+     * <p>
+     * The point of the option is that evolving never takes a move away, so the inherited flags are
+     * fixed and only the shortfall is rolled. That makes the budget a target for the <i>line</i>
+     * rather than for the species: an evolution whose pre-evolution already met or passed its budget
+     * simply gains nothing, which is why the gain is floored at zero rather than allowed to go
+     * negative and start removing moves. Vanilla's own ladder is gentle enough for this to be the
+     * common case - 30.3 / 31.6 / 35.9 TMs of 100 across the three evolution stages - so most of the
+     * ladder is inherited, not re-earned.
+     * <p>
+     * Weights are the same as for a species drawn from scratch, restricted to the moves the
+     * pre-evolution could not learn. The old model instead gave every unlearned move a flat 10%
+     * (90% for a type new to this evolution), which ignores the budget entirely and compounds on
+     * every step of a three-stage line.
+     */
+    private void topUpToBudget(Species pkmn, boolean[] fromCompatibilityFlags, boolean[] toCompatibilityFlags,
+                               List<Integer> moveIDs, List<Move> moveData, int budget, int budgetedCount,
+                               BudgetModel model) {
+        Set<Type> knownTypes = model.levelUpTypes().getOrDefault(pkmn.getNumber(), Set.of());
+        double[] weights = new double[budgetedCount];
+        int inherited = 0;
+        for (int i = 0; i < budgetedCount; i++) {
+            toCompatibilityFlags[i + 1] = fromCompatibilityFlags[i + 1];
+            if (fromCompatibilityFlags[i + 1]) {
+                inherited++;
+                // Already learnable, so not a candidate - a zero weight also keeps it out of the fit,
+                // which would otherwise spend part of the budget on moves it cannot gain.
+                weights[i] = 0;
+            } else {
+                weights[i] = model.breadths()[i] * pairWeight(pkmn, moveData.get(moveIDs.get(i)), knownTypes);
+            }
+        }
+
+        int gain = budget - inherited;
+        if (gain <= 0) {
+            return;
+        }
+        double scale = fitScale(weights, gain);
+        for (int i = 0; i < budgetedCount; i++) {
+            if (weights[i] > 0 && this.random.nextDouble() < Math.min(1.0, scale * weights[i])) {
+                toCompatibilityFlags[i + 1] = true;
+            }
         }
     }
 
@@ -578,11 +625,26 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
     }
 
 
+    /**
+     * Carries a pre-evolution's compatibility onto its evolution, then adds however much more the
+     * evolution's own budget calls for.
+     *
+     * @param model         the per-pool budget model, or null to use the original flat per-move gain
+     * @param budgetedCount how many leading entries of {@code moveIDs} the budget covers, as in
+     *                      {@link #randomizePokemonMoveCompatibility}
+     */
     private void copyPokemonMoveCompatibilityUpEvolutions(Species evFrom, Species evTo, boolean[] prevCompatibilityFlags,
                                                           boolean[] toCompatibilityFlags, List<Integer> moveIDs,
-                                                          boolean preferSameType) {
+                                                          boolean preferSameType, BudgetModel model,
+                                                          int budgetedCount) {
         List<Move> moveData = romHandler.getMoves();
-        for (int i = 1; i <= moveIDs.size(); i++) {
+        Integer budget = model == null ? null : model.budgets().get(evTo);
+        int budgeted = budget == null ? 0 : Math.min(budgetedCount, moveIDs.size());
+        if (budget != null) {
+            topUpToBudget(evTo, prevCompatibilityFlags, toCompatibilityFlags, moveIDs, moveData, budget, budgeted,
+                    model);
+        }
+        for (int i = budgeted + 1; i <= moveIDs.size(); i++) {
             if (!prevCompatibilityFlags[i]) {
                 // Slight chance to gain TM/HM compatibility for a move if not learned by an earlier evolution step
                 // Without prefer same type: 25% chance
@@ -726,7 +788,7 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
                     pk -> randomizePokemonMoveCompatibility(pk, compat.get(pk), mts, priorityTutors, preferSameType,
                             null, 0),
                     (evFrom, evTo, toMonIsFinalEvo) -> copyPokemonMoveCompatibilityUpEvolutions(evFrom, evTo,
-                            compat.get(evFrom), compat.get(evTo), mts, preferSameType));
+                            compat.get(evFrom), compat.get(evTo), mts, preferSameType, null, 0));
         }
         else {
             for (Map.Entry<Species, boolean[]> compatEntry : compat.entrySet()) {

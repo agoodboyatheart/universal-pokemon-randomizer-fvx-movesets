@@ -232,6 +232,7 @@ public class TMTutorPoolProfileRandomizerTest {
         List<Map<Species, boolean[]>> preferTypeTMCompat = new ArrayList<>();
         List<Map<Species, boolean[]>> preferTypeSanityTMCompat = new ArrayList<>();
         List<Map<Species, boolean[]>> plainRandomTMCompat = new ArrayList<>();
+        List<Map<Species, boolean[]>> preferTypeFollowEvoTMCompat = new ArrayList<>();
         List<Map<Species, boolean[]>> preferTypeTutorCompat = new ArrayList<>();
 
         for (int run = 0; run < REPEATS; run++) {
@@ -278,6 +279,19 @@ public class TMTutorPoolProfileRandomizerTest {
             compat = new TMHMTutorCompatibilityRandomizer(romHandler, settings, random);
             compat.randomizeTMHMCompatibility();
             plainRandomTMCompat.add(deepCopy(romHandler.getTMHMCompatibility()));
+
+            // Prefer-type again with "Follow Evolutions" on - a genuinely different code path
+            // (copyPokemonMoveCompatibilityUpEvolutions rather than the per-species model), which
+            // nothing here exercised while it was being changed. Runs last so the columns above keep
+            // the exact random stream, and therefore the exact numbers, they had before it was added.
+            // Vanilla has to go back first: the plain-random pass overwrote the matrix, and the
+            // budget model derives its density base from whatever the matrix holds when it starts.
+            romHandler.setTMHMCompatibility(deepCopy(vanillaTMCompat.get(0)));
+            settings.setTmsHmsCompatibilityMod(Settings.TMsHMsCompatibilityMod.RANDOM_PREFER_TYPE);
+            settings.setTmsFollowEvolutions(true);
+            compat = new TMHMTutorCompatibilityRandomizer(romHandler, settings, random);
+            compat.randomizeTMHMCompatibility();
+            preferTypeFollowEvoTMCompat.add(deepCopy(romHandler.getTMHMCompatibility()));
         }
 
         // ---- Content tables (L1 - L6) ------------------------------------------------------
@@ -364,6 +378,7 @@ public class TMTutorPoolProfileRandomizerTest {
         row("vanilla", densityLine(vanillaTMCompat, species, tmCount));
         row("randomised prefer-type", densityLine(preferTypeTMCompat, species, tmCount));
         row("  + levelup sanity", densityLine(preferTypeSanityTMCompat, species, tmCount));
+        row("  + follow evolutions", densityLine(preferTypeFollowEvoTMCompat, species, tmCount));
         row("randomised plain random", densityLine(plainRandomTMCompat, species, tmCount));
         if (hasTutors) {
             int tutorCount = vanillaTutors.size();
@@ -374,24 +389,40 @@ public class TMTutorPoolProfileRandomizerTest {
         System.out.println("      per-species TM count histogram, buckets of 10% (species per run)");
         printDensityHistogram("vanilla", vanillaTMCompat, species, tmCount);
         printDensityHistogram("prefer-type", preferTypeTMCompat, species, tmCount);
+        printDensityHistogram("+follow evos", preferTypeFollowEvoTMCompat, species, tmCount);
         printDensityHistogram("plain random", plainRandomTMCompat, species, tmCount);
 
         section("C2  TM count by BST bucket                     [report: 23.7 / 28.9 / 31.5 / 34.8 /"
                 + " 34.9 / 42.3 of 100]");
         printBstLadder("vanilla", vanillaTMCompat, species, tmCount);
         printBstLadder("prefer-type", preferTypeTMCompat, species, tmCount);
+        printBstLadder("+follow evos", preferTypeFollowEvoTMCompat, species, tmCount);
         printBstLadder("plain random", plainRandomTMCompat, species, tmCount);
         System.out.println();
         System.out.println("      stand-alone (never evolves, no prevo) vs base-stage-that-evolves"
                 + "   [report: 35.8 vs 27.6 of 100]");
         row("vanilla", standAloneLine(vanillaTMCompat, species, tmCount));
         row("prefer-type", standAloneLine(preferTypeTMCompat, species, tmCount));
+        row("+follow evos", standAloneLine(preferTypeFollowEvoTMCompat, species, tmCount));
         row("plain random", standAloneLine(plainRandomTMCompat, species, tmCount));
+        System.out.println();
+        // The follow-evolutions path's own table. Vanilla's ladder here is gentle - a fully evolved
+        // species gets about 19% more TMs than a base-stage one, not several times as many - so it is
+        // the figure that says whether an inherit-then-top-up model is landing or running away.
+        System.out.println("      TM count by evolution stage"
+                + "   [report: stage 0 30.3 / stage 1 31.6 / stage 2 35.9 of 100]");
+        row("vanilla", stageLine(vanillaTMCompat, species, tmCount));
+        row("prefer-type", stageLine(preferTypeTMCompat, species, tmCount));
+        row("+follow evos", stageLine(preferTypeFollowEvoTMCompat, species, tmCount));
+        row("plain random", stageLine(plainRandomTMCompat, species, tmCount));
 
         section("C3  per-move breadth tiers (moves per run)     [report: 13 universal / 3 wide /"
                 + " 26 mid / 45 narrow / 13 rare, span 1.1-97.9%]");
         printBreadthTiers("vanilla", vanillaTMCompat, species, tmCount);
         printBreadthTiers("prefer-type", preferTypeTMCompat, species, tmCount);
+        // Breadth is the other side of the same matrix as C1, so anything that inflates evolved
+        // species' lists shows up here as the whole pool drifting broader.
+        printBreadthTiers("+follow evos", preferTypeFollowEvoTMCompat, species, tmCount);
         printBreadthTiers("plain random", plainRandomTMCompat, species, tmCount);
 
         section("C4  learn rate by level-up type identity       [report: 56.8% vs 12.9% (4.39x);"
@@ -725,6 +756,47 @@ public class TMTutorPoolProfileRandomizerTest {
         return String.format("stand-alone %5.1f%% (n=%d)   evolving base %5.1f%% (n=%d)",
                 standAloneN == 0 ? 0 : standAloneSum / standAloneN, standAloneN / compats.size(),
                 evolvingN == 0 ? 0 : evolvingSum / evolvingN, evolvingN / compats.size());
+    }
+
+    /**
+     * How far up an evolution line a species sits: 0 for one with no pre-evolution, capped at 2 for
+     * the deepest chains, matching the report's three groups.
+     */
+    private int evolutionStage(Species pk) {
+        int stage = 0;
+        Species current = pk;
+        while (!current.getEvolutionsTo().isEmpty() && stage < 2) {
+            current = current.getEvolutionsTo().get(0).getFrom();
+            stage++;
+        }
+        return stage;
+    }
+
+    /**
+     * Mean TM share by evolution stage - the marginal the "Follow Evolutions" option acts on, and the
+     * one the per-species budget alone cannot be assumed to reproduce, since with that option on an
+     * evolution's list is inherited from its pre-evolution rather than drawn for itself.
+     */
+    private String stageLine(List<Map<Species, boolean[]>> compats, List<Species> species, int poolSize) {
+        double[] sum = new double[3];
+        int[] n = new int[3];
+        for (Map<Species, boolean[]> compat : compats) {
+            for (Species pk : species) {
+                boolean[] flags = compat.get(pk);
+                if (flags == null) {
+                    continue;
+                }
+                int stage = evolutionStage(pk);
+                sum[stage] += 100.0 * tmCountFor(flags, poolSize) / poolSize;
+                n[stage]++;
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int stage = 0; stage < sum.length; stage++) {
+            sb.append(String.format("stage %d %5.1f%% (n=%d)   ", stage,
+                    n[stage] == 0 ? 0 : sum[stage] / n[stage], n[stage] / compats.size()));
+        }
+        return sb.toString().trim();
     }
 
     private void printBreadthTiers(String label, List<Map<Species, boolean[]>> compats,
