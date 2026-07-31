@@ -172,6 +172,7 @@ public class TMTutorPoolProfileRandomizerTest {
         List<List<Integer>> randomTMs = new ArrayList<>();
         List<List<Integer>> randomTutors = new ArrayList<>();
         List<Map<Species, boolean[]>> preferTypeTMCompat = new ArrayList<>();
+        List<Map<Species, boolean[]>> preferTypeSanityTMCompat = new ArrayList<>();
         List<Map<Species, boolean[]>> plainRandomTMCompat = new ArrayList<>();
         List<Map<Species, boolean[]>> preferTypeTutorCompat = new ArrayList<>();
 
@@ -195,6 +196,11 @@ public class TMTutorPoolProfileRandomizerTest {
                     new TMHMTutorCompatibilityRandomizer(romHandler, settings, random);
             compat.randomizeTMHMCompatibility();
             preferTypeTMCompat.add(deepCopy(romHandler.getTMHMCompatibility()));
+            // Same run, plus the existing "TM/Levelup Move Sanity" option, so its contribution can be
+            // read off directly rather than argued about. It force-flags the TM of any move the
+            // species already learns by level-up - an exact move-ID match.
+            compat.ensureTMCompatSanity();
+            preferTypeSanityTMCompat.add(deepCopy(romHandler.getTMHMCompatibility()));
             if (hasTutors) {
                 compat.randomizeMoveTutorCompatibility();
                 preferTypeTutorCompat.add(deepCopy(romHandler.getMoveTutorCompatibility()));
@@ -289,6 +295,7 @@ public class TMTutorPoolProfileRandomizerTest {
                 + " 84% of dex in 20-49 of 100]");
         row("vanilla", densityLine(vanillaTMCompat, species, tmCount));
         row("randomised prefer-type", densityLine(preferTypeTMCompat, species, tmCount));
+        row("  + levelup sanity", densityLine(preferTypeSanityTMCompat, species, tmCount));
         row("randomised plain random", densityLine(plainRandomTMCompat, species, tmCount));
         if (hasTutors) {
             int tutorCount = vanillaTutors.size();
@@ -324,6 +331,7 @@ public class TMTutorPoolProfileRandomizerTest {
         Map<Integer, Set<Type>> identity = levelUpAttackingTypes(species, learnsets, allMoves);
         printIdentityTable("vanilla", vanillaTMCompat, species, List.of(vanillaTMs), allMoves, identity);
         printIdentityTable("prefer-type", preferTypeTMCompat, species, randomTMs, allMoves, identity);
+        printIdentityTable("+levelup sanity", preferTypeSanityTMCompat, species, randomTMs, allMoves, identity);
         printIdentityTable("plain random", plainRandomTMCompat, species, randomTMs, allMoves, identity);
 
         section("C5/C6  on-type vs off-type learn rate          [report: damaging 74.4/20.9 (3.56x),"
