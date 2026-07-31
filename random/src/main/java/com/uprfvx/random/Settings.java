@@ -302,6 +302,7 @@ public class Settings {
     }
 
     private TMsHMsCompatibilityMod tmsHmsCompatibilityMod = TMsHMsCompatibilityMod.UNCHANGED;
+    private boolean sensibleTMCompatibility;
 
     public enum MoveTutorMovesMod {
         UNCHANGED, RANDOM
@@ -320,6 +321,7 @@ public class Settings {
     }
 
     private MoveTutorsCompatibilityMod moveTutorsCompatibilityMod = MoveTutorsCompatibilityMod.UNCHANGED;
+    private boolean sensibleTutorCompatibility;
 
     public enum InGameTradesMod {
         UNCHANGED, RANDOMIZE_GIVEN, RANDOMIZE_GIVEN_AND_REQUESTED
@@ -539,7 +541,7 @@ public class Settings {
 
         // 21 tms part 2
         out.write(makeByteSelected(fullHMCompat, tmsFollowEvolutions, tutorFollowEvolutions,
-                gymLeaderTMsFollowTheme));
+                gymLeaderTMsFollowTheme, sensibleTMCompatibility, sensibleTutorCompatibility));
 
         // 22 tms good damaging
         out.write((tmsForceGoodDamaging ? 0x80 : 0) | tmsGoodDamagingPercent);
@@ -892,6 +894,8 @@ public class Settings {
         settings.setTmsFollowEvolutions(restoreState(data[21], 1));
         settings.setTutorFollowEvolutions(restoreState(data[21], 2));
         settings.setGymLeaderTMsFollowTheme(restoreState(data[21], 3));
+        settings.setSensibleTMCompatibility(restoreState(data[21], 4));
+        settings.setSensibleTutorCompatibility(restoreState(data[21], 5));
 
         settings.setTmsForceGoodDamaging(restoreState(data[22], 7));
         settings.setTmsGoodDamagingPercent(data[22] & 0x7F);
@@ -2559,6 +2563,14 @@ public class Settings {
         this.tmsHmsCompatibilityMod = tmsHmsCompatibilityMod;
     }
 
+    public boolean isSensibleTMCompatibility() {
+        return sensibleTMCompatibility;
+    }
+
+    public void setSensibleTMCompatibility(boolean sensibleTMCompatibility) {
+        this.sensibleTMCompatibility = sensibleTMCompatibility;
+    }
+
     public boolean isTmsFollowEvolutions() {
         return tmsFollowEvolutions;
     }
@@ -2637,6 +2649,14 @@ public class Settings {
 
     public void setMoveTutorsCompatibilityMod(MoveTutorsCompatibilityMod moveTutorsCompatibilityMod) {
         this.moveTutorsCompatibilityMod = moveTutorsCompatibilityMod;
+    }
+
+    public boolean isSensibleTutorCompatibility() {
+        return sensibleTutorCompatibility;
+    }
+
+    public void setSensibleTutorCompatibility(boolean sensibleTutorCompatibility) {
+        this.sensibleTutorCompatibility = sensibleTutorCompatibility;
     }
 
     public boolean isTutorFollowEvolutions() {

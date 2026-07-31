@@ -53,6 +53,16 @@ Download the Randomizer below by clicking on `UPR_FVX-[VERSION]-[OS].zip`. If yo
   least one damaging TM, so a seed can no longer leave a type with no TM at all. Move Tutors get a
   larger share of high-power moves than TMs do, as they do in the real games. Field-move preservation,
   the TM/Tutor no-duplicates rule, and the "Force % of Good Damaging Moves" options are unaffected.
+- Added "Sensible TM Compatibility" and "Sensible Tutor Compatibility" options, each available when
+  its pool's compatibility setting is "Random (prefer same type)". Instead of rolling every
+  Pokémon/move pair on its own, compatibility is shaped the way a real game shapes it: each Pokémon
+  gets a number of moves based on its stats, so a Caterpie learns few and a legendary learns many;
+  and each move gets a breadth, so some are near-universal filler while others reach only a handful
+  of Pokémon. Overall counts land on the unmodified game's own — which is roughly what randomization
+  already gave you for TMs, but about half as many Move Tutor moves, since tutors are far more
+  restricted in the real games than randomization has been treating them. A Gym Leader's reward TM is
+  never one of the rare ones. With "Follow Evolutions" ticked, an evolution keeps everything its
+  pre-evolution could learn and tops up to its own total. HM compatibility is unchanged.
 
 ### Static Pokemon
 - (Gen 3) [The description of a changed feature here.]

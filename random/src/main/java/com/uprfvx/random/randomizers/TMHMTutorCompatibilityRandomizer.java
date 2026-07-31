@@ -318,7 +318,7 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
         // Read while `compat` still holds the ROM's own vanilla data - this is the first step in the
         // pipeline to touch it (GameRandomizer.maybeRandomizeTMHMCompatibility).
         int tmCount = romHandler.getTMCount();
-        BudgetModel model = usesBudgetModel(preferSameType)
+        BudgetModel model = usesBudgetModel(preferSameType, settings.isSensibleTMCompatibility())
                 ? buildModel(compat, tmHMs, tmCount, PoolTuning.forTMs()) : null;
 
         if (followEvolutions) {
@@ -557,12 +557,19 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
     }
 
     /**
-     * Whether the per-species budget model applies. Type-blind randomization is left on the original
-     * flat coin flip: someone who picked plain Random asked for no structure, and the budget model's
-     * whole output is structure.
+     * Whether the per-species budget model applies to this pool.
+     * <p>
+     * Two conditions, and both are deliberate. The setting is the opt-in - vanilla-shaped
+     * compatibility is a different game from what this randomizer has always produced, so it is not
+     * imposed on anyone. Type-blind randomization is then excluded even when the setting is on:
+     * someone who picked plain Random asked for no structure, and the budget model's whole output is
+     * structure. That is also why the GUI greys each checkbox out unless its own pool is set to
+     * "Random (prefer same type)" - a checkbox that provably does nothing must not look available.
+     *
+     * @param sensibleCompatibility this pool's "Sensible ... Compatibility" setting
      */
-    private boolean usesBudgetModel(boolean preferSameType) {
-        return preferSameType;
+    private boolean usesBudgetModel(boolean preferSameType, boolean sensibleCompatibility) {
+        return preferSameType && sensibleCompatibility;
     }
 
     /**
@@ -911,7 +918,7 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
         // base is what makes one model fit both a 3-move Crystal roster at 29.2% density and a
         // 67-move Ultra Sun one at 18.0%.
         int tutorCount = mts.size();
-        BudgetModel model = usesBudgetModel(preferSameType)
+        BudgetModel model = usesBudgetModel(preferSameType, settings.isSensibleTutorCompatibility())
                 ? buildModel(compat, mts, tutorCount, PoolTuning.forTutors()) : null;
 
         if (followEvolutions) {

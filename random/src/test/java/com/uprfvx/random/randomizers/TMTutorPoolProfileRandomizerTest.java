@@ -276,6 +276,10 @@ public class TMTutorPoolProfileRandomizerTest {
             Settings settings = new Settings();
             settings.setTmsMod(Settings.TMsMod.RANDOM);
             settings.setMoveTutorMovesMod(Settings.MoveTutorMovesMod.RANDOM);
+            // The budget model is opt-in. Without these the prefer-type columns below silently fall
+            // back to the old flat coin flip and every C/T table stops measuring what it names.
+            settings.setSensibleTMCompatibility(true);
+            settings.setSensibleTutorCompatibility(true);
 
             TMTutorMoveRandomizer moveRandomizer = new TMTutorMoveRandomizer(romHandler, settings, random);
             moveRandomizer.randomizeTMMoves();
