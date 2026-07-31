@@ -44,6 +44,15 @@ Download the Randomizer below by clicking on `UPR_FVX-[VERSION]-[OS].zip`. If yo
   assigned type — including status moves — so gym TMs stay thematic. Follows the gym's actually
   assigned type, even when Type Themed reassigns it randomly. (Only affects games with authored
   gym-leader TM data.)
+- Randomized TM and Move Tutor rosters are now composed to match the shape of a real game's, instead
+  of being drawn uniformly from the whole move list. The roster keeps roughly two thirds damaging to
+  one third status moves; the damaging half is balanced between physical and special (Gen 4+) rather
+  than inheriting the move list's natural lean toward physical; wildly inaccurate moves are thinned
+  out to about the rate a real TM list carries; base power is pulled toward the 60-99 range that most
+  real TMs sit in, without removing the high-power tail; and (Gen 4+) every type is guaranteed at
+  least one damaging TM, so a seed can no longer leave a type with no TM at all. Move Tutors get a
+  larger share of high-power moves than TMs do, as they do in the real games. Field-move preservation,
+  the TM/Tutor no-duplicates rule, and the "Force % of Good Damaging Moves" options are unaffected.
 
 ### Static Pokemon
 - (Gen 3) [The description of a changed feature here.]

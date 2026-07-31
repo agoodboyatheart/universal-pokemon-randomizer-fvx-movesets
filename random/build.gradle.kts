@@ -252,6 +252,15 @@ tasks.register<Test>("testROMs") {
     classpath = sourceSets["test"].runtimeClasspath
     systemProperty("romsPath", rootProject.file("roms").absolutePath)
 
+    // Forward -Dtm.* tuning overrides to the forked test JVM. Without this they land on the Gradle
+    // JVM only and the profile harness silently reports the compiled-in defaults instead.
+    System.getProperties().forEach { key, value ->
+        val name = key.toString()
+        if (name.startsWith("tm.")) {
+            systemProperty(name, value.toString())
+        }
+    }
+
     shouldRunAfter("test")
 
     useJUnitPlatform()
