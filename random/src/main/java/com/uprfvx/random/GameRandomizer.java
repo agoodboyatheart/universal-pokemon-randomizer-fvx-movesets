@@ -31,6 +31,7 @@ import com.uprfvx.random.updaters.SpeciesBaseStatUpdater;
 import com.uprfvx.random.updaters.TypeEffectivenessUpdater;
 import com.uprfvx.random.updaters.Updater;
 import com.uprfvx.romio.MiscTweak;
+import com.uprfvx.romio.gamedata.GenRestrictions;
 import com.uprfvx.romio.graphics.packs.CustomPlayerGraphics;
 import com.uprfvx.romio.romhandlers.Gen1RomHandler;
 import com.uprfvx.romio.romhandlers.RomHandler;
@@ -229,10 +230,15 @@ public class GameRandomizer {
     }
 
     private void setupSpeciesRestrictions() {
-        romHandler.getRestrictedSpeciesService().setRestrictions(settings.getCurrentRestrictions());
+        romHandler.getRestrictedSpeciesService().setRestrictions(effectiveRestrictions(settings));
         if (settings.isLimitPokemon()) {
             romHandler.removeEvosForPokemonPool();
         }
+    }
+
+    // Package-private (rather than inlined) so it's unit-testable without a RomHandler.
+    static GenRestrictions effectiveRestrictions(Settings settings) {
+        return settings.isLimitPokemon() ? settings.getCurrentRestrictions() : new GenRestrictions();
     }
 
     private void applyUpdaters() {
