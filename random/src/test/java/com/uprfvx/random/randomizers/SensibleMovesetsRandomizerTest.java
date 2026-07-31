@@ -179,7 +179,7 @@ public class SensibleMovesetsRandomizerTest {
                 // The ceiling is per-species: a pseudo-legendary's whole curve is scaled up relative to an
                 // early-route mon's, so a fixed powerCeiling(1) would misjudge both ends.
                 if (mv.power * mv.hitCount
-                        > Randomizer.powerCeiling(1, SpeciesMovesetRandomizer.speciesPowerScale(pkmn))) {
+                        > Randomizer.speciesPowerCeiling(1, SpeciesMovesetRandomizer.speciesPowerScale(pkmn))) {
                     genuineLevel1Violations++;
                 }
             }
@@ -313,7 +313,7 @@ public class SensibleMovesetsRandomizerTest {
             }
             if (level > 1) {
                 aboveLevelOneTotal++;
-                if (effectivePower > Randomizer.powerCeiling(level, speciesPowerScale)) {
+                if (effectivePower > Randomizer.speciesPowerCeiling(level, speciesPowerScale)) {
                     ceilingViolationsAboveLevelOne++;
                 }
             }

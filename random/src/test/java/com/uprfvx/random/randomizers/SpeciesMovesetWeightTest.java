@@ -55,26 +55,58 @@ public class SpeciesMovesetWeightTest {
 
     @Test
     public void movesAtOrAboveTheFloorKeepFullWeight() {
-        // centerPower(1) = 45 + 50*(1/50) = 46, floor = 46 * 0.75 = 34.5
+        // speciesCenterPower(1) = 45 + 65*(1/40) = 46.625, floor = 46.625 * 0.75 = 34.97
         Move atFloor = damagingMove(35);
         assertEquals(1.0, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(atFloor, 1));
     }
 
     @Test
-    public void movesBelowTheFloorAreDemotedByTheRegularExponent() {
-        // centerPower(1) = 46, floor = 34.5; a 20 BP move is well below it.
-        Move weak = damagingMove(20);
-        double expected = Math.pow(20.0 / 34.5, 0.8);
-        assertEquals(expected, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(weak, 1), 1e-9);
+    public void movesBelowTheFloorAreDemotedByTheLevelScaledExponent() {
+        double floor = Randomizer.speciesCenterPower(1) * Randomizer.POWER_FLOOR_FRACTION;
+        double expected = Math.pow(20.0 / floor, Randomizer.speciesFloorExponent(1));
+        assertEquals(expected, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(damagingMove(20), 1),
+                1e-9);
         assertTrue(expected < 1.0);
     }
 
     @Test
+    public void theFloorBitesHarderLateThanEarly() {
+        // The same relative shortfall should cost a late-game slot far more weight than an early one, so
+        // the top of a learnset reads as a payoff.
+        double earlyPenalty = Math.pow(0.5, Randomizer.speciesFloorExponent(1));
+        double latePenalty = Math.pow(0.5, Randomizer.speciesFloorExponent(55));
+        assertTrue(latePenalty < earlyPenalty / 2,
+                "late floor should be much steeper: early=" + earlyPenalty + " late=" + latePenalty);
+    }
+
+    @Test
+    public void theFloorDoesNotSharpenBeforeTheLateGame() {
+        // Steepening it earlier quietly drags every mid-game band up with it.
+        assertEquals(Randomizer.SPECIES_FLOOR_EXPONENT_EARLY, Randomizer.speciesFloorExponent(1), 1e-9);
+        assertEquals(Randomizer.SPECIES_FLOOR_EXPONENT_EARLY, Randomizer.speciesFloorExponent(40), 1e-9);
+        assertTrue(Randomizer.speciesFloorExponent(41) > Randomizer.SPECIES_FLOOR_EXPONENT_EARLY);
+    }
+
+    @Test
     public void floorRisesWithLevel() {
-        // A 40 BP move sits at/above the Lv1 floor (34.5) but below the Lv50 floor (95*0.75=71.25).
+        // A 40 BP move sits above the Lv1 floor (34.97) but well below the saturated floor (110*0.75=82.5).
         Move mv = damagingMove(40);
         assertEquals(1.0, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(mv, 1));
         assertTrue(SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(mv, 50) < 1.0);
+    }
+
+    @Test
+    public void thePowerCurveSpikesAfterTheLateGameThreshold() {
+        // Gentle to 40, then a distinctly steeper climb to saturation - the early slope must stay gentle
+        // or every mid-game band inflates with it.
+        assertEquals(Randomizer.SPECIES_LEVEL_POWER_MID, Randomizer.speciesCenterPower(40), 1e-9);
+        assertEquals(Randomizer.SPECIES_LEVEL_POWER_MAX, Randomizer.speciesCenterPower(55), 1e-9);
+        assertEquals(Randomizer.SPECIES_LEVEL_POWER_MAX, Randomizer.speciesCenterPower(80), 1e-9);
+
+        double earlySlope = (Randomizer.speciesCenterPower(40) - Randomizer.speciesCenterPower(20)) / 20.0;
+        double lateSlope = (Randomizer.speciesCenterPower(50) - Randomizer.speciesCenterPower(40)) / 10.0;
+        assertTrue(lateSlope > earlySlope * 1.5,
+                "late slope should clearly outpace early: early=" + earlySlope + " late=" + lateSlope);
     }
 
     // --- hard ceiling (applySpeciesPowerCeiling) ---
@@ -89,11 +121,13 @@ public class SpeciesMovesetWeightTest {
     }
 
     @Test
-    public void ceilingWidensAtHighLevel() {
-        // powerCeiling(50) = max(60, 95*1.63) = 154.85, so a 120 BP move clears it at Lv50.
-        List<Move> pool = List.of(damagingMove(120));
-        List<Move> capped = SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, List.of(), 50);
-        assertEquals(1, capped.size());
+    public void thereIsNoCeilingOnceTheLateGameStarts() {
+        // Past level 40 a learnset should be free to hand out anything it has.
+        List<Move> pool = List.of(damagingMove(120), damagingMove(250));
+        assertEquals(2, SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, List.of(), 40).size());
+        assertEquals(2, SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, List.of(), 60).size());
+        // ...but not one level earlier.
+        assertEquals(1, SpeciesMovesetRandomizer.applySpeciesPowerCeiling(pool, List.of(), 39).size());
     }
 
     @Test
@@ -245,8 +279,8 @@ public class SpeciesMovesetWeightTest {
     public void theScaledCeilingTracksTheScale() {
         // A frail species must get a genuinely tighter cap than the shared TIER_LOW_MAX_BP floor implies,
         // otherwise the tier does nothing at low level - where most of the dex actually lives.
-        assertTrue(Randomizer.powerCeiling(1, 0.90) < Randomizer.powerCeiling(1, 1.0));
-        assertTrue(Randomizer.powerCeiling(50, 1.25) > Randomizer.powerCeiling(50, 1.0));
+        assertTrue(Randomizer.speciesPowerCeiling(1, 0.90) < Randomizer.speciesPowerCeiling(1, 1.0));
+        assertTrue(Randomizer.speciesPowerCeiling(30, 1.25) > Randomizer.speciesPowerCeiling(30, 1.0));
     }
 
     @Test
@@ -333,20 +367,33 @@ public class SpeciesMovesetWeightTest {
     }
 
     @Test
-    public void theEarliestAttackingSlotIsAlwaysStab() {
-        // Vanilla's median first STAB attack lands at level 1, so this must not be left to a coin flip.
-        for (long seed = 0; seed < 40; seed++) {
+    public void theEarliestAttackingSlotIsAlwaysStabOrNormalFiller() {
+        // Vanilla opens on the species' own type about 45% of the time and on Normal filler otherwise -
+        // never on some arbitrary third type.
+        int stabOpeners = 0;
+        int trials = 400;
+        for (long seed = 0; seed < trials; seed++) {
             List<MoveLearnt> moves = learnsetOf(1, 5, 12, 20, 28, 35, 44, 52);
             SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
                     moves, 0, profileWithStatusShare(0.375), Set.of(), true, new Random(seed));
+            SpeciesMovesetRandomizer.SlotRole opener = null;
             for (SpeciesMovesetRandomizer.SlotRole role : roles) {
-                if (role == SpeciesMovesetRandomizer.SlotRole.STAB) {
+                if (role != SpeciesMovesetRandomizer.SlotRole.STATUS
+                        && role != SpeciesMovesetRandomizer.SlotRole.WILDCARD) {
+                    opener = role;
                     break;
                 }
-                assertTrue(role != SpeciesMovesetRandomizer.SlotRole.COVERAGE,
-                        "seed " + seed + " put a coverage slot before any STAB slot");
+            }
+            assertNotNull(opener, "seed " + seed + " produced no attacking slot at all");
+            assertTrue(opener == SpeciesMovesetRandomizer.SlotRole.STAB
+                            || opener == SpeciesMovesetRandomizer.SlotRole.FILLER,
+                    "seed " + seed + " opened on " + opener + " rather than STAB or Normal filler");
+            if (opener == SpeciesMovesetRandomizer.SlotRole.STAB) {
+                stabOpeners++;
             }
         }
+        double rate = (double) stabOpeners / trials;
+        assertTrue(rate > 0.35 && rate < 0.55, "expected ~45% STAB openers, got " + rate);
     }
 
     @Test
@@ -405,9 +452,9 @@ public class SpeciesMovesetWeightTest {
 
     @Test
     public void theSoftFloorAlsoScalesWithTheSpeciesTier() {
-        // floor = centerPower(50) * scale * 0.75; a 75 BP move clears the unscaled floor (71.25) but not
-        // the 1.25-scaled one (89.06).
-        Move mv = damagingMove(75);
+        // floor = speciesCenterPower(50) * scale * 0.75; a 90 BP move clears the unscaled floor (82.5) but
+        // not the 1.25-scaled one (103.1).
+        Move mv = damagingMove(90);
         assertEquals(1.0, SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(mv, 50, 1.0));
         assertTrue(SpeciesMovesetRandomizer.speciesLevelAppropriatenessWeight(mv, 50, 1.25) < 1.0);
     }

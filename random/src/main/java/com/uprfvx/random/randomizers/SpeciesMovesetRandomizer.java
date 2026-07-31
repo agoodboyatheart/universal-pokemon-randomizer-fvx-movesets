@@ -494,7 +494,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
 
     static List<Move> applySpeciesPowerCeiling(List<Move> available, List<Move> widerFallbackPool, int level,
                                                double speciesPowerScale) {
-        double ceiling = powerCeiling(level, speciesPowerScale);
+        double ceiling = speciesPowerCeiling(level, speciesPowerScale);
         List<Move> capped = filterUnderCeiling(available, ceiling);
         if (!capped.isEmpty()) {
             return capped;
@@ -524,11 +524,11 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         if (effectivePower <= 0) {
             return 1.0;
         }
-        double floor = centerPower(level, speciesPowerScale) * POWER_FLOOR_FRACTION;
+        double floor = speciesCenterPower(level) * speciesPowerScale * POWER_FLOOR_FRACTION;
         if (effectivePower >= floor) {
             return 1.0;
         }
-        return Math.pow(effectivePower / floor, POWER_FLOOR_EXPONENT_REGULAR);
+        return Math.pow(effectivePower / floor, speciesFloorExponent(level));
     }
 
     /**
@@ -536,7 +536,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
      * Prefer Same Type - under plain Random every attacking slot is an untyped ATTACK instead, so a
      * player who asked for type-blind learnsets still gets them.
      */
-    enum SlotRole { STATUS, STAB, COVERAGE, ATTACK, WILDCARD }
+    enum SlotRole { STATUS, STAB, COVERAGE, FILLER, ATTACK, WILDCARD }
 
     /**
      * Labels every slot in {@code [startIndex, moves.size())} before any move is picked, so a learnset is
@@ -579,7 +579,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
             }
         }
         if (typeStructured) {
-            guaranteeFirstAttackerIsStab(roles, startIndex, n);
+            setFirstAttackerRole(roles, startIndex, n, random);
         }
         return roles;
     }
@@ -612,15 +612,18 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         return random.nextDouble() < stabShare ? SlotRole.STAB : SlotRole.COVERAGE;
     }
 
-    // Vanilla's median first STAB attack lands at level 1 - a species' identity move should not be gated
-    // behind a coin-flip that can push it to level 40.
-    private static void guaranteeFirstAttackerIsStab(SlotRole[] roles, int startIndex, int n) {
+    /**
+     * Decides what a species opens with. Vanilla splits roughly in half: 45% lead on their own type, and
+     * the rest lead on Normal filler and earn their STAB by levelling. Forcing STAB unconditionally
+     * overshot the measured band share badly (67% against vanilla's 43%) and took away the "my starter
+     * only knows Scratch" opening that makes early levelling feel like progress.
+     */
+    private static void setFirstAttackerRole(SlotRole[] roles, int startIndex, int n, Random random) {
+        SlotRole opener = random.nextDouble() < SPECIES_FIRST_SLOT_STAB_CHANCE
+                ? SlotRole.STAB : SlotRole.FILLER;
         for (int i = startIndex; i < n; i++) {
-            if (roles[i] == SlotRole.STAB) {
-                return;
-            }
-            if (roles[i] == SlotRole.COVERAGE || roles[i] == SlotRole.ATTACK) {
-                roles[i] = SlotRole.STAB;
+            if (roles[i] == SlotRole.STAB || roles[i] == SlotRole.COVERAGE || roles[i] == SlotRole.ATTACK) {
+                roles[i] = opener;
                 return;
             }
         }
@@ -731,6 +734,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
             case STATUS -> unused(pools.status(), learnt);
             case STAB -> unused(pools.byType(profile.stabTypeFor(random)), learnt);
             case COVERAGE -> unused(pools.byType(coverageTypeFor(level, profile)), learnt);
+            case FILLER -> unused(pools.byType(Type.NORMAL), learnt);
             case ATTACK, WILDCARD -> List.of();
         };
         if (!candidates.isEmpty()) {

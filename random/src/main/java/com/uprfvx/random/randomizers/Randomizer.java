@@ -166,6 +166,56 @@ public abstract class Randomizer {
     // Slots left entirely unstructured - the surprise valve, mirroring Better Movesets' wildcard slot.
     protected static double SPECIES_WILDCARD_SHARE = 0.15;
 
+    // The species learnset curve owns its own constants rather than sharing centerPower's. The trainer
+    // curve describes a level-matched opponent; a learnset describes a progression, and it saturates
+    // earlier and climbs higher. Keeping them separate also stops a species retune surfacing as a Better
+    // Movesets change when these branches merge.
+    // Two segments, because "late game" is a threshold rather than a slope. Up to level 40 the curve
+    // climbs gently and tracks vanilla's own early/mid pacing; past 40 it spikes toward the payoff moves
+    // a learnset should be closing on. A single ramp to the late-game value inflates every band below it.
+    protected static double SPECIES_LEVEL_POWER_BASE = 45.0;
+    protected static double SPECIES_LEVEL_POWER_MID = 85.0;
+    protected static double SPECIES_LEVEL_POWER_MAX = 125.0;
+    protected static double SPECIES_LATE_GAME_LEVEL = 40.0;
+    protected static double SPECIES_LEVEL_POWER_SATURATION = 55.0;
+
+    // The floor only sharpens once the late game starts - steepening it earlier would quietly drag the
+    // mid-game bands up with it.
+    protected static double SPECIES_FLOOR_EXPONENT_EARLY = 0.8;
+    protected static double SPECIES_FLOOR_EXPONENT_LATE = 2.0;
+
+    // Vanilla opens about half its species on their own type and the rest on Normal filler.
+    protected static double SPECIES_FIRST_SLOT_STAB_CHANCE = 0.45;
+
+    protected static double speciesCenterPower(int level) {
+        if (level <= SPECIES_LATE_GAME_LEVEL) {
+            double t = level / SPECIES_LATE_GAME_LEVEL;
+            return SPECIES_LEVEL_POWER_BASE + (SPECIES_LEVEL_POWER_MID - SPECIES_LEVEL_POWER_BASE) * t;
+        }
+        double t = Math.min(1.0, (level - SPECIES_LATE_GAME_LEVEL)
+                / (SPECIES_LEVEL_POWER_SATURATION - SPECIES_LATE_GAME_LEVEL));
+        return SPECIES_LEVEL_POWER_MID + (SPECIES_LEVEL_POWER_MAX - SPECIES_LEVEL_POWER_MID) * t;
+    }
+
+    protected static double speciesFloorExponent(int level) {
+        if (level <= SPECIES_LATE_GAME_LEVEL) {
+            return SPECIES_FLOOR_EXPONENT_EARLY;
+        }
+        double t = Math.min(1.0, (level - SPECIES_LATE_GAME_LEVEL)
+                / (SPECIES_LEVEL_POWER_SATURATION - SPECIES_LATE_GAME_LEVEL));
+        return SPECIES_FLOOR_EXPONENT_EARLY + (SPECIES_FLOOR_EXPONENT_LATE - SPECIES_FLOOR_EXPONENT_EARLY) * t;
+    }
+
+    // Unbounded from the late game on - past level 40 nothing in a learnset should be off-limits.
+    protected static double speciesPowerCeiling(int level, double speciesPowerScale) {
+        if (level >= SPECIES_LATE_GAME_LEVEL) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double t = level / SPECIES_LATE_GAME_LEVEL;
+        double mult = POWER_CEILING_MULTIPLIER_LOW + (POWER_CEILING_MULTIPLIER_HIGH - POWER_CEILING_MULTIPLIER_LOW) * t;
+        return Math.max(TIER_LOW_MAX_BP, speciesCenterPower(level) * mult) * speciesPowerScale;
+    }
+
     // Ability coherence, and priority moves going to species fast enough to use them.
     protected static double SPECIES_ABILITY_AFFINITY_BONUS = 12.0;
     protected static double SPECIES_PRIORITY_SPEED_FLOOR = 40.0;
