@@ -31,6 +31,8 @@ import com.uprfvx.romio.ctr.GARCArchive;
 import com.uprfvx.romio.ctr.Mini;
 import com.uprfvx.romio.exceptions.RomIOException;
 import com.uprfvx.romio.gamedata.*;
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
+import com.uprfvx.romio.gamedata.basestats.ShedinjaBaseStats;
 import com.uprfvx.romio.romhandlers.romentries.Gen7RomEntry;
 import com.uprfvx.romio.romhandlers.romentries.ThreeDSLinkedEncounter;
 import filefunctions.IOFunctions;
@@ -77,7 +79,7 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
     // This ROM
     private Species[] pokes;
     private final Map<Integer,FormeInfo> formeMappings = new TreeMap<>();
-    private List<MegaEvolution> megaEvolutions;
+    private final Set<Species> formesThatCopyBaseEvolutions = new HashSet<>();
     private List<Item> items;
     private List<AreaData> areaDataList;
     private Move[] moves;
@@ -294,12 +296,24 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
     }
 
     private void loadBasicPokeStats(Species pkmn, byte[] stats, Map<Integer,FormeInfo> altFormes) {
-        pkmn.setHp(stats[Gen7Constants.bsHPOffset] & 0xFF);
-        pkmn.setAttack(stats[Gen7Constants.bsAttackOffset] & 0xFF);
-        pkmn.setDefense(stats[Gen7Constants.bsDefenseOffset] & 0xFF);
-        pkmn.setSpeed(stats[Gen7Constants.bsSpeedOffset] & 0xFF);
-        pkmn.setSpatk(stats[Gen7Constants.bsSpAtkOffset] & 0xFF);
-        pkmn.setSpdef(stats[Gen7Constants.bsSpDefOffset] & 0xFF);
+        if (pkmn.getNumber() == SpeciesIDs.shedinja) {
+            pkmn.setBaseStats(new ShedinjaBaseStats(
+                    stats[Gen7Constants.bsAttackOffset] & 0xFF,
+                    stats[Gen7Constants.bsDefenseOffset] & 0xFF,
+                    stats[Gen7Constants.bsSpAtkOffset] & 0xFF,
+                    stats[Gen7Constants.bsSpDefOffset] & 0xFF,
+                    stats[Gen7Constants.bsSpeedOffset] & 0xFF
+            ));
+        } else {
+            pkmn.setBaseStats(new BaseStats(
+                    stats[Gen7Constants.bsHPOffset] & 0xFF,
+                    stats[Gen7Constants.bsAttackOffset] & 0xFF,
+                    stats[Gen7Constants.bsDefenseOffset] & 0xFF,
+                    stats[Gen7Constants.bsSpAtkOffset] & 0xFF,
+                    stats[Gen7Constants.bsSpDefOffset] & 0xFF,
+                    stats[Gen7Constants.bsSpeedOffset] & 0xFF
+            ));
+        }
         // Type
         pkmn.setPrimaryType(Gen7Constants.typeTable[stats[Gen7Constants.bsPrimaryTypeOffset] & 0xFF]);
         Type secondary = Gen7Constants.typeTable[stats[Gen7Constants.bsSecondaryTypeOffset] & 0xFF];
@@ -393,6 +407,7 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
                 pk.getEvolutionsTo().clear();
             }
         }
+        formesThatCopyBaseEvolutions.clear();
 
         // Read GARC
         try {
@@ -407,16 +422,36 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
                         EvolutionType et = Gen7Constants.gameSpecificEvolutionMethods.contains(method) ?
                                 getGameSpecificEvolutionType(evoEntry, i) :
                                 Gen7Constants.evolutionTypeFromIndex(method);
-                        if (et.skipSplitEvo()) continue; // Remove Feebas "split" evolution
+                        if (et == EvolutionType.HIGH_BEAUTY) continue; // Remove Feebas "split" evolution
 
                         int extraInfo = readWord(evoEntry, i * 8 + 2);
                         int forme = evoEntry[i * 8 + 6];
+
                         // forme == -1 is used internally to mean "keep the forme upon evolving".
-                        // Most mons use this value, and it is what makes e.g. Burmy->Wormadam
-                        // and Flabébé->Floette work as expected.
+                        // Most mons use this value, and it is what makes e.g. Burmy->Wormadam,
+                        // Flabébé->Floette->Florges, and Pumpkaboo->Gourgeist work as expected.
                         if (forme == -1) {
-                            forme = 0;
+                            if (pkFrom.isBaseForme()) {
+                                forme = 0;
+                            } else {
+                                // The alt formes with evo data with forme == -1
+                                // are all problematic (see Gen6RomHandler) so we ignore them,
+                                // though making note of them so we can write the evo data later.
+                                // And entirely ignore Floette-Eternal, it doesn't evolve.
+                                if (pokes[species].isValidFormeNumber(pkFrom.getFormeNumber())) {
+                                    formesThatCopyBaseEvolutions.add(pkFrom);
+                                }
+                                continue;
+                            }
                         }
+
+                        // Espurr -> Meowstic-F uses a redundant forme-setting evo method, as a carryover from Gen 6
+                        // which lacked forme data in the evo struct. No reason not to normalize it.
+                        if (pkFrom.getNumber() == SpeciesIDs.espurr && method == Gen7Constants.meowsticFEvolutionMethod) {
+                            et = EvolutionType.LEVEL_FEMALE_ONLY;
+                            forme = 1; // Meowstic-F forme id
+                        }
+
                         int level = evoEntry[i * 8 + 7];
                         Species pkTo = pokes[species].getForme(forme);
                         Evolution evo = new Evolution(pkFrom, pkTo, et, extraInfo);
@@ -440,6 +475,9 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
         } catch (IOException e) {
             throw new RomIOException(e);
         }
+
+        addBurmyAltFormeEvolutions();
+        addSMKantoEvolutions();
     }
 
     private EvolutionType getGameSpecificEvolutionType(byte[] evoEntry, int evo) {
@@ -458,17 +496,20 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
         }
     }
 
-    private void populateMegaEvolutions() {
-        for (Species pkmn : pokes) {
-            if (pkmn != null) {
-                pkmn.getMegaEvolutionsFrom().clear();
-                pkmn.getMegaEvolutionsTo().clear();
-            }
+    private void addSMKantoEvolutions() {
+        // In SM these mons have no way of evolving into the kantonian/base forms,
+        // but conceptually they definitely should be considered evolutions.
+        // This allows both to be true, by giving them an evo with EvolutionType.NONE.
+        if (romEntry.getRomType() == Gen7Constants.Type_SM) {
+            addNoneEvolutionBetween(pokes[SpeciesIDs.pikachu], pokes[SpeciesIDs.raichu]);
+            addNoneEvolutionBetween(pokes[SpeciesIDs.cubone], pokes[SpeciesIDs.marowak]);
+            addNoneEvolutionBetween(pokes[SpeciesIDs.exeggcute], pokes[SpeciesIDs.exeggutor]);
         }
+    }
 
+    private void populateMegaEvolutions() {
         // Read GARC
         try {
-            megaEvolutions = new ArrayList<>();
             GARCArchive megaEvoGARC = readGARC(romEntry.getFile("MegaEvolutions"),true);
             for (int i = 1; i <= Gen7Constants.getPokemonCount(romEntry.getRomType()); i++) {
                 Species pk = pokes[i];
@@ -480,12 +521,7 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
                         Species mega = pk.getForme(formNum);
                         boolean needsItem = method == 1; // true for every mega but Mega Rayquaza, which has method==2.
                         Item item = items.get(readWord(megaEvoEntry, evo * 8 + 4));
-                        MegaEvolution megaEvo = new MegaEvolution(pk, mega, needsItem, item);
-                        if (!pk.getMegaEvolutionsFrom().contains(megaEvo)) {
-                            pk.getMegaEvolutionsFrom().add(megaEvo);
-                            mega.getMegaEvolutionsTo().add(megaEvo);
-                        }
-                        megaEvolutions.add(megaEvo);
+                        mega.setMegaEvolution(needsItem ? item : null);
                     }
                 }
             }
@@ -654,12 +690,13 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
     }
 
     private void saveBasicPokeStats(Species pkmn, byte[] stats) {
-        stats[Gen7Constants.bsHPOffset] = (byte) pkmn.getHp();
-        stats[Gen7Constants.bsAttackOffset] = (byte) pkmn.getAttack();
-        stats[Gen7Constants.bsDefenseOffset] = (byte) pkmn.getDefense();
-        stats[Gen7Constants.bsSpeedOffset] = (byte) pkmn.getSpeed();
-        stats[Gen7Constants.bsSpAtkOffset] = (byte) pkmn.getSpatk();
-        stats[Gen7Constants.bsSpDefOffset] = (byte) pkmn.getSpdef();
+        BaseStats bs = pkmn.getBaseStats();
+        stats[Gen7Constants.bsHPOffset] = (byte) bs.getHp();
+        stats[Gen7Constants.bsAttackOffset] = (byte) bs.getAttack();
+        stats[Gen7Constants.bsDefenseOffset] = (byte) bs.getDefense();
+        stats[Gen7Constants.bsSpeedOffset] = (byte) bs.getSpeed();
+        stats[Gen7Constants.bsSpAtkOffset] = (byte) bs.getSpatk();
+        stats[Gen7Constants.bsSpDefOffset] = (byte) bs.getSpdef();
         stats[Gen7Constants.bsPrimaryTypeOffset] = Gen7Constants.typeToByte(pkmn.getPrimaryType(false));
         if (pkmn.getSecondaryType(false) == null) {
             stats[Gen7Constants.bsSecondaryTypeOffset] = stats[Gen7Constants.bsPrimaryTypeOffset];
@@ -710,11 +747,21 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
             for (int i = 1; i <= Gen7Constants.getPokemonCount(romEntry.getRomType()) + Gen7Constants.getFormeCount(romEntry.getRomType()); i++) {
                 byte[] evoEntry = evoGARC.getFile(i);
                 Species pk = pokes[i];
+
                 if (pk.getNumber() == SpeciesIDs.nincada) {
                     writeShedinjaEvolution();
                 }
+
                 int evosWritten = 0;
-                for (Evolution evo : pk.getEvolutionsFrom()) {
+                List<Evolution> evolutionsFrom = pk.getEvolutionsFrom();
+                boolean evosCarryForme = false;
+                if (formesThatCopyBaseEvolutions.contains(pk)) {
+                    evolutionsFrom = pk.getBaseForme().getEvolutionsFrom();
+                    evosCarryForme = true;
+                }
+                for (Evolution evo : evolutionsFrom) {
+                    if (evo.getType() == EvolutionType.NONE) continue; // should not be written to ROM
+
                     Species toPK = evo.getTo();
                     writeWord(evoEntry, evosWritten * 8, Gen7Constants.evolutionTypeToIndex(evo.getType()));
                     int extraInfo;
@@ -727,7 +774,7 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
                     }
                     writeWord(evoEntry, evosWritten * 8 + 2, extraInfo);
                     writeWord(evoEntry, evosWritten * 8 + 4, toPK.getBaseNumber());
-                    evoEntry[evosWritten * 8 + 6] = (byte) toPK.getFormeNumber();
+                    evoEntry[evosWritten * 8 + 6] = evosCarryForme ? (byte) -1 : (byte) toPK.getFormeNumber();
                     byte level;
                     if (evo.getType().usesLevelThreshold()) {
                         level = (byte) evo.getExtraInfo();
@@ -1007,11 +1054,6 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
         int formeCount = Gen7Constants.getFormeCount(romEntry.getRomType());
         int pokemonCount = Gen7Constants.getPokemonCount(romEntry.getRomType());
         return new SpeciesSet(Arrays.asList(pokes).subList(pokemonCount + 1, pokemonCount + formeCount + 1));
-    }
-
-    @Override
-    public List<MegaEvolution> getMegaEvolutions() {
-        return megaEvolutions;
     }
 
 	@Override
@@ -1751,8 +1793,9 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
     // In the case where two or more stats are tied for the highest stat, it randomly selects one.
     private int getAuraNumberForHighestStat(Species boostedSpecies) {
 
-        List<Supplier<Integer>> statSuppliers = Arrays.asList(boostedSpecies::getAttack, boostedSpecies::getDefense,
-                boostedSpecies::getSpatk, boostedSpecies::getSpdef, boostedSpecies::getSpeed);
+        BaseStats bs = boostedSpecies.getBaseStats();
+        List<Supplier<Integer>> statSuppliers = Arrays.asList(bs::getAttack, bs::getDefense,
+                bs::getSpatk, bs::getSpdef, bs::getSpeed);
 
         // finds the highest stat(s)
         int currentBestStat = -1;
@@ -2699,7 +2742,6 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
             if (sp == null)
                 continue;
 
-            Set<Evolution> extraEvolutions = new HashSet<>();
             for (int i = 0; i < sp.getEvolutionsFrom().size(); i++) {
                 Evolution evo = sp.getEvolutionsFrom().get(i);
 
@@ -2777,29 +2819,20 @@ public class Gen7RomHandler extends Abstract3DSRomHandler {
                         markImprovedEvolutions(sp);
                         evo.updateEvolutionMethod(EvolutionType.LEVEL_NIGHT, evo.getExtraInfo(), useEstimatedLevels);
                         break;
+                    case NONE:
+                        //Add Kanto form evolutions
+                        //(USUM already has a function for this)
+                        if (this.getROMType() == Gen7Constants.Type_SM) {
+                            switch (evo.getFrom().getNumber()) {
+                                case SpeciesIDs.pikachu:
+                                case SpeciesIDs.exeggcute:
+                                case SpeciesIDs.cubone:
+                                    markImprovedEvolutions(sp);
+                                    evo.updateEvolutionMethod(EvolutionType.STONE, ItemIDs.moonStone, useEstimatedLevels);
+                            }
+                        }
+                        break;
                 }
-
-                if(this.getROMType() == Gen7Constants.Type_SM) {
-                    //Add Kanto form evolutions
-                    //(USUM already has a function for this)
-                    switch (evo.getFrom().getNumber()) {
-                        case SpeciesIDs.pikachu:
-                        case SpeciesIDs.exeggcute:
-                        case SpeciesIDs.cubone:
-                            markImprovedEvolutions(sp);
-                            // We don't know if evo.getTo() has a baseForme,
-                            // since it might have been randomized...
-                            Species kantoForm = evo.getTo().isBaseForme() ? evo.getTo() : evo.getTo().getBaseForme();
-                            Evolution extraEvo = new Evolution(evo.getFrom(), kantoForm,
-                                    EvolutionType.STONE, ItemIDs.moonStone, evo.getEstimatedEvoLvl());
-                            extraEvolutions.add(extraEvo);
-                    }
-                }
-            }
-
-            sp.getEvolutionsFrom().addAll(extraEvolutions);
-            for (Evolution ev : extraEvolutions) {
-                ev.getTo().getEvolutionsTo().add(ev);
             }
         }
     }

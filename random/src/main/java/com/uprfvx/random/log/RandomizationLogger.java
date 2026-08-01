@@ -13,6 +13,8 @@ import com.uprfvx.romio.constants.Gen5Constants;
 import com.uprfvx.romio.constants.Gen6Constants;
 import com.uprfvx.romio.constants.Gen7Constants;
 import com.uprfvx.romio.gamedata.*;
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
 import com.uprfvx.romio.romhandlers.Gen1RomHandler;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
@@ -445,6 +447,8 @@ public class RandomizationLogger {
 
             for (int i = 0; i < pk.getEvolutionsFrom().size(); i++) {
                 Evolution evo = pk.getEvolutionsFrom().get(i);
+                if (evo.getType() == EvolutionType.NONE) continue;
+
                 String from = i == 0 ? pk.getFullName() : "";
                 String to = evo.getTo().getFullName();
                 String method = evolutionMethodToString(evo);
@@ -586,6 +590,7 @@ public class RandomizationLogger {
         log.printf("%" + numLen + "s", getBS("Log.psta.num"));
         log.printf("|%-" + nameLen + "s", getBS("Log.psta.name"));
         log.printf("|%-" + typeLen + "s", getBS("Log.psta.type"));
+        log.printf("|%4s", getBS("Log.psta.bst"));
         if (romHandler.generationOfPokemon() == 1) {
             log.printf("|%4s|%4s|%4s|%4s|%4s",
                     getBS("Log.psta.hp"), getBS("Log.psta.attack"),
@@ -620,16 +625,19 @@ public class RandomizationLogger {
             log.printf("|%-" + typeLen + "s",
                     pk.getPrimaryType(false)
                             + (pk.hasSecondaryType(false) ? "/" + pk.getSecondaryType(false) : ""));
+            log.printf("|%4d", pk.getBST(false));
             if (romHandler.generationOfPokemon() == 1) {
+                Gen1BaseStats bs = (Gen1BaseStats) pk.getBaseStats();
                 log.printf("|%4d|%4d|%4d|%4d|%4d",
-                        pk.getHp(), pk.getAttack(),
-                        pk.getDefense(), pk.getSpeed(),
-                        pk.getSpecial());
+                        bs.getHp(), bs.getAttack(),
+                        bs.getDefense(), bs.getSpeed(),
+                        bs.getSpecial());
             } else {
+                BaseStats bs = pk.getBaseStats();
                 log.printf("|%4s|%4s|%4s|%4s|%4s|%4s",
-                        pk.getHp(), pk.getAttack(),
-                        pk.getDefense(), pk.getSpatk(),
-                        pk.getSpdef(), pk.getSpeed());
+                        bs.getHp(), bs.getAttack(),
+                        bs.getDefense(), bs.getSpatk(),
+                        bs.getSpdef(), bs.getSpeed());
             }
             if (romHandler.abilitiesPerSpecies() >= 1) {
                 log.printf("|%-" + abilityLen + "s", romHandler.abilityName(pk.getAbility1()));
@@ -799,11 +807,13 @@ public class RandomizationLogger {
             }
 
             if (romHandler instanceof Gen1RomHandler) {
-                log.printf("  HP| ATK| DEF|SPEC| SPD %n%4d|%4d|%4d|%4d|%4d %n",
-                        pk.getHp(), pk.getAttack(), pk.getDefense(), pk.getSpecial(), pk.getSpeed());
+                Gen1BaseStats bs = (Gen1BaseStats) pk.getBaseStats();
+                log.printf("  HP| ATK| DEF| SPD|SPEC %n%4d|%4d|%4d|%4d|%4d %n",
+                        bs.getHp(), bs.getAttack(), bs.getDefense(), bs.getSpeed(), bs.getSpecial());
             } else {
+                BaseStats bs = pk.getBaseStats();
                 log.printf("  HP| ATK| DEF|SATK|SDEF| SPD %n%4d|%4d|%4d|%4d|%4d|%4d %n",
-                        pk.getHp(), pk.getAttack(), pk.getDefense(), pk.getSpatk(), pk.getSpdef(), pk.getSpeed());
+                        bs.getHp(), bs.getAttack(), bs.getDefense(), bs.getSpatk(), bs.getSpdef(), bs.getSpeed());
             }
 
             List<MoveLearnt> data = moveData.get(pk.getNumber());
