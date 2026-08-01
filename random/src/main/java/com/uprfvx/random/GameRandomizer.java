@@ -22,6 +22,7 @@ package com.uprfvx.random;
 /*--  along with this program. If not, see <http://www.gnu.org/licenses/>.  --*/
 /*----------------------------------------------------------------------------*/
 
+import com.uprfvx.random.log.GameDocumentationWriter;
 import com.uprfvx.random.log.RandomizationLogger;
 import com.uprfvx.random.random.RandomSource;
 import com.uprfvx.random.random.SeedPicker;
@@ -55,6 +56,8 @@ public class GameRandomizer {
 
         private Exception e;
         private Exception logE;
+        private Exception docE;
+        private String documentationJson;
         private int checkValue;
 
         private Results() {}
@@ -79,6 +82,21 @@ public class GameRandomizer {
                 throw new IllegalStateException("Logging successful; no Exception to be gotten.");
             }
             return logE;
+        }
+
+        public boolean wasDocumentationSuccessful() {
+            return docE == null;
+        }
+
+        public Exception getDocumentationException() {
+            if (wasDocumentationSuccessful()) {
+                throw new IllegalStateException("Documentation successful; no Exception to be gotten.");
+            }
+            return docE;
+        }
+
+        public String getDocumentationJson() {
+            return documentationJson;
         }
 
         public int getCheckValue() {
@@ -217,6 +235,13 @@ public class GameRandomizer {
                 logger.logResults(log, startTime);
             } catch (Exception e) {
                 results.logE = e;
+            }
+
+            try {
+                results.documentationJson = new GameDocumentationWriter(randomSource, settings, romHandler,
+                        logger.getOriginalStatics()).write();
+            } catch (Exception e) {
+                results.docE = e;
             }
 
             if (!couldSave) {

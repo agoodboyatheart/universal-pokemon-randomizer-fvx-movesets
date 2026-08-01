@@ -126,10 +126,11 @@ public class RandomizationLogger {
     /**
      * The pre-randomisation static Pokemon snapshot captured in the constructor (see
      * {@link #logStaticPokemon(List)}), null if {@code !romHandler.canChangeStaticPokemon()}.
-     * Package-private: reused by GameDocumentationWriter to label statics by the vanilla species
-     * they replaced, since the ROM records no location data to identify a static encounter by.
+     * Public: {@link com.uprfvx.random.GameRandomizer} reads this to hand it to
+     * {@link GameDocumentationWriter}, which labels statics by the vanilla species they replaced —
+     * the ROM records no location data to identify a static encounter by otherwise.
      */
-    List<StaticEncounter> getOriginalStatics() {
+    public List<StaticEncounter> getOriginalStatics() {
         return originalStatics;
     }
 
