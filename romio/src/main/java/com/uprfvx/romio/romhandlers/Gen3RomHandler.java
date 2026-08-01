@@ -1236,7 +1236,6 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
     }
 
     private int lengthOfStringAt(int offset) {
-        System.out.println(lengthOfDataWithTerminatorAt(offset, Gen3Constants.textTerminator));
         return lengthOfDataWithTerminatorAt(offset, Gen3Constants.textTerminator);
     }
 
