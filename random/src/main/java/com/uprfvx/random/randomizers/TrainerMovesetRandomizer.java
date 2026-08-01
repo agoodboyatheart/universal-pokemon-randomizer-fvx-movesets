@@ -6,6 +6,7 @@ import com.uprfvx.romio.constants.GlobalConstants;
 import com.uprfvx.romio.constants.MoveIDs;
 import com.uprfvx.romio.constants.SpeciesIDs;
 import com.uprfvx.romio.gamedata.*;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
 import java.util.*;
@@ -889,7 +890,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 }
                 return !(hasType(pk, Type.ICE) || HAIL_BENEFIT_ABILITIES.contains(ability));
             case MoveIDs.trickRoom:
-                return pk.getSpeed() > TRICK_ROOM_MAX_SPEED;
+                return pk.getBaseStats().getSpeed() > TRICK_ROOM_MAX_SPEED;
             case MoveIDs.waterSport:
                 // Water Sport only halves incoming Fire damage, so it is dead weight unless the mon fears Fire.
                 return !isWeakTo(pk, Type.FIRE);
@@ -905,10 +906,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // the wrong side of the mon's base-Speed curve - the damaging-move analogue of the Trick Room gate.
     private boolean isSpeedMismatchedVariableMove(Move mv, Species pk) {
         if (mv.number == MoveIDs.electroBall) {
-            return pk.getSpeed() < ELECTRO_BALL_MIN_SPEED;
+            return pk.getBaseStats().getSpeed() < ELECTRO_BALL_MIN_SPEED;
         }
         if (mv.number == MoveIDs.gyroBall) {
-            return pk.getSpeed() > GYRO_BALL_MAX_SPEED;
+            return pk.getBaseStats().getSpeed() > GYRO_BALL_MAX_SPEED;
         }
         return false;
     }
@@ -1280,7 +1281,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // Removal only: prunes moves that clash with the Pokemon's stats (stat anti-synergy).
     private List<Move> updateMovesConsideringStatSynergies(Species pk, List<Move> movesAtLevel) {
-        return removeAntiSynergyMoves(movesAtLevel, MoveSynergy.getStatMoveAntiSynergy(pk, movesAtLevel));
+        return removeAntiSynergyMoves(movesAtLevel, MoveSynergy.getStatMoveAntiSynergy(pk.getBaseStats(), movesAtLevel));
     }
 
     // Drops the anti-synergy moves from the pool, but never returns an empty pool (keeps the original if pruning
@@ -1318,8 +1319,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     }
 
     private double getAtkSpatkRatio(Species pk, int ability) {
-        int spatk = romHandler.generationOfPokemon() == 1 ? pk.getSpecial() : pk.getSpatk();
-        double atkSpatkRatio = (double) pk.getAttack() / (double) spatk;
+        int spatk = pk.getBaseStats() instanceof Gen1BaseStats gen1BaseStats ?
+                gen1BaseStats.getSpecial() : pk.getBaseStats().getSpatk();
+        double atkSpatkRatio = (double) pk.getBaseStats().getAttack() / (double) spatk;
         if (hasAbilities) {
             switch (ability) {
                 case AbilityIDs.hugePower:

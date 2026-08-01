@@ -17,6 +17,7 @@ import com.uprfvx.romio.gamedata.Trainer;
 import com.uprfvx.romio.gamedata.TrainerPokemon;
 import com.uprfvx.romio.gamedata.Type;
 import com.uprfvx.romio.gamedata.TypeTable;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
 import com.uprfvx.romio.romhandlers.Generation;
 import com.uprfvx.romio.romhandlers.RomHandler;
 import org.junit.jupiter.api.Test;
@@ -537,15 +538,18 @@ public class BetterMovesetsRandomizerTest {
                     if (weather != null) {
                         violations.add(romName + ": " + weather);
                     }
-                    if (moveID == MoveIDs.trickRoom && pk.getSpeed() > 60) {
-                        violations.add(romName + ": Trick Room on fast " + pk.getName() + " (spe " + pk.getSpeed() + ")");
+                    if (moveID == MoveIDs.trickRoom && pk.getBaseStats().getSpeed() > 60) {
+                        violations.add(romName + ": Trick Room on fast " + pk.getName()
+                                + " (spe " + pk.getBaseStats().getSpeed() + ")");
                     }
                     // Electro Ball wants a fast user, Gyro Ball a slow one (base-Speed gate mirrors the source).
-                    if (moveID == MoveIDs.electroBall && pk.getSpeed() < 90) {
-                        violations.add(romName + ": Electro Ball on slow " + pk.getName() + " (spe " + pk.getSpeed() + ")");
+                    if (moveID == MoveIDs.electroBall && pk.getBaseStats().getSpeed() < 90) {
+                        violations.add(romName + ": Electro Ball on slow " + pk.getName()
+                                + " (spe " + pk.getBaseStats().getSpeed() + ")");
                     }
-                    if (moveID == MoveIDs.gyroBall && pk.getSpeed() > 60) {
-                        violations.add(romName + ": Gyro Ball on fast " + pk.getName() + " (spe " + pk.getSpeed() + ")");
+                    if (moveID == MoveIDs.gyroBall && pk.getBaseStats().getSpeed() > 60) {
+                        violations.add(romName + ": Gyro Ball on fast " + pk.getName()
+                                + " (spe " + pk.getBaseStats().getSpeed() + ")");
                     }
                     // Water Sport / Mud Sport only halve incoming Fire / Electric damage, so they belong solely on
                     // mons that actually fear that type (2x+ weakness).
@@ -1107,11 +1111,11 @@ public class BetterMovesetsRandomizerTest {
     // Physical (1) / special (-1) / mixed (0) lean from raw base stats, mirroring the randomizer's 1.15 ratio
     // threshold. Approximate: ignores ability adjustments (Huge Power, etc.), so a few mons may differ.
     private static int attackerLean(Species pk, int gen) {
-        int spatk = gen == 1 ? pk.getSpecial() : pk.getSpatk();
+        int spatk = gen == 1 ? ((Gen1BaseStats) pk.getBaseStats()).getSpecial() : pk.getBaseStats().getSpatk();
         if (spatk <= 0) {
             return 1;
         }
-        double ratio = (double) pk.getAttack() / spatk;
+        double ratio = (double) pk.getBaseStats().getAttack() / spatk;
         if (ratio >= 1.15) {
             return 1;
         }
