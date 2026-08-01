@@ -449,8 +449,7 @@ public class StarterRandomizerTest extends RandomizerTest {
     private void startersInBSTRangeCheck(int minimumBST, int maximumBST) {
         for(Species starter : romHandler.getStarters()) {
             System.out.println(starter);
-            assertTrue(starter.getBSTForPowerLevels() >= minimumBST &&
-                    starter.getBSTForPowerLevels() <= maximumBST);
+            assertTrue(starter.getBST(false) >= minimumBST && starter.getBST(false) <= maximumBST);
         }
     }
 

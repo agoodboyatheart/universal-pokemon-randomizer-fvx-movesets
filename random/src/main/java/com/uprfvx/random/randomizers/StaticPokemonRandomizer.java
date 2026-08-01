@@ -172,8 +172,7 @@ public class StaticPokemonRandomizer extends Randomizer {
                 StaticEncounter newStatic = cloneStaticEncounter(old);
                 Species newPK;
                 Species oldPK = old.getSpecies();
-                int oldBST = oldPK.getBSTForPowerLevels();
-                if (oldBST >= 600 && limit600) {
+                if (oldPK.getBST(true) >= 600 && limit600) {
                     if (reallySwapMegaEvos && old.canMegaEvolve()) {
                         newPK = getMegaEvoPokemon(rSpecService.getAll(false), pokemonLeft, newStatic);
                     } else {
@@ -190,21 +189,21 @@ public class StaticPokemonRandomizer extends Randomizer {
                     if (reallySwapMegaEvos && old.canMegaEvolve()) {
                         SpeciesSet megaEvoPokemonLeft = rSpecService.getMegaEvolutions()
                                 .stream()
-                                .filter(MegaEvolution::isNeedsItem)
-                                .map(MegaEvolution::getFrom)
+                                .filter(Species::needsMegaEvolutionItem)
+                                .map(Species::getBaseForme)
                                 .filter(pokemonLeft::contains)
                                 .collect(Collectors.toCollection(SpeciesSet::new));
                         if (megaEvoPokemonLeft.isEmpty()) {
                             megaEvoPokemonLeft = rSpecService.getMegaEvolutions()
                                     .stream()
-                                    .filter(MegaEvolution::isNeedsItem)
-                                    .map(MegaEvolution::getFrom)
+                                    .filter(Species::needsMegaEvolutionItem)
+                                    .map(Species::getBaseForme)
                                     .filter(rSpecService.getAll(false)::contains)
                                     .collect(Collectors.toCollection(SpeciesSet::new));
                         }
                         if(limitBST) {
-                            int bstMax = oldPK.getBSTForPowerLevels();
-                            SpeciesSet lowerStrengthMEs = megaEvoPokemonLeft.filter(p -> p.getBSTForPowerLevels() <= bstMax);
+                            int bstMax = oldPK.getBST(true);
+                            SpeciesSet lowerStrengthMEs = megaEvoPokemonLeft.filter(p -> p.getBST(false) <= bstMax);
                             if(!lowerStrengthMEs.isEmpty()) {
                                 megaEvoPokemonLeft = lowerStrengthMEs;
                             }
@@ -215,9 +214,11 @@ public class StaticPokemonRandomizer extends Randomizer {
                                 true,
                                 limitBST);
                         newStatic.setHeldItem(newPK
-                                .getMegaEvolutionsFrom()
-                                .get(random.nextInt(newPK.getMegaEvolutionsFrom().size()))
-                                .getItem());
+                                .getAltFormes()
+                                .filter(Species::isMegaEvolution)
+                                .getRandomSpecies(random)
+                                .getMegaEvolutionItem()
+                        );
                     } else {
                         if (old.isRestrictedPool()) {
                             SpeciesSet restrictedPool = pokemonLeft
@@ -450,11 +451,11 @@ public class StaticPokemonRandomizer extends Randomizer {
 
     private Species getMegaEvoPokemon(SpeciesSet fullList, SpeciesSet pokemonLeft,
                                       StaticEncounter newStatic) {
-        Set<MegaEvolution> megaEvos = rSpecService.getMegaEvolutions();
+        SpeciesSet megaEvos = rSpecService.getMegaEvolutions();
         SpeciesSet megaEvoPokemon = megaEvos
                 .stream()
-                .filter(MegaEvolution::isNeedsItem)
-                .map(MegaEvolution::getFrom)
+                .filter(Species::needsMegaEvolutionItem)
+                .map(Species::getBaseForme)
                 .collect(Collectors.toCollection(SpeciesSet::new));
         SpeciesSet megaEvoPokemonLeft = new SpeciesSet(megaEvoPokemon).filter(pokemonLeft::contains);
         if (megaEvoPokemonLeft.isEmpty()) {
@@ -464,9 +465,11 @@ public class StaticPokemonRandomizer extends Randomizer {
         Species newPK = megaEvoPokemonLeft.getRandomSpecies(random);
         pokemonLeft.remove(newPK);
         newStatic.setHeldItem(newPK
-                .getMegaEvolutionsFrom()
-                .get(random.nextInt(newPK.getMegaEvolutionsFrom().size()))
-                .getItem());
+                .getAltFormes()
+                .filter(Species::isMegaEvolution)
+                .getRandomSpecies(random)
+                .getMegaEvolutionItem()
+        );
         return newPK;
     }
 
@@ -474,8 +477,8 @@ public class StaticPokemonRandomizer extends Randomizer {
                                                   boolean banSamePokemon, boolean limitBST) {
         SpeciesSet finalPool = pokemonPool;
         if(limitBST) {
-            int maxBST = current.getBSTForPowerLevels();
-            finalPool = finalPool.filter(p -> p.getBSTForPowerLevels() <= maxBST);
+            int maxBST = current.getBST(false);
+            finalPool = finalPool.filter(p -> p.getBST(true) <= maxBST);
         }
 
         return finalPool.getRandomSimilarStrengthSpecies(current, banSamePokemon, random);
