@@ -298,9 +298,10 @@ public class TrainerPokemonRandomizer extends Randomizer {
 
                 if (swapThisMegaEvo) {
                     tp.setHeldItem(newSp
-                            .getMegaEvolutionsFrom()
-                            .get(random.nextInt(newSp.getMegaEvolutionsFrom().size()))
-                            .getItem());
+                            .getAltFormes()
+                            .filter(Species::isMegaEvolution)
+                            .getRandomSpecies(random)
+                            .getMegaEvolutionItem());
                 }
 
                 if (shinyChance) {
@@ -496,8 +497,8 @@ public class TrainerPokemonRandomizer extends Randomizer {
         if (swapMegaEvos) {
             pickFrom = rSpecService.getMegaEvolutions()
                     .stream()
-                    .filter(MegaEvolution::isNeedsItem)
-                    .map(MegaEvolution::getFrom)
+                    .filter(Species::needsMegaEvolutionItem)
+                    .map(Species::getBaseForme)
                     .collect(Collectors.toCollection(SpeciesSet::new));
         } else {
             pickFrom = cacheOrReplacement;

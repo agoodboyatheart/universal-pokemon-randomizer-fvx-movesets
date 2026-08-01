@@ -22,7 +22,7 @@ package com.uprfvx.random.randomizers;
 /*----------------------------------------------------------------------------*/
 
 import com.uprfvx.random.Settings;
-import com.uprfvx.romio.gamedata.Gen1Species;
+import com.uprfvx.romio.gamedata.Species;
 import com.uprfvx.romio.gamedata.Type;
 import com.uprfvx.romio.gamedata.cueh.BasicSpeciesAction;
 import com.uprfvx.romio.gamedata.cueh.CopyUpEvolutionsHelper;
@@ -72,9 +72,12 @@ public class Gen1PaletteRandomizer extends PaletteRandomizer {
 		this.typeSanity = settings.isPokemonPalettesFollowTypes();
 		boolean evolutionSanity = settings.isPokemonPalettesFollowEvolutions();
 
-		// has to use a separate CopyUpEvolutionsHelper which works with Gen1Pokemon
-		CopyUpEvolutionsHelper<Gen1Species> cueh = new CopyUpEvolutionsHelper<>(romHandler::getSpeciesSet);
-		cueh.apply(evolutionSanity, true, new BaseSpeciesIDAction(), new EvolvedSpeciesIDAction());
+		CopyUpEvolutionsHelper.Options cuehOptions = new CopyUpEvolutionsHelper.Options
+				.Builder(new BaseSpeciesIDAction(), new EvolvedSpeciesIDAction())
+				.evolutionSanity(evolutionSanity)
+				.copySplitEvos(true)
+				.build();
+		copyUpEvolutionsHelper.apply(cuehOptions);
 	}
 
 	private SGBPaletteID getRandomPaletteID() {
@@ -86,19 +89,19 @@ public class Gen1PaletteRandomizer extends PaletteRandomizer {
 		return typeIDs == null ? DEFAULT_PALETTE_ID : typeIDs[random.nextInt(typeIDs.length)];
 	}
 
-	private class BaseSpeciesIDAction implements BasicSpeciesAction<Gen1Species> {
+	private class BaseSpeciesIDAction implements BasicSpeciesAction {
 
 		@Override
-		public void applyTo(Gen1Species pk) {
+		public void applyTo(Species pk) {
 			pk.setPaletteID(typeSanity ? getRandomPaletteID(pk.getPrimaryType(false)) : getRandomPaletteID());
 		}
 
 	}
 
-	private class EvolvedSpeciesIDAction implements EvolvedSpeciesAction<Gen1Species> {
+	private class EvolvedSpeciesIDAction implements EvolvedSpeciesAction {
 
 		@Override
-		public void applyTo(Gen1Species evFrom, Gen1Species evTo, boolean toMonIsFinalEvo) {
+		public void applyTo(Species evFrom, Species evTo, boolean toMonIsFinalEvo) {
 			SGBPaletteID newPaletteID;
 			if (typeSanity && !evTo.getPrimaryType(false).equals(evFrom.getPrimaryType(false))) {
 				SGBPaletteID[] typeIDs = TYPE_PALETTE_IDS.get(evTo.getPrimaryType(false));

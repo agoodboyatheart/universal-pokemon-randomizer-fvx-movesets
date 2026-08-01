@@ -1,7 +1,6 @@
 package com.uprfvx.random.randomizers;
 
 import com.uprfvx.random.Settings;
-import com.uprfvx.romio.gamedata.MegaEvolution;
 import com.uprfvx.romio.gamedata.Species;
 import com.uprfvx.romio.gamedata.SpeciesSet;
 import com.uprfvx.romio.gamedata.StaticEncounter;
@@ -161,8 +160,8 @@ public class StaticPokemonRandomizerTest extends RandomizerTest {
         // swap to a Mega-capable species would have zero valid (non-fallback) picks - a genuine "pool
         // exhausted" case per the fallback rule, not a bug, but one this test isn't meant to exercise.
         SpeciesSet megaCapable = romHandler.getRestrictedSpeciesService().getMegaEvolutions().stream()
-                .filter(MegaEvolution::isNeedsItem)
-                .map(MegaEvolution::getFrom)
+                .filter(Species::needsMegaEvolutionItem)
+                .map(Species::getBaseForme)
                 .collect(Collectors.toCollection(SpeciesSet::new));
         claimed.removeAll(megaCapable);
 
