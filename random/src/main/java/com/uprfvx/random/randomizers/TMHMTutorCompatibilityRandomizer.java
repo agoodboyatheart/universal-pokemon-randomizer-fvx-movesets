@@ -198,9 +198,16 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
      * status - because its status half is dominated by the universal tier of teach-anyone utility
      * moves. Tutor status moves have no such tier: they are things like Heal Bell and Magic Coat,
      * handed to the specific families that thematically own them.
+     * <p>
+     * The status figure was re-fitted from 21.0 to 32.0 alongside
+     * {@link #TUTORC_NORMAL_STAB_DAMPING}. The two overlap: the status row counts Normal-typed
+     * status tutors as well, so damping Normal drags the whole status lift down as a side effect
+     * (Ultra Sun 5.08x to 4.72x with the damping and the old 21.0). They are therefore fitted
+     * together against the harness rather than stacked from independent measurements, the same way
+     * the BST ladder and the stand-alone term were.
      */
     public static double TUTORC_STAB_MULT = 6.5;
-    public static double TUTORC_STATUS_STAB_MULT = 21.0;
+    public static double TUTORC_STATUS_STAB_MULT = 32.0;
 
     /**
      * Breadth bonus for a Normal-typed tutor move. Unlike {@link #TMC_NORMAL_MULT} this does
@@ -213,6 +220,32 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
      * tutors are still somewhat broader than average, which is what this carries.
      */
     public static double TUTORC_NORMAL_MULT = 1.2;
+
+    /**
+     * Fraction of the tutor type lift a Normal-typed tutor move keeps. <b>Tutor pool only</b>; the TM
+     * pool returns before the type lift is reached at all.
+     * <p>
+     * Normal sits between the two cases the model already had. It is not the TM pool's null case -
+     * vanilla measures a real 1.51-1.63x Normal tutor lift on the Gen 4-7 ROMs, so
+     * {@link #TUTORC_NORMAL_MULT}'s fall-through to ordinary type handling is right in kind. But it
+     * is far below an ordinary tutor STAB (3.70x damaging, 5.36x status on Ultra Sun vanilla), and
+     * giving Normal the full lift measured 2.23x against that 1.58x - proportionally the largest
+     * error left in the series. A Normal move is partly universal filler and partly a real
+     * type-identity move, and this is the split.
+     * <p>
+     * {@link #TUTORC_NORMAL_MULT} cannot do this job and should not be retried for it: it multiplies
+     * Normal moves for on-type and off-type species alike, so it moves Normal's overall breadth and
+     * leaves the on/off <i>ratio</i> almost exactly where it was. The ratio is set here.
+     * <p>
+     * Fitted on the Gen 5-7 ROMs, per the C-series precedent, jointly with
+     * {@link #TUTORC_STATUS_STAB_MULT} - see there for why the two cannot be fitted separately.
+     * Together they take the summed tutor type-lift error over Black 2, Omega Ruby and Ultra Sun
+     * from 3.03 to 1.85. Emerald improves as well (Normal 1.41x to 1.25x against vanilla's 1.12x),
+     * so no generation-aware value is needed. Sweeping below ~0.2 overshoots: at 0.10 every lift
+     * collapses, Normal included, because the budget freed from the Normal on-type pairs floods the
+     * off-type ones.
+     */
+    public static double TUTORC_NORMAL_STAB_DAMPING = 0.28;
 
     /**
      * Extra breadth for status tutors over damaging ones. <b>Below 1.0</b> - again the reverse of
@@ -252,23 +285,28 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
      * @param normalIsNullCase whether a Normal-typed move gets {@code normalMult} <i>instead of</i>
      *                         any type lift (the TM pool, where Normal is universal filler) or
      *                         <i>as well as</i> it (the tutor pool, which has no such filler)
+     * @param normalStabDamping fraction of the type lift a Normal-typed move keeps. Only reachable
+     *                         on a pool with {@code normalIsNullCase} false, so the TM pool's 1.0 is
+     *                         inert by construction rather than by being a neutral number.
      * @param floorGymTMs      whether {@link #floorGymLeaderTMs} applies - TM pool only, since a gym
      *                         reward is always a TM
      */
     private record PoolTuning(double[] tierMultipliers, double[] tierShares, int minTieredPool,
                               double stabMult, double statusStabMult, double normalMult,
-                              boolean normalIsNullCase, double statusBreadthMult,
+                              boolean normalIsNullCase, double normalStabDamping,
+                              double statusBreadthMult,
                               double levelUpIdentityMult, boolean floorGymTMs) {
 
         static PoolTuning forTMs() {
             return new PoolTuning(TMC_TIER_MULTIPLIERS, TMC_TIER_SHARES, 0,
-                    TMC_STAB_MULT, TMC_STATUS_STAB_MULT, TMC_NORMAL_MULT, true,
+                    TMC_STAB_MULT, TMC_STATUS_STAB_MULT, TMC_NORMAL_MULT, true, 1.0,
                     TMC_STATUS_BREADTH_MULT, TMC_LEVELUP_IDENTITY_MULT, true);
         }
 
         static PoolTuning forTutors() {
             return new PoolTuning(TUTORC_TIER_MULTIPLIERS, TUTORC_TIER_SHARES, TUTORC_MIN_TIERED_POOL,
                     TUTORC_STAB_MULT, TUTORC_STATUS_STAB_MULT, TUTORC_NORMAL_MULT, false,
+                    TUTORC_NORMAL_STAB_DAMPING,
                     TUTORC_STATUS_BREADTH_MULT, TUTORC_LEVELUP_IDENTITY_MULT, false);
         }
     }
@@ -481,6 +519,13 @@ public class TMHMTutorCompatibilityRandomizer extends Randomizer {
             // inverts this (3.7x damaging against 5.4x status), which is why the two multipliers are
             // per-pool rather than one pair of constants.
             weight *= status ? tuning.statusStabMult() : tuning.stabMult();
+            if (normal) {
+                // Normal is only half a type here. On the tutor pool it carries real identity - a
+                // Normal-type species does learn Normal tutors more often - but nothing like a
+                // proper STAB, so it takes a fraction of the lift the branch above just applied.
+                // Unreachable on the TM pool, which returns at the null case before getting here.
+                weight *= tuning.normalStabDamping();
+            }
         } else if (levelUpAttackingTypes.contains(mv.type)) {
             // C4, and deliberately only for off-type moves. A species nearly always has an attacking
             // move of its own type by level-up, so applying this on top of STAB compounds the two and

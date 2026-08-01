@@ -190,6 +190,9 @@ public class TMTutorPoolProfileRandomizerTest {
         TMHMTutorCompatibilityRandomizer.TUTORC_NORMAL_MULT =
                 Double.parseDouble(System.getProperty("tm.tutorNormalMult",
                         String.valueOf(TMHMTutorCompatibilityRandomizer.TUTORC_NORMAL_MULT)));
+        TMHMTutorCompatibilityRandomizer.TUTORC_NORMAL_STAB_DAMPING =
+                Double.parseDouble(System.getProperty("tm.tutorNormalStabDamping",
+                        String.valueOf(TMHMTutorCompatibilityRandomizer.TUTORC_NORMAL_STAB_DAMPING)));
         TMHMTutorCompatibilityRandomizer.TUTORC_STATUS_BREADTH_MULT =
                 Double.parseDouble(System.getProperty("tm.tutorStatusBreadthMult",
                         String.valueOf(TMHMTutorCompatibilityRandomizer.TUTORC_STATUS_BREADTH_MULT)));
