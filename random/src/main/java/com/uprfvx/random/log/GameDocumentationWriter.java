@@ -84,6 +84,7 @@ public class GameDocumentationWriter {
         writeGame();
         writeCapabilities();
         writeSpecies();
+        writeStarters();
         writeTrainers();
         writeEncounters();
         writeTmsAndTutors();
@@ -206,6 +207,35 @@ public class GameDocumentationWriter {
         w.endObject();
     }
 
+    private void writeStarters() {
+        w.name("starters").beginArray();
+        List<Species> starters = romHandler.getStarters();
+        List<Item> heldItems = romHandler.getStarterHeldItems();
+        for (int i = 0; i < starters.size(); i++) {
+            w.beginObject();
+            w.name("slot").value(i + 1);
+            w.name("species").value(starters.get(i).getNumber());
+            Item heldItem = resolveStarterHeldItem(heldItems, starters.size(), i);
+            w.name("heldItem").value(heldItem == null ? null : heldItem.getName());
+            w.endObject();
+        }
+        w.endArray();
+    }
+
+    /**
+     * heldItems is either one entry shared by every starter, one entry per starter, or empty —
+     * mirrors the exact shapes RandomizationLogger.logStarters() already handles.
+     */
+    private static Item resolveStarterHeldItem(List<Item> heldItems, int starterCount, int index) {
+        if (heldItems.size() == 1) {
+            return heldItems.get(0);
+        }
+        if (heldItems.size() == starterCount) {
+            return heldItems.get(index);
+        }
+        return null;
+    }
+
     /**
      * Only trainers where {@code isBoss() || isImportant()} are emitted — regular trainers are
      * deliberately out of scope for the documentation.
@@ -223,6 +253,22 @@ public class GameDocumentationWriter {
             writeOneTrainer(t, typeThemes, progressionOrderByTrainerIndex, gen7EVsAndNature);
         }
         w.endArray();
+    }
+
+    /**
+     * Trainer.getTag() carries a per-battle suffix ("GYM1-LEADER", "ELITE1-1") that the theme
+     * map's keys ("GYM1", "ELITE1") don't have; TrainerPokemonRandomizer.getTrainerGroups()
+     * strips the same way, and folds Giovanni's Team Rocket boss tag into his gym's group.
+     */
+    private static Type resolveTypeTheme(String tag, Map<String, Type> typeThemes) {
+        if (tag == null || typeThemes == null) {
+            return null;
+        }
+        String group = tag.contains("-") ? tag.substring(0, tag.indexOf('-')) : tag;
+        if (group.startsWith("GIO")) {
+            group = "GYM8";
+        }
+        return typeThemes.get(group);
     }
 
     private Map<Integer, Integer> buildProgressionOrderIndex() {
@@ -245,7 +291,7 @@ public class GameDocumentationWriter {
         w.name("isBoss").value(t.isBoss());
         w.name("isImportant").value(t.isImportant());
 
-        Type typeTheme = t.getTag() == null ? null : typeThemes.get(t.getTag());
+        Type typeTheme = resolveTypeTheme(t.getTag(), typeThemes);
         w.name("typeTheme").value(typeTheme == null ? null : typeTheme.name());
 
         w.name("levelCap").value(RandomizationLogger.getMaxGymLeaderLevel(t));

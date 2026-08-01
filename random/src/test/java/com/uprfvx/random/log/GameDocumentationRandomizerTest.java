@@ -143,6 +143,27 @@ public class GameDocumentationRandomizerTest {
     }
 
     @Test
+    public void resolvesGymLeaderTypeThemesDespiteTagSuffix() {
+        // Brock's tag is "GYM1-LEADER", not the theme map's bare "GYM1" key — this must still
+        // resolve to Rock rather than silently falling back to null.
+        RomHandler rh = load("Fire Red");
+        String json = writeDocumentation(rh, newSettings(rh), 12345L);
+
+        assertTrue(json.contains("\"tag\":\"GYM1-LEADER\",\"isBoss\":true,\"isImportant\":false,"
+                        + "\"typeTheme\":\"ROCK\""),
+                "Brock's GYM1-LEADER tag did not resolve to a Rock type theme");
+    }
+
+    @Test
+    public void emitsStartersWithSpeciesAndSlot() {
+        RomHandler rh = load("Fire Red");
+        String json = writeDocumentation(rh, newSettings(rh), 12345L);
+
+        assertTrue(json.contains("\"starters\""), "starters array missing");
+        assertTrue(json.contains("\"slot\":1"), "starter slot numbering missing");
+    }
+
+    @Test
     public void emitsAreasInProgressionOrderWithSlotCountsNotPercentages() {
         RomHandler rh = load("Fire Red");
         String json = writeDocumentation(rh, newSettings(rh), 12345L);
@@ -184,6 +205,7 @@ public class GameDocumentationRandomizerTest {
             assertTrue(json.startsWith("{\"schemaVersion\":1"), game + ": missing schema header");
             assertTrue(json.endsWith("}"), game + ": JSON does not close cleanly");
             assertTrue(json.contains("\"species\""), game + ": species missing");
+            assertTrue(json.contains("\"starters\""), game + ": starters missing");
             assertTrue(json.contains("\"trainers\""), game + ": trainers missing");
             assertTrue(json.contains("\"encounters\""), game + ": encounters missing");
             // "moves" alone would also match trainers[].pokemon[].moves (Task 3) — check the
