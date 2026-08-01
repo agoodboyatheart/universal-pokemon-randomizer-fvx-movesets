@@ -25,6 +25,7 @@ import com.uprfvx.random.Settings;
 import com.uprfvx.random.exceptions.RandomizationException;
 import com.uprfvx.romio.gamedata.Species;
 import com.uprfvx.romio.gamedata.cueh.BasicSpeciesAction;
+import com.uprfvx.romio.gamedata.cueh.CopyUpEvolutionsHelper;
 import com.uprfvx.romio.gamedata.cueh.EvolvedSpeciesAction;
 import com.uprfvx.romio.graphics.palettes.*;
 import com.uprfvx.romio.romhandlers.RomHandler;
@@ -88,8 +89,12 @@ public class Gen3to5PaletteRandomizer extends PaletteRandomizer {
 			throw new RandomizationException("Could not randomize palettes, unrecognized romtype.");
 		}
 
-		copyUpEvolutionsHelper.apply(evolutionSanity, true, new BasicSpeciesPaletteAction(),
-				new EvolvedSpeciesPaletteAction());
+		CopyUpEvolutionsHelper.Options cuehOptions = new CopyUpEvolutionsHelper.Options
+				.Builder(new BasicSpeciesPaletteAction(), new EvolvedSpeciesPaletteAction())
+				.evolutionSanity(evolutionSanity)
+				.copySplitEvos(true)
+				.build();
+		copyUpEvolutionsHelper.apply(cuehOptions);
 		List<PaletteDescription> paletteDescriptions = getPaletteDescriptions("pokePalettes");
 		populatePokemonPalettes(paletteDescriptions);
 
@@ -195,7 +200,7 @@ public class Gen3to5PaletteRandomizer extends PaletteRandomizer {
 		return "src/main/java/resources/com/uprfvx/romio/graphics/" + getFileName(fileKey);
 	}
 
-	private class BasicSpeciesPaletteAction implements BasicSpeciesAction<Species> {
+	private class BasicSpeciesPaletteAction implements BasicSpeciesAction {
 
 		@Override
 		public void applyTo(Species pk) {
@@ -210,7 +215,7 @@ public class Gen3to5PaletteRandomizer extends PaletteRandomizer {
 
 	}
 
-	private class EvolvedSpeciesPaletteAction implements EvolvedSpeciesAction<Species> {
+	private class EvolvedSpeciesPaletteAction implements EvolvedSpeciesAction {
 
 		@Override
 		public void applyTo(Species evFrom, Species evTo, boolean toMonIsFinalEvo) {

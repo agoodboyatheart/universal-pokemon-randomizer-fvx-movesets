@@ -32,6 +32,7 @@ public class EvolutionRandomizer extends Randomizer {
         boolean evolveEveryLevel = settings.getEvolutionsMod() == Settings.EvolutionsMod.RANDOM_EVERY_LEVEL;
         randomizeEvolutions(similarStrength, sameType, limitToThreeStages, forceChange, forceGrowth, noConvergence,
                 banIrregularAltFormes, abilitiesAreRandomized, evolveEveryLevel);
+
         changesMade = true;
     }
 
@@ -172,9 +173,6 @@ public class EvolutionRandomizer extends Randomizer {
             } else {
                 newEvo = new Evolution(from, picked, evo.getType(), evo.getExtraInfo(), evo.getEstimatedEvoLvl());
             }
-            if (newEvo.getType() == EvolutionType.LEVEL_FEMALE_ESPURR) {
-                newEvo.updateEvolutionMethod(EvolutionType.LEVEL_FEMALE_ONLY, newEvo.getExtraInfo());
-            }
             return newEvo;
         }
 
@@ -196,7 +194,7 @@ public class EvolutionRandomizer extends Randomizer {
                 filters.add(to -> !isAnOriginalEvo(from, to));
             }
             if (forceGrowth) {
-                filters.add(to -> to.getBSTForPowerLevels() > from.getBSTForPowerLevels());
+                filters.add(to -> to.getBST(false) > from.getBST(false));
             }
             if (sameType) {
                 if (from.getNumber() == SpeciesIDs.eevee && !evolveEveryLevel) {
@@ -300,6 +298,14 @@ public class EvolutionRandomizer extends Randomizer {
         private boolean isAnOriginalEvo(Species from, Species to) {
             return allOriginalEvos.get(from).stream().map(Evolution::getTo).toList().contains(to);
         }
+    }
+
+    /**
+     * Wraps {@link RomHandler#adjustEvolutionLevels()}, but also sets changesMade = true.
+     */
+    public void adjustEvolutionLevels() {
+        romHandler.adjustEvolutionLevels();
+        changesMade = true;
     }
 
 }

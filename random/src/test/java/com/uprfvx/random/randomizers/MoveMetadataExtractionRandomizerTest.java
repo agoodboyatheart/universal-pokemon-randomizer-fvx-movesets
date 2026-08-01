@@ -29,7 +29,7 @@ public class MoveMetadataExtractionRandomizerTest {
 
     private static final String ROMS_PATH = System.getProperty("romsPath");
     private static final String GAME_NAME = "Ultra Sun";
-    private static final String FILE_BASE_NAME = "Pokemon Ultra Sun-decrypted";
+    private static final String FILE_BASE_NAME = "Ultra Sun";
 
     @Test
     public void dumpPlannedMoveMetadata() {
