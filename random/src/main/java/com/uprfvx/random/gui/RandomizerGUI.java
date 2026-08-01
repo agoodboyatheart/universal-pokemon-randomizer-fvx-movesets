@@ -1298,7 +1298,8 @@ public class RandomizerGUI {
                         true, settings.toString(), Long.toString(seed));
             }
             SwingUtilities.invokeLater(() -> finishRandomization(
-                    filename, seed, cpg, baos, results.getCheckValue(), raceMode, batchRandomization
+                    filename, seed, cpg, baos, results.getDocumentationJson(), results.getCheckValue(),
+                    raceMode, batchRandomization
             ));
         } else {
             Exception e = results.getException();
@@ -1324,6 +1325,7 @@ public class RandomizerGUI {
     private void finishRandomization(String filename, long seed,
                                      CustomPlayerGraphics cpg,
                                      ByteArrayOutputStream baos,
+                                     String documentationJson,
                                      int checkValue,
                                      boolean raceMode, boolean batchRandomization) {
         if (cpg != null) {
@@ -1332,7 +1334,7 @@ public class RandomizerGUI {
 
         opDialog.setVisible(false);
 
-        showSaveLogDialog(filename, baos, checkValue, raceMode, batchRandomization);
+        showSaveOutputsDialog(filename, baos, documentationJson, checkValue, raceMode, batchRandomization);
 
         if (presetMode) {
             JOptionPane.showMessageDialog(frame,
@@ -1355,9 +1357,9 @@ public class RandomizerGUI {
 
     }
 
-    private void showSaveLogDialog(String filename, ByteArrayOutputStream baos,
-                                   int checkValue,
-                                   boolean raceMode, boolean batchRandomization) {
+    private void showSaveOutputsDialog(String filename, ByteArrayOutputStream baos, String documentationJson,
+                                       int checkValue,
+                                       boolean raceMode, boolean batchRandomization) {
         byte[] out = baos.toByteArray();
         if (raceMode) {
             JOptionPane.showMessageDialog(frame,
@@ -1370,19 +1372,41 @@ public class RandomizerGUI {
                         bundle.getString("GUI.logSaveFailed"));
             }
         } else if (!batchRandomization) {
-            int response = JOptionPane.showConfirmDialog(frame,
-                    bundle.getString("GUI.saveLogDialog.text"),
-                    bundle.getString("GUI.saveLogDialog.title"),
-                    JOptionPane.YES_NO_OPTION);
-            if (response == JOptionPane.YES_OPTION) {
+            String[] options = {
+                    bundle.getString("GUI.saveOutputsDialog.both"),
+                    bundle.getString("GUI.saveOutputsDialog.log"),
+                    bundle.getString("GUI.saveOutputsDialog.documentation"),
+                    bundle.getString("GUI.saveOutputsDialog.neither")
+            };
+            int response = JOptionPane.showOptionDialog(frame,
+                    bundle.getString("GUI.saveOutputsDialog.text"),
+                    bundle.getString("GUI.saveOutputsDialog.title"),
+                    JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
+                    null, options, options[0]);
+            boolean wantLog = response == 0 || response == 1;
+            // A documentation generation failure degrades gracefully to log-only rather than
+            // throwing when the user picked Both/Documentation.
+            boolean wantDoc = (response == 0 || response == 2) && documentationJson != null;
+
+            if (wantLog) {
                 try {
                     saveLogFile(filename, "log", out);
+                    JOptionPane.showMessageDialog(frame,
+                            String.format(bundle.getString("GUI.logSaved"), filename));
                 } catch (IOException e) {
                     JOptionPane.showMessageDialog(frame,
                             bundle.getString("GUI.logSaveFailed"));
                 }
-                JOptionPane.showMessageDialog(frame,
-                        String.format(bundle.getString("GUI.logSaved"), filename));
+            }
+            if (wantDoc) {
+                try {
+                    saveDocumentationFile(filename, documentationJson);
+                    JOptionPane.showMessageDialog(frame,
+                            String.format(bundle.getString("GUI.docSaved"), filename));
+                } catch (IOException e) {
+                    JOptionPane.showMessageDialog(frame,
+                            bundle.getString("GUI.docSaveFailed"));
+                }
             }
         }
     }
@@ -1399,6 +1423,14 @@ public class RandomizerGUI {
         fos.write(0xBB);
         fos.write(0xBF);
         fos.write(out);
+        fos.close();
+    }
+
+    // No BOM here, unlike saveLogFile — JsonWriter already escapes all non-ASCII, so the bytes are
+    // pure ASCII, and a BOM would break json.load() in the Phase B renderer.
+    private void saveDocumentationFile(String filename, String json) throws IOException {
+        FileOutputStream fos = new FileOutputStream(filename + ".json");
+        fos.write(json.getBytes(StandardCharsets.UTF_8));
         fos.close();
     }
 
