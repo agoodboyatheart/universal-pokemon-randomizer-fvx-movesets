@@ -66,6 +66,7 @@ public class JsonWriter {
     }
 
     public JsonWriter value(long v)     { separate(); out.append(v); return this; }
+    public JsonWriter value(double v)   { separate(); out.append(v); return this; }
     public JsonWriter value(boolean v)  { separate(); out.append(v); return this; }
     public JsonWriter nullValue()       { separate(); out.append("null"); return this; }
 

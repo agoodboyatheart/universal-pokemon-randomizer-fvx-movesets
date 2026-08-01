@@ -62,4 +62,12 @@ public class JsonWriterTest {
         new JsonWriter(sb).beginObject().name("k").value("Nidoran♀").endObject();
         assertEquals("{\"k\":\"Nidoran\\u2640\"}", sb.toString());
     }
+
+    @Test
+    public void writesDoubleValues() {
+        // Move.hitratio (accuracy) is a double — e.g. 100.0 for a never-miss move.
+        StringBuilder sb = new StringBuilder();
+        new JsonWriter(sb).beginObject().name("accuracy").value(100.0).endObject();
+        assertEquals("{\"accuracy\":100.0}", sb.toString());
+    }
 }

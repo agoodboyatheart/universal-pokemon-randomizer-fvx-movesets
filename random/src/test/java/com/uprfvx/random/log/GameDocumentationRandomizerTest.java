@@ -157,4 +157,38 @@ public class GameDocumentationRandomizerTest {
         assertFalse(json.contains("\"percent\""), "slot percentages are authored data");
         assertFalse(json.contains("\"location\":"), "static locations are authored data");
     }
+
+    @Test
+    public void emitsTmsAndCompatibilityAsSparseIndexLists() {
+        RomHandler rh = load("Fire Red");
+        String json = writeDocumentation(rh, newSettings(rh), 12345L);
+
+        assertTrue(json.contains("\"tms\""), "tms missing");
+        assertTrue(json.contains("\"hms\""), "hms missing");
+        assertTrue(json.contains("\"tutors\""), "tutors missing");
+        assertTrue(json.contains("\"compatibility\""), "compatibility missing");
+        assertTrue(json.contains("\"moves\""), "move table missing");
+        assertFalse(json.contains("true,true,true"), "compatibility must be sparse, not dense");
+    }
+
+    @Test
+    public void writesValidLookingJsonAcrossGenerations() {
+        // Cross-generation smoke test: proves the capability guards (abilitiesPerSpecies,
+        // hasMoveTutors, hasPhysicalSpecialSplit, ...) hold outside Gen 1/3. Deliberately excludes
+        // 3DS ROMs (Gen 6/7) — see test-roms-harness.md, they trigger initializationError here.
+        for (String game : new String[] { "Crystal", "Emerald", "Platinum", "HeartGold", "White 2" }) {
+            RomHandler rh = load(game);
+            String json = writeDocumentation(rh, newSettings(rh), 12345L);
+
+            assertTrue(json.length() > 1000, game + ": documentation JSON suspiciously short");
+            assertTrue(json.startsWith("{\"schemaVersion\":1"), game + ": missing schema header");
+            assertTrue(json.endsWith("}"), game + ": JSON does not close cleanly");
+            assertTrue(json.contains("\"species\""), game + ": species missing");
+            assertTrue(json.contains("\"trainers\""), game + ": trainers missing");
+            assertTrue(json.contains("\"encounters\""), game + ": encounters missing");
+            // "moves" alone would also match trainers[].pokemon[].moves (Task 3) — check the
+            // move-table-specific "compatibility" key instead to actually exercise Task 5.
+            assertTrue(json.contains("\"compatibility\""), game + ": TM/tutor compatibility missing");
+        }
+    }
 }

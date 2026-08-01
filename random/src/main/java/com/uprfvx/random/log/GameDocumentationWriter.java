@@ -32,6 +32,7 @@ import com.uprfvx.romio.gamedata.EncounterType;
 import com.uprfvx.romio.gamedata.Evolution;
 import com.uprfvx.romio.gamedata.InGameTrade;
 import com.uprfvx.romio.gamedata.Item;
+import com.uprfvx.romio.gamedata.Move;
 import com.uprfvx.romio.gamedata.MoveLearnt;
 import com.uprfvx.romio.gamedata.Species;
 import com.uprfvx.romio.gamedata.StaticEncounter;
@@ -85,6 +86,8 @@ public class GameDocumentationWriter {
         writeSpecies();
         writeTrainers();
         writeEncounters();
+        writeTmsAndTutors();
+        writeMoves();
         w.endObject();
         return out.toString();
     }
@@ -419,6 +422,115 @@ public class GameDocumentationWriter {
         } else {
             w.value(value.longValue());
         }
+    }
+
+    private void writeTmsAndTutors() {
+        List<Integer> tmMoves = romHandler.getTMMoves();
+        List<Integer> hmMoves = romHandler.getHMMoves();
+        boolean hasMoveTutors = romHandler.hasMoveTutors();
+        List<Integer> tutorMoves = hasMoveTutors ? romHandler.getMoveTutorMoves() : List.of();
+
+        writeNumberedMoveList("tms", tmMoves);
+        writeNumberedMoveList("hms", hmMoves);
+
+        w.name("tutors").beginArray();
+        for (int moveId : tutorMoves) {
+            w.beginObject();
+            w.name("move").value(moveId);
+            w.endObject();
+        }
+        w.endArray();
+
+        writeCompatibility(tmMoves, hmMoves, hasMoveTutors, tutorMoves);
+    }
+
+    private void writeNumberedMoveList(String name, List<Integer> moveIds) {
+        w.name(name).beginArray();
+        for (int i = 0; i < moveIds.size(); i++) {
+            w.beginObject();
+            w.name("number").value(i + 1);
+            w.name("move").value(moveIds.get(i));
+            w.endObject();
+        }
+        w.endArray();
+    }
+
+    /**
+     * Sparse index lists, not boolean arrays — a dense compatibility matrix bloats the file for no
+     * gain. {@code tmhm} indices are 1-based and continuous over the underlying flags array: TMs
+     * occupy {@code 1..tmMoves.size()}, HMs continue at {@code tmMoves.size()+1..}. {@code tutor}
+     * indices are 1-based over the tutor moves list alone.
+     */
+    private void writeCompatibility(List<Integer> tmMoves, List<Integer> hmMoves, boolean hasMoveTutors,
+                                     List<Integer> tutorMoves) {
+        w.name("compatibility").beginObject();
+
+        Map<Species, boolean[]> tmhmCompat = romHandler.getTMHMCompatibility();
+        w.name("tmhm").beginObject();
+        int tmhmCount = tmMoves.size() + hmMoves.size();
+        for (Species pk : romHandler.getSpecies()) {
+            if (pk == null) {
+                continue;
+            }
+            boolean[] flags = tmhmCompat.get(pk);
+            w.name(String.valueOf(pk.getNumber())).beginArray();
+            if (flags != null) {
+                for (int i = 1; i <= tmhmCount && i < flags.length; i++) {
+                    if (flags[i]) {
+                        w.value(i);
+                    }
+                }
+            }
+            w.endArray();
+        }
+        w.endObject();
+
+        w.name("tutor").beginObject();
+        if (hasMoveTutors) {
+            Map<Species, boolean[]> tutorCompat = romHandler.getMoveTutorCompatibility();
+            for (Species pk : romHandler.getSpecies()) {
+                if (pk == null) {
+                    continue;
+                }
+                boolean[] flags = tutorCompat.get(pk);
+                w.name(String.valueOf(pk.getNumber())).beginArray();
+                if (flags != null) {
+                    for (int i = 1; i <= tutorMoves.size() && i < flags.length; i++) {
+                        if (flags[i]) {
+                            w.value(i);
+                        }
+                    }
+                }
+                w.endArray();
+            }
+        }
+        w.endObject();
+
+        w.endObject();
+    }
+
+    /**
+     * {@code category} is already correctly resolved at ROM-load time for the current generation
+     * (type-derived pre-split, real per-move data post-split) — no extra logic needed here; the
+     * renderer decides how to present it when {@code !hasPhysicalSpecialSplit()}.
+     */
+    private void writeMoves() {
+        w.name("moves").beginArray();
+        for (Move m : romHandler.getMoves()) {
+            if (m == null) {
+                continue;
+            }
+            w.beginObject();
+            w.name("id").value(m.number);
+            w.name("name").value(m.name);
+            w.name("type").value(m.type == null ? null : m.type.name());
+            w.name("category").value(m.category == null ? null : m.category.name());
+            w.name("power").value(m.power);
+            w.name("accuracy").value(m.hitratio);
+            w.name("pp").value(m.pp);
+            w.endObject();
+        }
+        w.endArray();
     }
 
     private void writeBaseStats(Species pk, boolean gen1) {
