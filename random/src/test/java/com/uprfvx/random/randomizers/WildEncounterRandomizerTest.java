@@ -348,8 +348,7 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
     }
 
     private double calcPowerLevelDiff(Species a, Species b) {
-        return Math.abs((double) a.getBSTForPowerLevels() /
-                b.getBSTForPowerLevels() - 1);
+        return Math.abs((double) a.getBST(false) / b.getBST(false) - 1);
     }
 
     @ParameterizedTest
@@ -839,6 +838,15 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
     }
 
     private void keepTypeThemedAreasCheck(List<AreaWithTypesRecord> beforeAreas, Map<Integer, Type> typeThemedAreas) {
+        keepTypeThemedAreasCheck(beforeAreas, typeThemedAreas, null);
+    }
+
+    /**
+     * @param onlyTheseAreas If non-null, only areas whose index is in this set are checked. Used when another
+     *                       setting is allowed to override the type theme in the remaining areas.
+     */
+    private void keepTypeThemedAreasCheck(List<AreaWithTypesRecord> beforeAreas, Map<Integer, Type> typeThemedAreas,
+                                          Set<Integer> onlyTheseAreas) {
         List<EncounterArea> encounterAreas = romHandler.getEncounters(true);
         for (int i = 0; i < encounterAreas.size(); i++) {
 
@@ -849,7 +857,7 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
             }
 
             EncounterArea area = encounterAreas.get(i);
-            if (typeThemedAreas.containsKey(i)) {
+            if (typeThemedAreas.containsKey(i) && (onlyTheseAreas == null || onlyTheseAreas.contains(i))) {
                 Type theme = typeThemedAreas.get(i);
                 System.out.println("Type Theme: " + theme);
                 System.out.println("After: " + area);
@@ -1386,7 +1394,8 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
      * @param after The same list of EncounterAreas, after randomization.
      * @param checkUnique Whether to also check that no Pokemon is used as a replacement for more than one Pokemon.
      */
-    private void checkIsReplaced1To1(List<EncounterArea> before, List<EncounterArea> after, boolean checkUnique) {
+    private Map<Species, Species> checkIsReplaced1To1(List<EncounterArea> before, List<EncounterArea> after,
+                                                      boolean checkUnique) {
         Map<Species, Species> map = new HashMap<>();
         Iterator<EncounterArea> beforeIterator = before.iterator();
         Iterator<EncounterArea> afterIterator = after.iterator();
@@ -1399,6 +1408,111 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
         }
 
         System.out.println(pokemapToString(map));
+        return map;
+    }
+
+    /**
+     * Checks that family-to-family randomization preserved each evolutionary family: for any two Species
+     * in the same family which both appear in the encounter set, the replacement of the second must sit at
+     * the same relative evolutionary position from the replacement of the first as the second does from the
+     * first. This mirrors the guarantee the randomizer actually makes, since
+     * {@code pickFamilyMemberReplacementInner} always draws from
+     * {@code relativeReplacement.getRelativesAtPosition(relation)}.
+     * <br><br>
+     * Note this deliberately does NOT check that replacements are unique. When a family that branches (e.g.
+     * Wurmple, whose Silcoon and Cascoon share one evolutionary position) is mapped onto a family that does
+     * not branch at that position, two Species must share a replacement - so uniqueness is not achievable
+     * here, and the randomizer only aims for uniqueness at the level of whole families.
+     * @param map The mapping of each original Species to its replacement.
+     */
+    private void checkFamiliesArePreserved(Map<Species, Species> map) {
+        List<Species> originals = new ArrayList<>(map.keySet());
+        originals.sort(Comparator.comparingInt(Species::getNumber));
+
+        for (int i = 0; i < originals.size(); i++) {
+            for (int j = i + 1; j < originals.size(); j++) {
+                Species first = originals.get(i);
+                Species second = originals.get(j);
+                if (!first.getFamily(true).contains(second)) {
+                    continue;
+                }
+
+                int relation = first.getRelation(second, true);
+                Species firstReplacement = map.get(first).getBaseForme();
+                Species secondReplacement = map.get(second).getBaseForme();
+
+                // Base formes on both sides: randomizeCosmeticForme() may swap the final encounter to a forme
+                // sibling of the Species that was picked (Burmy -> Wormadam-Sandy, Vulpix -> Ninetales-Alolan),
+                // and which forme was rolled is not part of the family-to-family promise.
+                SpeciesSet relativesAtPosition = firstReplacement.getRelativesAtPosition(relation, false);
+                Set<Species> allowedReplacements = new HashSet<>();
+                for (Species relative : relativesAtPosition) {
+                    allowedReplacements.add(relative.getBaseForme());
+                }
+
+                System.out.println(first.getName() + " + " + second.getName() + " (relation " + relation + ") -> "
+                        + firstReplacement.getName() + " + " + secondReplacement.getName());
+                assertTrue(allowedReplacements.contains(secondReplacement),
+                        first.getName() + " -> " + firstReplacement.getName() + " and "
+                                + second.getName() + " -> " + secondReplacement.getName()
+                                + " are relation " + relation + " apart, but " + secondReplacement.getName()
+                                + " is not at that position from " + firstReplacement.getName()
+                                + " (expected one of " + allowedReplacements + ")");
+            }
+        }
+    }
+
+    /**
+     * Finds the areas in which no Species has an evolutionary relative anywhere else in the encounter set.
+     * These are the only areas whose type theme family-to-family randomization cannot disturb: everywhere
+     * else, a Species may be forced to a particular replacement by a relative that was mapped first, and
+     * family integrity deliberately takes priority over the type theme.
+     * @param before The encounter set in its state before randomization.
+     * @return The indices of the family-isolated areas.
+     */
+    private Set<Integer> findFamilyIsolatedAreas(List<EncounterArea> before) {
+        SpeciesSet allSpecies = new SpeciesSet();
+        for (EncounterArea area : before) {
+            if (isUnusedArea(area)) {
+                continue;
+            }
+            for (Encounter enc : area) {
+                allSpecies.add(getNonCosmeticForme(enc));
+            }
+        }
+
+        Set<Integer> isolated = new HashSet<>();
+        for (int i = 0; i < before.size(); i++) {
+            EncounterArea area = before.get(i);
+            if (isUnusedArea(area)) {
+                continue;
+            }
+            boolean hasRelativeElsewhere = false;
+            for (Encounter enc : area) {
+                Species species = getNonCosmeticForme(enc);
+                for (Species relative : species.getFamily(true)) {
+                    if (relative != species && allSpecies.contains(relative)) {
+                        hasRelativeElsewhere = true;
+                        break;
+                    }
+                }
+                if (hasRelativeElsewhere) {
+                    break;
+                }
+            }
+            if (!hasRelativeElsewhere) {
+                isolated.add(i);
+            }
+        }
+        return isolated;
+    }
+
+    /**
+     * Whether the randomizer leaves this area alone, as {@code prepEncounterAreas} does.
+     */
+    private static boolean isUnusedArea(EncounterArea area) {
+        return area.getEncounterType() == EncounterType.UNUSED
+                || "UNUSED".equalsIgnoreCase(area.getLocationTag());
     }
 
     /**
@@ -1419,7 +1533,7 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
         }
 
         System.out.println(beforeArea.getDisplayName() + ":");
-        if(beforeArea.getEncounterType() == EncounterType.UNUSED || "Unused".equals(beforeArea.getLocationTag())) {
+        if(isUnusedArea(beforeArea)) {
             System.out.println("Unused; skipping.");
             return;
         }
@@ -1594,7 +1708,7 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
 
     @ParameterizedTest
     @MethodSource("getRomNames")
-    public void globalFamilyToFamilyGivesUniqueReplacements(String romName) {
+    public void globalFamilyToFamilyPreservesFamilies(String romName) {
         activateRomHandler(romName);
 
         List<EncounterArea> before = deepCopyEncounters(romHandler.getEncounters(true));
@@ -1608,11 +1722,8 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
         List<EncounterArea> after = romHandler.getEncounters(true);
 
 
-        checkIsReplaced1To1(before, after, true);
+        checkFamiliesArePreserved(checkIsReplaced1To1(before, after, false));
     }
-
-    //TODO: test that family 1-to-1 actually preserves families
-    // also, that it does not duplicate families
 
     @ParameterizedTest
     @MethodSource("getRomNames")
@@ -1653,9 +1764,10 @@ public class WildEncounterRandomizerTest extends RandomizerTest {
 
         List<EncounterArea> after = romHandler.getEncounters(true);
 
-        //TODO: check family integrity
-        checkIsReplaced1To1(before, after, true);
-        keepTypeThemedAreasCheck(beforeAreas, typeThemedAreas);
+        checkFamiliesArePreserved(checkIsReplaced1To1(before, after, false));
+        // Only the family-isolated areas: elsewhere, keeping a family intact deliberately outranks
+        // keeping an area's type theme, so a themed area may legitimately receive an off-theme Species.
+        keepTypeThemedAreasCheck(beforeAreas, typeThemedAreas, findFamilyIsolatedAreas(before));
     }
 
     /**

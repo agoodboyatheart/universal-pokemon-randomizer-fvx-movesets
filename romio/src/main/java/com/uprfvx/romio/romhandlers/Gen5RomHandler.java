@@ -29,6 +29,8 @@ import com.uprfvx.romio.constants.*;
 import com.uprfvx.romio.constants.enctaggers.Gen5EncounterAreaTagger;
 import com.uprfvx.romio.exceptions.RomIOException;
 import com.uprfvx.romio.gamedata.*;
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
+import com.uprfvx.romio.gamedata.basestats.ShedinjaBaseStats;
 import com.uprfvx.romio.graphics.palettes.Palette;
 import com.uprfvx.romio.newnds.NARCArchive;
 import com.uprfvx.romio.romhandlers.romentries.DSStaticPokemon;
@@ -382,12 +384,24 @@ public class Gen5RomHandler extends AbstractDSRomHandler {
     }
 
     private void loadBasicPokeStats(Species pkmn, byte[] stats, Map<Integer,FormeInfo> altFormes) {
-        pkmn.setHp(stats[Gen5Constants.bsHPOffset] & 0xFF);
-        pkmn.setAttack(stats[Gen5Constants.bsAttackOffset] & 0xFF);
-        pkmn.setDefense(stats[Gen5Constants.bsDefenseOffset] & 0xFF);
-        pkmn.setSpeed(stats[Gen5Constants.bsSpeedOffset] & 0xFF);
-        pkmn.setSpatk(stats[Gen5Constants.bsSpAtkOffset] & 0xFF);
-        pkmn.setSpdef(stats[Gen5Constants.bsSpDefOffset] & 0xFF);
+        if (pkmn.getNumber() == SpeciesIDs.shedinja) {
+            pkmn.setBaseStats(new ShedinjaBaseStats(
+                stats[Gen5Constants.bsAttackOffset] & 0xFF,
+                stats[Gen5Constants.bsDefenseOffset] & 0xFF,
+                stats[Gen5Constants.bsSpAtkOffset] & 0xFF,
+                stats[Gen5Constants.bsSpDefOffset] & 0xFF,
+                stats[Gen5Constants.bsSpeedOffset] & 0xFF
+            ));
+        } else {
+            pkmn.setBaseStats(new BaseStats(
+                stats[Gen5Constants.bsHPOffset] & 0xFF,
+                stats[Gen5Constants.bsAttackOffset] & 0xFF,
+                stats[Gen5Constants.bsDefenseOffset] & 0xFF,
+                stats[Gen5Constants.bsSpAtkOffset] & 0xFF,
+                stats[Gen5Constants.bsSpDefOffset] & 0xFF,
+                stats[Gen5Constants.bsSpeedOffset] & 0xFF
+            ));
+        }
         // Type
         pkmn.setPrimaryType(Gen5Constants.typeTable[stats[Gen5Constants.bsPrimaryTypeOffset] & 0xFF]);
         pkmn.setSecondaryType(Gen5Constants.typeTable[stats[Gen5Constants.bsSecondaryTypeOffset] & 0xFF]);
@@ -547,12 +561,13 @@ public class Gen5RomHandler extends AbstractDSRomHandler {
     }
 
     private void saveBasicPokeStats(Species pkmn, byte[] stats) {
-        stats[Gen5Constants.bsHPOffset] = (byte) pkmn.getHp();
-        stats[Gen5Constants.bsAttackOffset] = (byte) pkmn.getAttack();
-        stats[Gen5Constants.bsDefenseOffset] = (byte) pkmn.getDefense();
-        stats[Gen5Constants.bsSpeedOffset] = (byte) pkmn.getSpeed();
-        stats[Gen5Constants.bsSpAtkOffset] = (byte) pkmn.getSpatk();
-        stats[Gen5Constants.bsSpDefOffset] = (byte) pkmn.getSpdef();
+        BaseStats bs = pkmn.getBaseStats();
+        stats[Gen5Constants.bsHPOffset] = (byte) bs.getHp();
+        stats[Gen5Constants.bsAttackOffset] = (byte) bs.getAttack();
+        stats[Gen5Constants.bsDefenseOffset] = (byte) bs.getDefense();
+        stats[Gen5Constants.bsSpeedOffset] = (byte) bs.getSpeed();
+        stats[Gen5Constants.bsSpAtkOffset] = (byte) bs.getSpatk();
+        stats[Gen5Constants.bsSpDefOffset] = (byte) bs.getSpdef();
         stats[Gen5Constants.bsPrimaryTypeOffset] = Gen5Constants.typeToByte(pkmn.getPrimaryType(false));
         if (pkmn.getSecondaryType(false) == null) {
             stats[Gen5Constants.bsSecondaryTypeOffset] = stats[Gen5Constants.bsPrimaryTypeOffset];
@@ -605,11 +620,6 @@ public class Gen5RomHandler extends AbstractDSRomHandler {
 		return new SpeciesSet(Arrays.asList(pokes).subList(Gen5Constants.pokemonCount + 1,
 				Gen5Constants.pokemonCount + formeCount + 1));
 	}
-
-    @Override
-    public List<MegaEvolution> getMegaEvolutions() {
-        return new ArrayList<>();
-    }
 
 	@Override
 	public SpeciesSet getIrregularFormes() {
@@ -2822,6 +2832,7 @@ public class Gen5RomHandler extends AbstractDSRomHandler {
         } catch (IOException e) {
             throw new RomIOException(e);
         }
+        addBurmyAltFormeEvolutions();
     }
 
     private void writeEvolutions() {
@@ -2836,6 +2847,8 @@ public class Gen5RomHandler extends AbstractDSRomHandler {
                 }
                 int evosWritten = 0;
                 for (Evolution evo : pk.getEvolutionsFrom()) {
+                    if (evo.getType() == EvolutionType.NONE) continue;
+
                     writeWord(evoEntry, evosWritten * 6, Gen5Constants.evolutionTypeToIndex(evo.getType()));
                     writeWord(evoEntry, evosWritten * 6 + 2, evo.getExtraInfo());
                     writeWord(evoEntry, evosWritten * 6 + 4, evo.getTo().getNumber());

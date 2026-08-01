@@ -770,7 +770,7 @@ public class TMTutorPoolProfileRandomizerTest {
     }
 
     private int bstBucket(Species pk) {
-        int bst = pk.getBSTForPowerLevels();
+        int bst = pk.getBST(false);
         for (int i = 0; i < BST_EDGES.length; i++) {
             if (bst < BST_EDGES[i]) {
                 return i;
