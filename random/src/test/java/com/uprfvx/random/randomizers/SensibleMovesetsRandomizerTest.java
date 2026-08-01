@@ -26,11 +26,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * ROM-driven validation for Species "Sensible Movesets". 2026-07-29: now uses the SAME hard-ceiling/
- * soft-floor power-banding mechanism as Better Movesets' trainer path (Aaron's explicit direction,
- * replacing the earlier two-band soft-only guideline from species-tmtutor-moveset-redesign.md P10 - a
- * real log showed the soft-only weight couldn't stop a level-1 Minun rolling Volt Tackle AND Solarbeam
- * when its narrowed type/category candidate pool held nothing but high-power moves). See
+ * ROM-driven validation for Species "Sensible Movesets", which uses the same hard-ceiling/soft-floor
+ * power-banding mechanism as Better Movesets' trainer path. A soft weight alone cannot stop a level-1
+ * Minun rolling Volt Tackle and Solarbeam when its narrowed type/category candidate pool holds nothing
+ * but high-power moves. See
  * {@link SpeciesMovesetRandomizer#applySpeciesPowerCeiling} / {@code speciesLevelAppropriatenessWeight}
  * and {@link SpeciesMovesetWeightTest} for the pure-function unit tests of the mechanism itself; this
  * class checks it holds in real randomized output.

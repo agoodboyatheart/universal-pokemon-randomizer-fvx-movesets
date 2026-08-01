@@ -463,15 +463,13 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         changesMade = true;
     }
 
-    // "Sensible Movesets" power banding - 2026-07-29: replaces the earlier two-band soft-only guideline
-    // (species-tmtutor-moveset-redesign.md P10) with the SAME hard-ceiling/soft-floor mechanism Better
-    // Movesets uses for trainers (Aaron's explicit direction, after a real log showed a level-1 Minun
-    // rolling Volt Tackle AND Solarbeam - the old soft-only 0.12 weight can't help when the narrowed
-    // type/category candidate pool for a slot happens to contain nothing but high-power moves). Ceiling
-    // and floor are pool-stage/pick-stage respectively - centerPower, powerCeiling and
-    // POWER_FLOOR_FRACTION are shared via the Randomizer base. Species has no Boss/Regular tier split, so
-    // it reuses the trainer path's gentler Regular exponent throughout (Aaron's call), keeping more
-    // surprise at the low end than a Boss trainer's picks get.
+    // "Sensible Movesets" power banding uses the same hard-ceiling/soft-floor mechanism Better Movesets
+    // uses for trainers. A soft weight alone cannot help when the narrowed type/category candidate pool
+    // for a slot holds nothing but high-power moves - which is how a level-1 Minun ends up with Volt
+    // Tackle and Solarbeam. Ceiling and floor are pool-stage/pick-stage respectively - centerPower,
+    // powerCeiling and POWER_FLOOR_FRACTION are shared via the Randomizer base. Species has no
+    // Boss/Regular tier split, so it reuses the trainer path's gentler Regular exponent throughout,
+    // keeping more surprise at the low end than a Boss trainer's picks get.
 
     // Hard sliding ceiling (pool stage): removes attacking moves too strong for the slot's level. Status/
     // fixed-damage moves are exempt. Two-stage fallback if capping the narrow (type/category-restricted)

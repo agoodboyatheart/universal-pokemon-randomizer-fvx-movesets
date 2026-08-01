@@ -25,9 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Pure unit tests for the "Sensible Movesets" power-banding mechanism: a hard sliding ceiling
  * (species-side {@code applySpeciesPowerCeiling}, mirroring Better Movesets' trainer-side
  * {@code applyPowerBandFilter}) plus a soft sliding floor ({@code speciesLevelAppropriatenessWeight},
- * reusing the trainer path's Regular-tier falloff exponent). Replaces the earlier two-band soft-only
- * guideline (species-tmtutor-moveset-redesign.md P10) per Aaron's 2026-07-29 direction: species
- * learnsets should follow the same level-vs-power banding as trainer movesets, not a bespoke shape.
+ * reusing the trainer path's Regular-tier falloff exponent). Species learnsets follow the same
+ * level-vs-power banding as trainer movesets rather than a bespoke shape.
  * No ROM required.
  */
 public class SpeciesMovesetWeightTest {
