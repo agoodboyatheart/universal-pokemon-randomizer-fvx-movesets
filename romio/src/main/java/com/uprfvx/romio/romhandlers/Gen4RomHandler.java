@@ -3915,7 +3915,12 @@ public class Gen4RomHandler extends AbstractDSRomHandler {
 		for (Map.Entry<Species, boolean[]> compatEntry : compatData.entrySet()) {
 			Species pkmn = compatEntry.getKey();
 			boolean[] flags = compatEntry.getValue();
-			byte[] data = pokeNarc.files.get(pkmn.getNumber());
+			int number = pkmn.getNumber();
+			if (number > Gen4Constants.pokemonCount) {
+				// Alt formes are stored after a gap in the NARC, the same way getTMHMCompatibility reads them.
+				number += Gen4Constants.formeOffset;
+			}
+			byte[] data = pokeNarc.files.get(number);
 			for (int j = 0; j < 13; j++) {
 				data[Gen4Constants.bsTMHMCompatOffset + j] = getByteFromFlags(flags, j * 8 + 1);
 			}
@@ -4047,8 +4052,11 @@ public class Gen4RomHandler extends AbstractDSRomHandler {
 						mtcFile[offsHere] = getByteFromFlags(flags, j * 8 + 1);
 					} else if (j * 8 < amount) {
 						// need some of the original byte
+						// Flags fill this byte from the low bit up, so only the bits above the last
+						// flag are original. Keeping the wrong end here lets flags stick on forever.
+						int flagBitsHere = amount - j * 8;
 						int newByte = getByteFromFlags(flags, j * 8 + 1) & 0xFF;
-						int oldByteParts = (mtcFile[offsHere] >>> (8 - amount + j * 8)) << (8 - amount + j * 8);
+						int oldByteParts = ((mtcFile[offsHere] & 0xFF) >>> flagBitsHere) << flagBitsHere;
 						mtcFile[offsHere] = (byte) (newByte | oldByteParts);
 					}
 					// else do nothing to the byte
