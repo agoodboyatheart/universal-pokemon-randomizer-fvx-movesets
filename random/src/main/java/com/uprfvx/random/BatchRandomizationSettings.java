@@ -32,6 +32,7 @@ import java.util.StringJoiner;
 public class BatchRandomizationSettings implements Cloneable {
     private Boolean batchRandomizationEnabled;
     private Boolean generateLogFile;
+    private Boolean generateDocumentation;
     private Boolean autoAdvanceStartingIndex;
     private Integer numberOfRandomizedROMs;
     private Integer startingIndex;
@@ -42,6 +43,7 @@ public class BatchRandomizationSettings implements Cloneable {
     public BatchRandomizationSettings() {
         batchRandomizationEnabled = false;
         generateLogFile = false;
+        generateDocumentation = false;
         autoAdvanceStartingIndex = true;
         numberOfRandomizedROMs = 10;
         startingIndex = 0;
@@ -64,6 +66,14 @@ public class BatchRandomizationSettings implements Cloneable {
 
     public void setGenerateLogFile(boolean generateLogFile) {
         this.generateLogFile = generateLogFile;
+    }
+
+    public boolean shouldGenerateDocumentation() {
+        return generateDocumentation;
+    }
+
+    public void setGenerateDocumentation(boolean generateDocumentation) {
+        this.generateDocumentation = generateDocumentation;
     }
 
     public boolean shouldAutoAdvanceStartingIndex() {
@@ -119,6 +129,7 @@ public class BatchRandomizationSettings implements Cloneable {
         StringJoiner sj = new StringJoiner(System.lineSeparator());
         sj.add("batchrandomization.enabled=" + batchRandomizationEnabled.toString());
         sj.add("batchrandomization.generatelogfiles=" + generateLogFile.toString());
+        sj.add("batchrandomization.generatedocumentation=" + generateDocumentation.toString());
         sj.add("batchrandomization.logfileending=" + logFileEnding);
         sj.add("batchrandomization.autoadvanceindex=" + autoAdvanceStartingIndex.toString());
         sj.add("batchrandomization.numberofrandomizedroms=" + numberOfRandomizedROMs.toString());

@@ -1364,12 +1364,22 @@ public class RandomizerGUI {
         if (raceMode) {
             JOptionPane.showMessageDialog(frame,
                     String.format(bundle.getString("GUI.raceModeCheckValuePopup"), checkValue));
-        } else if (batchRandomization && batchRandomizationSettings.shouldGenerateLogFile()) {
-            try {
-                saveLogFile(filename, batchRandomizationSettings.getLogFileEnding(), out);
-            } catch (IOException e) {
-                JOptionPane.showMessageDialog(frame,
-                        bundle.getString("GUI.logSaveFailed"));
+        } else if (batchRandomization) {
+            if (batchRandomizationSettings.shouldGenerateLogFile()) {
+                try {
+                    saveLogFile(filename, batchRandomizationSettings.getLogFileEnding(), out);
+                } catch (IOException e) {
+                    JOptionPane.showMessageDialog(frame,
+                            bundle.getString("GUI.logSaveFailed"));
+                }
+            }
+            if (batchRandomizationSettings.shouldGenerateDocumentation() && documentationJson != null) {
+                try {
+                    saveDocumentationFile(filename, documentationJson);
+                } catch (IOException e) {
+                    JOptionPane.showMessageDialog(frame,
+                            bundle.getString("GUI.docSaveFailed"));
+                }
             }
         } else if (!batchRandomization) {
             String[] options = {
@@ -4087,6 +4097,9 @@ public class RandomizerGUI {
 
                         } else if (key.equals("batchrandomization.generatelogfiles")) {
                             batchRandomizationSettings.setGenerateLogFile(Boolean.parseBoolean(tokens[1].trim()));
+
+                        } else if (key.equals("batchrandomization.generatedocumentation")) {
+                            batchRandomizationSettings.setGenerateDocumentation(Boolean.parseBoolean(tokens[1].trim()));
 
                         } else if (key.equals("batchrandomization.autoadvanceindex")) {
                             batchRandomizationSettings.setAutoAdvanceStartingIndex(Boolean.parseBoolean(tokens[1].trim()));

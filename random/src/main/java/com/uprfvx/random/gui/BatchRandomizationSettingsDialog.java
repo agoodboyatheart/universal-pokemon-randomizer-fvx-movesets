@@ -43,6 +43,7 @@ public class BatchRandomizationSettingsDialog extends JDialog {
     private JTextField fileNamePrefixTextField;
     private JTextField logFileEndingTextField;
     private JCheckBox generateLogFilesCheckBox;
+    private JCheckBox generateDocumentationCheckBox;
     private JCheckBox autoAdvanceIndexCheckBox;
     private JButton chooseDirectoryButton;
     private JLabel outputDirectoryLabel;
@@ -121,6 +122,7 @@ public class BatchRandomizationSettingsDialog extends JDialog {
     private void setInitialControlValues() {
         enableBatchRandomizationCheckBox.setSelected(currentSettings.isBatchRandomizationEnabled());
         generateLogFilesCheckBox.setSelected(currentSettings.shouldGenerateLogFile());
+        generateDocumentationCheckBox.setSelected(currentSettings.shouldGenerateDocumentation());
         logFileEndingTextField.setText(currentSettings.getLogFileEnding());
         autoAdvanceIndexCheckBox.setSelected(currentSettings.shouldAutoAdvanceStartingIndex());
         numberOfRandomizedROMsSpinner.setValue(currentSettings.getNumberOfRandomizedROMs());
@@ -138,6 +140,7 @@ public class BatchRandomizationSettingsDialog extends JDialog {
         startingIndexSpinner.setEnabled(enabled);
         fileNamePrefixTextField.setEnabled(enabled);
         generateLogFilesCheckBox.setEnabled(enabled);
+        generateDocumentationCheckBox.setEnabled(enabled);
         logFileEndingTextField.setEnabled(generateLogFilesCheckBox.isSelected());
         autoAdvanceIndexCheckBox.setEnabled(enabled);
         chooseDirectoryButton.setEnabled(enabled);
@@ -146,6 +149,7 @@ public class BatchRandomizationSettingsDialog extends JDialog {
     private void updateSettings() {
         currentSettings.setBatchRandomizationEnabled(enableBatchRandomizationCheckBox.isSelected());
         currentSettings.setGenerateLogFile(generateLogFilesCheckBox.isSelected());
+        currentSettings.setGenerateDocumentation(generateDocumentationCheckBox.isSelected());
         currentSettings.setLogFileEnding(logFileEndingTextField.getText());
         currentSettings.setAutoAdvanceStartingIndex(autoAdvanceIndexCheckBox.isSelected());
         currentSettings.setNumberOfRandomizedROMs((Integer) numberOfRandomizedROMsSpinner.getValue());
