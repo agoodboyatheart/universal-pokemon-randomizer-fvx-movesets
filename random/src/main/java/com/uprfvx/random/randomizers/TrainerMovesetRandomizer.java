@@ -4,6 +4,7 @@ import com.uprfvx.random.Settings;
 import com.uprfvx.romio.constants.AbilityIDs;
 import com.uprfvx.romio.constants.GlobalConstants;
 import com.uprfvx.romio.gamedata.*;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
 import java.util.*;
@@ -320,7 +321,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private List<Move> updateMovesConsideringStatSynergies(Species pk, List<Move> movesAtLevel, double statBias) {
         // Stat/move synergy
 
-        List<Move> statSynergyList = MoveSynergy.getStatMoveSynergy(pk, movesAtLevel);
+        List<Move> statSynergyList = MoveSynergy.getStatMoveSynergy(pk.getBaseStats(), movesAtLevel);
         Collections.shuffle(statSynergyList, random);
         for (int i = 0; i < statBias * statSynergyList.size(); i++) {
             int j = i % statSynergyList.size();
@@ -329,7 +330,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
         // Stat/move anti-synergy
 
-        List<Move> statAntiSynergyList = MoveSynergy.getStatMoveAntiSynergy(pk, movesAtLevel);
+        List<Move> statAntiSynergyList = MoveSynergy.getStatMoveAntiSynergy(pk.getBaseStats(), movesAtLevel);
         List<Move> withoutStatAntiSynergy = new ArrayList<>(movesAtLevel);
         for (Move mv : statAntiSynergyList) {
             withoutStatAntiSynergy.remove(mv);
@@ -341,8 +342,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     }
 
     private double getAtkSpatkRatio(TrainerPokemon tp, Species pk) {
-        int spatk = romHandler.generationOfPokemon() == 1 ? pk.getSpecial() : pk.getSpatk();
-        double atkSpatkRatio = (double) pk.getAttack() / (double) spatk;
+        int spatk = pk.getBaseStats() instanceof Gen1BaseStats gen1BaseStats ?
+                gen1BaseStats.getSpecial() : pk.getBaseStats().getSpatk();
+        double atkSpatkRatio = (double) pk.getBaseStats().getAttack() / (double) spatk;
         if (hasAbilities) {
             switch (romHandler.getAbilityForTrainerPokemon(tp)) {
                 case AbilityIDs.hugePower:

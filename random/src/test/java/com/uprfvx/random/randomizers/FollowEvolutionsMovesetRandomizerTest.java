@@ -74,10 +74,11 @@ public class FollowEvolutionsMovesetRandomizerTest {
      */
     private List<Species[]> collectEvoPairs(RomHandler rom) {
         List<Species[]> evoPairs = new ArrayList<>();
-        CopyUpEvolutionsHelper<Species> helper = new CopyUpEvolutionsHelper<>(rom.getSpeciesSetInclFormes());
-        helper.apply(true, false, pk -> {
-        }, (evFrom, evTo, isFinalEvo) -> evoPairs.add(new Species[] { evFrom, evTo }), null, pk -> {
-        });
+        CopyUpEvolutionsHelper helper = new CopyUpEvolutionsHelper(rom.getSpeciesSetInclFormes());
+        helper.apply(new CopyUpEvolutionsHelper.Options
+                .Builder(pk -> {
+                }, (evFrom, evTo, isFinalEvo) -> evoPairs.add(new Species[] { evFrom, evTo }))
+                .build());
         assumeTrue(!evoPairs.isEmpty(), "No evolution pairs found on this ROM");
         return evoPairs;
     }

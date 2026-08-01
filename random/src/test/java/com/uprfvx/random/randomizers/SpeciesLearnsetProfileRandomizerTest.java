@@ -164,11 +164,12 @@ public class SpeciesLearnsetProfileRandomizerTest {
             p.speciesDistinctTypes.add(attackingTypes.size());
 
             if (attackCount > 0) {
-                p.bucketPhysical(sp.getAttack() - sp.getSpatk(), physicalCount, attackCount);
+                p.bucketPhysical(sp.getBaseStats().getAttack() - sp.getBaseStats().getSpatk(),
+                        physicalCount, attackCount);
                 p.bucketStab(stabCount, attackCount);
             }
             if (bpCount > 0) {
-                p.bucketBst(sp.getBSTForPowerLevels(), bpSum / bpCount, maxBp);
+                p.bucketBst(sp.getBaseStats().getBST(), bpSum / bpCount, maxBp);
             }
             p.recordPunch(hasIronFist(sp, rom), punchCount);
         }

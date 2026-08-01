@@ -5,6 +5,7 @@ import com.uprfvx.romio.constants.GlobalConstants;
 import com.uprfvx.romio.constants.MoveIDs;
 import com.uprfvx.romio.gamedata.*;
 import com.uprfvx.romio.gamedata.cueh.BasicSpeciesAction;
+import com.uprfvx.romio.gamedata.cueh.CopyUpEvolutionsHelper;
 import com.uprfvx.romio.gamedata.cueh.EvolvedSpeciesAction;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
@@ -54,7 +55,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         if (movesetsFollowEvolutions) {
             // Basic species are randomized exactly like the plain (non-follow) path below - only evolved
             // species behave differently, via evolvedAction.
-            BasicSpeciesAction<Species> independentAction = pkmn -> {
+            BasicSpeciesAction independentAction = pkmn -> {
                 List<MoveLearnt> moves = movesets.get(pkmn.getNumber());
                 if (moves == null || !rSpecService.getAll(true).contains(pkmn)) {
                     return;
@@ -73,7 +74,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
             // case (leftover slots randomized independently below) fall out of the same min(...) bound, instead
             // of needing two separate rules. Levels are never touched here - only which move fills each of the
             // evolved species' own (fixed) slots changes.
-            EvolvedSpeciesAction<Species> evolvedAction = (evFrom, evTo, isFinalEvo) -> {
+            EvolvedSpeciesAction evolvedAction = (evFrom, evTo, isFinalEvo) -> {
                 List<MoveLearnt> toMoves = movesets.get(evTo.getNumber());
                 List<MoveLearnt> fromMoves = movesets.get(evFrom.getNumber());
                 if (toMoves == null || fromMoves == null || !rSpecService.getAll(true).contains(evTo)) {
@@ -93,7 +94,14 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 }
             };
 
-            copyUpEvolutionsHelper.apply(true, false, independentAction, evolvedAction, null, independentAction);
+            // Alt formes no longer reach basicAction - the helper routes them to altFormeAction/cosmeticAction
+            // instead - so both delegate straight back to independentAction, which leaves
+            // copyCosmeticMovesetIfNeeded in charge of the cosmetic case exactly as it was before.
+            copyUpEvolutionsHelper.apply(new CopyUpEvolutionsHelper.Options
+                    .Builder(independentAction, evolvedAction)
+                    .altFormeAction((_, altForme) -> independentAction.applyTo(altForme))
+                    .cosmeticAction((_, altForme) -> independentAction.applyTo(altForme))
+                    .build());
         } else {
             for (Integer pkmnNum : movesets.keySet()) {
                 List<MoveLearnt> moves = movesets.get(pkmnNum);
@@ -180,7 +188,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 ? computeBackfillEffectiveLevels(pkmn, moves, startIndex, vanillaMoveIdsBySpecies)
                 : Collections.emptyMap();
 
-        double atkSpAtkRatio = pkmn.getAttackSpecialAttackRatio();
+        double atkSpAtkRatio = pkmn.getBaseStats().getAttackSpecialAttackRatio();
         double powerScale = sensibleMovesets ? speciesPowerScale(pkmn) : 1.0;
 
         // Find last lv1 move
@@ -357,7 +365,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 continue;
             }
 
-            double atkSpAtkRatio = pkmn.getAttackSpecialAttackRatio();
+            double atkSpAtkRatio = pkmn.getBaseStats().getAttackSpecialAttackRatio();
 
             if (pkmn.isEssentiallyCosmetic()) {
                 for (int i = 0; i < moves.size(); i++) {
@@ -476,7 +484,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
     // on its way up - a stronger effect than evolution stage or raw BST alone.
     static double speciesPowerScale(Species pkmn) {
         double normBst = Math.clamp(
-                (pkmn.getBSTForPowerLevels() - SPECIES_POWER_BST_FLOOR)
+                (pkmn.getBaseStats().getBST() - SPECIES_POWER_BST_FLOOR)
                         / (SPECIES_POWER_BST_CEILING - SPECIES_POWER_BST_FLOOR), 0.0, 1.0);
         double scale = SPECIES_POWER_SCALE_MIN + SPECIES_POWER_SCALE_BST_RANGE * normBst;
         if (pkmn.getEvolutionsTo().isEmpty() && pkmn.getEvolutionsFrom().isEmpty()) {

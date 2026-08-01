@@ -5,6 +5,8 @@ import com.uprfvx.romio.gamedata.Evolution;
 import com.uprfvx.romio.gamedata.EvolutionType;
 import com.uprfvx.romio.gamedata.Item;
 import com.uprfvx.romio.gamedata.Species;
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
 import com.uprfvx.romio.romhandlers.Generation;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
@@ -48,7 +50,7 @@ public class SpeciesMetadataExtractionRandomizerTest {
         Map<Integer, Integer> gen1Special = new HashMap<>();
         for (Species sp : red.getSpecies()) {
             if (sp != null) {
-                gen1Special.put(sp.getNumber(), sp.getSpecial());
+                gen1Special.put(sp.getNumber(), ((Gen1BaseStats) sp.getBaseStats()).getSpecial());
             }
         }
 
@@ -65,6 +67,7 @@ public class SpeciesMetadataExtractionRandomizerTest {
                 continue;
             }
             Integer special = sp.isBaseForme() ? gen1Special.get(sp.getNumber()) : null;
+            BaseStats bs = sp.getBaseStats();
             System.out.printf("%d,%s,%s,%s,%d,%s,%s,%d,%d,%d,%d,%d,%d,%s,%d,%d,%s,%b,%b,%b,%b,%b,%s,%s,%s,%s,%s,%s,%s,%s%n",
                     sp.getNumber(),
                     csvEscape(sp.getName()),
@@ -73,12 +76,12 @@ public class SpeciesMetadataExtractionRandomizerTest {
                     sp.getGeneration(),
                     sp.getPrimaryType(false),
                     sp.getSecondaryType(false) == null ? "" : sp.getSecondaryType(false),
-                    sp.getHp(), sp.getAttack(), sp.getDefense(), sp.getSpatk(), sp.getSpdef(), sp.getSpeed(),
+                    bs.getHp(), bs.getAttack(), bs.getDefense(), bs.getSpatk(), bs.getSpdef(), bs.getSpeed(),
                     special == null ? "" : special.toString(),
-                    sp.getBST(),
+                    sp.getBST(false),
                     sp.getCatchRate(),
                     sp.getGrowthCurve() == null ? "" : sp.getGrowthCurve().toString(),
-                    !sp.getMegaEvolutionsTo().isEmpty(),
+                    sp.isMegaEvolution(),
                     sp.isBaseForme() ? false : sp.isAlolan(),
                     sp.isLegendary(),
                     sp.isStrongLegendary(),

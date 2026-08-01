@@ -4,7 +4,6 @@ import com.uprfvx.random.Settings;
 import com.uprfvx.random.customnames.CustomNamesSet;
 import com.uprfvx.random.exceptions.RandomizationException;
 import com.uprfvx.romio.gamedata.Move;
-import com.uprfvx.romio.gamedata.Species;
 import com.uprfvx.romio.gamedata.cueh.CopyUpEvolutionsHelper;
 import com.uprfvx.romio.romhandlers.RomHandler;
 import com.uprfvx.romio.services.RestrictedSpeciesService;
@@ -23,7 +22,7 @@ public abstract class Randomizer {
     protected final RomHandler romHandler;
     protected final RestrictedSpeciesService rSpecService;
     protected final TypeService typeService;
-    protected final CopyUpEvolutionsHelper<Species> copyUpEvolutionsHelper;
+    protected final CopyUpEvolutionsHelper copyUpEvolutionsHelper;
 
     protected final Settings settings;
     protected final Random random;
@@ -34,7 +33,7 @@ public abstract class Randomizer {
         this.romHandler = romHandler;
         this.rSpecService = romHandler.getRestrictedSpeciesService();
         this.typeService = romHandler.getTypeService();
-        this.copyUpEvolutionsHelper = new CopyUpEvolutionsHelper<>(romHandler::getSpeciesSetInclFormes);
+        this.copyUpEvolutionsHelper = new CopyUpEvolutionsHelper(romHandler::getSpeciesSetInclFormes);
 
         this.settings = settings;
         this.random = random;

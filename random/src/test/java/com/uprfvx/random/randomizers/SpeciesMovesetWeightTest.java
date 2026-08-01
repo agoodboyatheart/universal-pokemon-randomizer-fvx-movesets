@@ -7,6 +7,7 @@ import com.uprfvx.romio.gamedata.MoveCategory;
 import com.uprfvx.romio.gamedata.MoveLearnt;
 import com.uprfvx.romio.gamedata.Species;
 import com.uprfvx.romio.gamedata.Type;
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -232,12 +233,7 @@ public class SpeciesMovesetWeightTest {
     private Species speciesWithBst(int bst) {
         Species sp = new Species(1);
         int each = bst / 6;
-        sp.setHp(each);
-        sp.setAttack(each);
-        sp.setDefense(each);
-        sp.setSpatk(each);
-        sp.setSpdef(each);
-        sp.setSpeed(bst - each * 5);
+        sp.setBaseStats(new BaseStats(each, each, each, each, each, bst - each * 5));
         return sp;
     }
 

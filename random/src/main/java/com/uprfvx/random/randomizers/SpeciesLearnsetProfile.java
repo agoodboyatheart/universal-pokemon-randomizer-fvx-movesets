@@ -93,7 +93,7 @@ public record SpeciesLearnsetProfile(
         return new SpeciesLearnsetProfile(statusShare, stabTypes,
                 sampleCoverageTypes(stabTypes, allTypes, random),
                 SpeciesMovesetRandomizer.speciesPowerScale(pkmn),
-                SpeciesMovesetRandomizer.speciesCategoryLean(pkmn.getAttackSpecialAttackRatio()),
+                SpeciesMovesetRandomizer.speciesCategoryLean(pkmn.getBaseStats().getAttackSpecialAttackRatio()),
                 abilityAffinityFor(pkmn, generation),
                 priorityBonusFor(pkmn));
     }
@@ -119,7 +119,7 @@ public record SpeciesLearnsetProfile(
     // Vanilla hands priority moves to species that already outspeed things rather than using them to
     // compensate slow ones - presence climbs from 18.6% to 61.1% across the Speed range.
     private static double priorityBonusFor(Species pkmn) {
-        double t = Math.clamp((pkmn.getSpeed() - Randomizer.SPECIES_PRIORITY_SPEED_FLOOR)
+        double t = Math.clamp((pkmn.getBaseStats().getSpeed() - Randomizer.SPECIES_PRIORITY_SPEED_FLOOR)
                 / Randomizer.SPECIES_PRIORITY_SPEED_RANGE, 0.0, 1.0);
         return 1.0 + Randomizer.SPECIES_PRIORITY_BONUS_MAX * t;
     }
