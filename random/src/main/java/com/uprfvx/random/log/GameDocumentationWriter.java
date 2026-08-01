@@ -1,0 +1,202 @@
+package com.uprfvx.random.log;
+
+/*----------------------------------------------------------------------------*/
+/*--  Part of "Universal Pokemon Randomizer ZX" by the UPR-ZX team          --*/
+/*--  Originally part of "Universal Pokemon Randomizer" by Dabomstew        --*/
+/*--  Pokemon and any associated names and the like are                     --*/
+/*--  trademark and (C) Nintendo 1996-2020.                                 --*/
+/*--                                                                        --*/
+/*--  The custom code written here is licensed under the terms of the GPL:  --*/
+/*--                                                                        --*/
+/*--  This program is free software: you can redistribute it and/or modify  --*/
+/*--  it under the terms of the GNU General Public License as published by  --*/
+/*--  the Free Software Foundation, either version 3 of the License, or     --*/
+/*--  (at your option) any later version.                                   --*/
+/*--                                                                        --*/
+/*--  This program is distributed in the hope that it will be useful,       --*/
+/*--  but WITHOUT ANY WARRANTY; without even the implied warranty of        --*/
+/*--  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the          --*/
+/*--  GNU General Public License for more details.                          --*/
+/*--                                                                        --*/
+/*--  You should have received a copy of the GNU General Public License     --*/
+/*--  along with this program. If not, see <http://www.gnu.org/licenses/>.  --*/
+/*----------------------------------------------------------------------------*/
+
+import com.uprfvx.random.Settings;
+import com.uprfvx.random.Version;
+import com.uprfvx.random.random.RandomSource;
+import com.uprfvx.romio.gamedata.BreedingInfo;
+import com.uprfvx.romio.gamedata.Evolution;
+import com.uprfvx.romio.gamedata.MoveLearnt;
+import com.uprfvx.romio.gamedata.Species;
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
+import com.uprfvx.romio.romhandlers.RomHandler;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Walks a live, fully-randomised {@link RomHandler} and emits a complete JSON description of the
+ * game as a single String. Unlike {@link RandomizationLogger}, which is a change log gated on
+ * {@code isChangesMade()}, this dumps full state unconditionally — the only legitimate reason to
+ * omit a field is a capability the current game/generation genuinely lacks.
+ */
+public class GameDocumentationWriter {
+
+    private final RandomSource randomSource;
+    private final Settings settings;
+    private final RomHandler romHandler;
+    private final StringBuilder out = new StringBuilder();
+    private final JsonWriter w = new JsonWriter(out);
+
+    public GameDocumentationWriter(RandomSource randomSource, Settings settings, RomHandler romHandler) {
+        this.randomSource = randomSource;
+        this.settings = settings;
+        this.romHandler = romHandler;
+    }
+
+    public String write() {
+        w.beginObject();
+        w.name("schemaVersion").value(1);
+        writeGame();
+        writeCapabilities();
+        writeSpecies();
+        w.endObject();
+        return out.toString();
+    }
+
+    private void writeGame() {
+        w.name("game").beginObject();
+        w.name("name").value(romHandler.getROMName());
+        w.name("generation").value(romHandler.generationOfPokemon());
+        w.name("seed").value(Long.toString(randomSource.getSeed()));
+        w.name("randomizerVersion").value(Version.LATEST.branchName + " " + Version.LATEST.name);
+        w.name("settingsString").value(settings.toString());
+        w.endObject();
+    }
+
+    private void writeCapabilities() {
+        w.name("capabilities").beginObject();
+        w.name("abilitiesPerSpecies").value(romHandler.abilitiesPerSpecies());
+        w.name("hasMoveTutors").value(romHandler.hasMoveTutors());
+        w.name("hasPhysicalSpecialSplit").value(romHandler.hasPhysicalSpecialSplit());
+        w.name("hasTimeBasedEncounters").value(romHandler.hasTimeBasedEncounters());
+        w.name("hasTotemPokemon").value(romHandler.hasTotemPokemon());
+        w.endObject();
+    }
+
+    private void writeSpecies() {
+        w.name("species").beginArray();
+        boolean gen1 = romHandler.generationOfPokemon() == 1;
+        Map<Integer, List<MoveLearnt>> learnsets = romHandler.getMovesLearnt();
+        Map<Integer, List<Integer>> eggMoves = romHandler.getEggMoves();
+        for (Species pk : romHandler.getSpecies()) {
+            if (pk == null) {
+                continue;
+            }
+            writeOneSpecies(pk, gen1, learnsets, eggMoves);
+        }
+        w.endArray();
+    }
+
+    private void writeOneSpecies(Species pk, boolean gen1, Map<Integer, List<MoveLearnt>> learnsets,
+                                  Map<Integer, List<Integer>> eggMoves) {
+        w.beginObject();
+        w.name("number").value(pk.getNumber());
+        w.name("name").value(pk.getFullName());
+
+        w.name("types").beginArray();
+        w.value(pk.getPrimaryType(false).name());
+        if (pk.getSecondaryType(false) != null) {
+            w.value(pk.getSecondaryType(false).name());
+        }
+        w.endArray();
+
+        writeBaseStats(pk, gen1);
+
+        w.name("catchRate").value(pk.getCatchRate());
+        w.name("expYield").value(pk.getExpYield());
+        w.name("growthCurve").value(pk.getGrowthCurve().name());
+        w.name("genderRatio").value(pk.getGenderRatio());
+
+        w.name("abilities").beginArray();
+        int abilitiesPerSpecies = romHandler.abilitiesPerSpecies();
+        if (abilitiesPerSpecies >= 1) {
+            w.value(romHandler.abilityName(pk.getAbility1()));
+        }
+        if (abilitiesPerSpecies >= 2) {
+            w.value(romHandler.abilityName(pk.getAbility2()));
+        }
+        if (abilitiesPerSpecies >= 3) {
+            w.value(romHandler.abilityName(pk.getAbility3()));
+        }
+        w.endArray();
+
+        w.name("eggGroups").beginArray();
+        BreedingInfo breedingInfo = pk.getBreedingInfo();
+        if (breedingInfo != null) {
+            if (breedingInfo.getPrimaryEggGroup() != null) {
+                w.value(breedingInfo.getPrimaryEggGroup().name());
+            }
+            if (breedingInfo.getSecondaryEggGroup() != null) {
+                w.value(breedingInfo.getSecondaryEggGroup().name());
+            }
+        }
+        w.endArray();
+
+        w.name("evolutions").beginArray();
+        for (Evolution evo : pk.getEvolutionsFrom()) {
+            w.beginObject();
+            w.name("to").value(evo.getTo().getNumber());
+            w.name("type").value(evo.getType().name());
+            w.name("extraInfo").value(evo.getExtraInfo());
+            w.name("estimatedLevel").value(evo.getEstimatedEvoLvl());
+            w.endObject();
+        }
+        w.endArray();
+
+        w.name("learnset").beginArray();
+        List<MoveLearnt> learnt = learnsets.get(pk.getNumber());
+        if (learnt != null) {
+            for (MoveLearnt ml : learnt) {
+                w.beginObject();
+                w.name("level").value(ml.level);
+                w.name("move").value(ml.move);
+                w.endObject();
+            }
+        }
+        w.endArray();
+
+        w.name("eggMoves").beginArray();
+        List<Integer> eggMovesForSpecies = eggMoves.get(pk.getNumber());
+        if (eggMovesForSpecies != null) {
+            for (int moveId : eggMovesForSpecies) {
+                w.value(moveId);
+            }
+        }
+        w.endArray();
+
+        w.endObject();
+    }
+
+    private void writeBaseStats(Species pk, boolean gen1) {
+        w.name("bst").value(pk.getBST(false));
+        if (gen1) {
+            Gen1BaseStats bs = (Gen1BaseStats) pk.getBaseStats();
+            w.name("hp").value(bs.getHp());
+            w.name("attack").value(bs.getAttack());
+            w.name("defense").value(bs.getDefense());
+            w.name("special").value(bs.getSpecial());
+            w.name("speed").value(bs.getSpeed());
+        } else {
+            BaseStats bs = pk.getBaseStats();
+            w.name("hp").value(bs.getHp());
+            w.name("attack").value(bs.getAttack());
+            w.name("defense").value(bs.getDefense());
+            w.name("spatk").value(bs.getSpatk());
+            w.name("spdef").value(bs.getSpdef());
+            w.name("speed").value(bs.getSpeed());
+        }
+    }
+}
