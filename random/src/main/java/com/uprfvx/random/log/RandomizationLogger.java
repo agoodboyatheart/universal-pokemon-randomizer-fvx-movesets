@@ -1421,7 +1421,9 @@ public class RandomizationLogger {
         return names;
     }
 
-    private int getMaxGymLeaderLevel(Trainer trainer) {
+    // Package-private and static (touches no instance state): reused by GameDocumentationWriter
+    // for per-trainer level cap (same package) without constructing a whole RandomizationLogger.
+    static int getMaxGymLeaderLevel(Trainer trainer) {
         List<TrainerPokemon> trainersPokemon = trainer.getPokemon();
         int maxLevel = 0;
 

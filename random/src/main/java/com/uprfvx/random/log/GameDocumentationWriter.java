@@ -27,12 +27,17 @@ import com.uprfvx.random.Version;
 import com.uprfvx.random.random.RandomSource;
 import com.uprfvx.romio.gamedata.BreedingInfo;
 import com.uprfvx.romio.gamedata.Evolution;
+import com.uprfvx.romio.gamedata.Item;
 import com.uprfvx.romio.gamedata.MoveLearnt;
 import com.uprfvx.romio.gamedata.Species;
+import com.uprfvx.romio.gamedata.Trainer;
+import com.uprfvx.romio.gamedata.TrainerPokemon;
+import com.uprfvx.romio.gamedata.Type;
 import com.uprfvx.romio.gamedata.basestats.BaseStats;
 import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -62,6 +67,7 @@ public class GameDocumentationWriter {
         writeGame();
         writeCapabilities();
         writeSpecies();
+        writeTrainers();
         w.endObject();
         return out.toString();
     }
@@ -176,6 +182,98 @@ public class GameDocumentationWriter {
             }
         }
         w.endArray();
+
+        w.endObject();
+    }
+
+    /**
+     * Only trainers where {@code isBoss() || isImportant()} are emitted — regular trainers are
+     * deliberately out of scope for the documentation.
+     */
+    private void writeTrainers() {
+        w.name("trainers").beginArray();
+        List<Trainer> trainers = romHandler.getTrainers();
+        Map<String, Type> typeThemes = romHandler.getGymAndEliteTypeThemes();
+        Map<Integer, Integer> progressionOrderByTrainerIndex = buildProgressionOrderIndex();
+        boolean gen7EVsAndNature = romHandler.generationOfPokemon() == 7;
+        for (Trainer t : trainers) {
+            if (!t.isBoss() && !t.isImportant()) {
+                continue;
+            }
+            writeOneTrainer(t, typeThemes, progressionOrderByTrainerIndex, gen7EVsAndNature);
+        }
+        w.endArray();
+    }
+
+    private Map<Integer, Integer> buildProgressionOrderIndex() {
+        Map<Integer, Integer> progressionOrderByTrainerIndex = new HashMap<>();
+        List<Integer> mainPlaythroughTrainers = romHandler.getMainPlaythroughTrainers();
+        for (int i = 0; i < mainPlaythroughTrainers.size(); i++) {
+            progressionOrderByTrainerIndex.put(mainPlaythroughTrainers.get(i), i);
+        }
+        return progressionOrderByTrainerIndex;
+    }
+
+    private void writeOneTrainer(Trainer t, Map<String, Type> typeThemes,
+                                  Map<Integer, Integer> progressionOrderByTrainerIndex,
+                                  boolean gen7EVsAndNature) {
+        w.beginObject();
+        w.name("index").value(t.getIndex());
+        w.name("name").value(t.getName());
+        w.name("fullDisplayName").value(t.getFullDisplayName());
+        w.name("tag").value(t.getTag());
+        w.name("isBoss").value(t.isBoss());
+        w.name("isImportant").value(t.isImportant());
+
+        Type typeTheme = t.getTag() == null ? null : typeThemes.get(t.getTag());
+        w.name("typeTheme").value(typeTheme == null ? null : typeTheme.name());
+
+        w.name("levelCap").value(RandomizationLogger.getMaxGymLeaderLevel(t));
+        w.name("battleStyle").value(t.getCurrBattleStyle().getStyle().name());
+
+        Integer progressionOrder = progressionOrderByTrainerIndex.get(t.getIndex());
+        w.name("progressionOrder").value(progressionOrder == null ? -1 : progressionOrder);
+
+        w.name("pokemon").beginArray();
+        for (TrainerPokemon tp : t.getPokemon()) {
+            writeOneTrainerPokemon(tp, gen7EVsAndNature);
+        }
+        w.endArray();
+
+        w.endObject();
+    }
+
+    private void writeOneTrainerPokemon(TrainerPokemon tp, boolean gen7EVsAndNature) {
+        w.beginObject();
+        w.name("level").value(tp.getLevel());
+        w.name("species").value(tp.getSpecies().getNumber());
+
+        w.name("moves").beginArray();
+        for (int moveId : tp.getMoves()) {
+            if (moveId != 0) {
+                w.value(moveId);
+            }
+        }
+        w.endArray();
+
+        Item heldItem = tp.getHeldItem();
+        w.name("heldItem").value(heldItem == null ? null : heldItem.getName());
+        w.name("abilitySlot").value(tp.getAbilitySlot());
+        w.name("ivs").value(tp.getIVs());
+
+        // Nature/EVs are only ever written by Gen7RomHandler (USUM); every other generation leaves
+        // these fields at their Java default, so emitting them there would be fabricated data.
+        if (gen7EVsAndNature) {
+            w.name("nature").value(tp.getNature());
+            w.name("evs").beginObject();
+            w.name("hp").value(tp.getHpEVs());
+            w.name("attack").value(tp.getAtkEVs());
+            w.name("defense").value(tp.getDefEVs());
+            w.name("spatk").value(tp.getSpatkEVs());
+            w.name("spdef").value(tp.getSpdefEVs());
+            w.name("speed").value(tp.getSpeedEVs());
+            w.endObject();
+        }
 
         w.endObject();
     }

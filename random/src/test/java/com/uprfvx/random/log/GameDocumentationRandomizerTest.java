@@ -119,4 +119,20 @@ public class GameDocumentationRandomizerTest {
                     "non-ASCII at " + i + ": " + json.charAt(i));
         }
     }
+
+    @Test
+    public void emitsBossTrainersWithTypeThemesAndProgressionOrder() {
+        RomHandler rh = load("Fire Red");
+        RandomSource rs = new RandomSource();
+        rs.seed(12345L);
+        String json = new GameDocumentationWriter(rs, newSettings(rh), rh).write();
+
+        assertTrue(json.contains("\"trainers\""), "trainers array missing");
+        assertTrue(json.contains("\"isBoss\":true"), "no boss trainers flagged");
+        assertTrue(json.contains("\"typeTheme\""), "type theme key missing");
+        assertTrue(json.contains("\"progressionOrder\""), "progression order missing");
+        // Regular trainers are out of scope.
+        assertFalse(json.contains("\"isBoss\":false,\"isImportant\":false"),
+                "regular trainers must not be emitted");
+    }
 }
