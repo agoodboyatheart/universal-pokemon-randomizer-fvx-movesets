@@ -1,6 +1,8 @@
 package com.uprfvx.random;
 
 import com.uprfvx.romio.gamedata.*;
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
 public class CheckValueCalculator {
@@ -33,8 +35,13 @@ public class CheckValueCalculator {
     private void addSpeciesInfo() {
         for (Species pkmn : romHandler.getSpecies()) {
             if (pkmn != null) {
-                addToCV(pkmn.getHp(), pkmn.getAttack(), pkmn.getDefense(), pkmn.getSpeed(), pkmn.getSpatk(),
-                        pkmn.getSpdef(), pkmn.getAbility1(), pkmn.getAbility2(), pkmn.getAbility3());
+                BaseStats bs = pkmn.getBaseStats();
+                if (bs instanceof Gen1BaseStats gen1BS) {
+                    addToCV(bs.getHp(), bs.getAttack(), bs.getDefense(), bs.getSpeed(), gen1BS.getSpecial());
+                } else {
+                    addToCV(bs.getHp(), bs.getAttack(), bs.getDefense(), bs.getSpeed(), bs.getSpatk(), bs.getSpdef());
+                }
+                addToCV(pkmn.getAbility1(), pkmn.getAbility2(), pkmn.getAbility3());
             }
         }
     }
