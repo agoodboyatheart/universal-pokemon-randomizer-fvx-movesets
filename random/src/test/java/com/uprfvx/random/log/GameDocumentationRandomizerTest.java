@@ -25,10 +25,12 @@ package com.uprfvx.random.log;
 import com.uprfvx.random.Settings;
 import com.uprfvx.random.random.RandomSource;
 import com.uprfvx.romio.gamedata.ExpCurve;
+import com.uprfvx.romio.gamedata.StaticEncounter;
 import com.uprfvx.romio.romhandlers.Generation;
 import com.uprfvx.romio.romhandlers.RomHandler;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -74,14 +76,24 @@ public class GameDocumentationRandomizerTest {
         return settings;
     }
 
+    /**
+     * Builds the documentation JSON the way production does: capture {@code originalStatics}
+     * before any randomization (here, none happens — settings are all-unchanged), mirroring how
+     * {@code RandomizationLogger} captures it in its own constructor for the real pipeline.
+     */
+    private String writeDocumentation(RomHandler rh, Settings settings, long seed) {
+        RandomSource rs = new RandomSource();
+        rs.seed(seed);
+        List<StaticEncounter> originalStatics = rh.canChangeStaticPokemon() ? rh.getStaticPokemon() : null;
+        return new GameDocumentationWriter(rs, settings, rh, originalStatics).write();
+    }
+
     @Test
     public void emitsSpeciesEvenWhenNothingWasRandomized() {
         RomHandler rh = load("Fire Red");
         Settings settings = newSettings(rh);   // all-unchanged defaults otherwise
-        RandomSource rs = new RandomSource();
-        rs.seed(12345L);
 
-        String json = new GameDocumentationWriter(rs, settings, rh).write();
+        String json = writeDocumentation(rh, settings, 12345L);
 
         // The log would omit these entirely under all-unchanged settings; the doc must not.
         assertTrue(json.contains("\"species\""), "species array missing");
@@ -97,10 +109,8 @@ public class GameDocumentationRandomizerTest {
     @Test
     public void gen1ReportsNoAbilitiesAndNoEggMoves() {
         RomHandler rh = load("Red");
-        RandomSource rs = new RandomSource();
-        rs.seed(12345L);
 
-        String json = new GameDocumentationWriter(rs, newSettings(rh), rh).write();
+        String json = writeDocumentation(rh, newSettings(rh), 12345L);
 
         assertTrue(json.contains("\"abilitiesPerSpecies\":0"),
                 "Gen 1 must report zero abilities per species");
@@ -111,9 +121,7 @@ public class GameDocumentationRandomizerTest {
     @Test
     public void outputIsPureAscii() {
         RomHandler rh = load("Fire Red");
-        RandomSource rs = new RandomSource();
-        rs.seed(12345L);
-        String json = new GameDocumentationWriter(rs, newSettings(rh), rh).write();
+        String json = writeDocumentation(rh, newSettings(rh), 12345L);
         for (int i = 0; i < json.length(); i++) {
             assertTrue(json.charAt(i) <= 0x7E,
                     "non-ASCII at " + i + ": " + json.charAt(i));
@@ -123,9 +131,7 @@ public class GameDocumentationRandomizerTest {
     @Test
     public void emitsBossTrainersWithTypeThemesAndProgressionOrder() {
         RomHandler rh = load("Fire Red");
-        RandomSource rs = new RandomSource();
-        rs.seed(12345L);
-        String json = new GameDocumentationWriter(rs, newSettings(rh), rh).write();
+        String json = writeDocumentation(rh, newSettings(rh), 12345L);
 
         assertTrue(json.contains("\"trainers\""), "trainers array missing");
         assertTrue(json.contains("\"isBoss\":true"), "no boss trainers flagged");
@@ -134,5 +140,21 @@ public class GameDocumentationRandomizerTest {
         // Regular trainers are out of scope.
         assertFalse(json.contains("\"isBoss\":false,\"isImportant\":false"),
                 "regular trainers must not be emitted");
+    }
+
+    @Test
+    public void emitsAreasInProgressionOrderWithSlotCountsNotPercentages() {
+        RomHandler rh = load("Fire Red");
+        String json = writeDocumentation(rh, newSettings(rh), 12345L);
+
+        assertTrue(json.contains("\"areas\""), "areas missing");
+        assertTrue(json.contains("\"slots\""), "slot counts missing");
+        assertTrue(json.contains("\"progressionOrder\""), "progression order missing");
+        assertTrue(json.contains("\"statics\""), "statics missing");
+        assertTrue(json.contains("\"vanillaSpecies\""), "vanilla static identity missing");
+        assertTrue(json.contains("\"trades\""), "trades missing");
+        // Forbidden: no authored data.
+        assertFalse(json.contains("\"percent\""), "slot percentages are authored data");
+        assertFalse(json.contains("\"location\":"), "static locations are authored data");
     }
 }

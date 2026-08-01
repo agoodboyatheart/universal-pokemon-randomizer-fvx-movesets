@@ -26,10 +26,15 @@ import com.uprfvx.random.Settings;
 import com.uprfvx.random.Version;
 import com.uprfvx.random.random.RandomSource;
 import com.uprfvx.romio.gamedata.BreedingInfo;
+import com.uprfvx.romio.gamedata.Encounter;
+import com.uprfvx.romio.gamedata.EncounterArea;
+import com.uprfvx.romio.gamedata.EncounterType;
 import com.uprfvx.romio.gamedata.Evolution;
+import com.uprfvx.romio.gamedata.InGameTrade;
 import com.uprfvx.romio.gamedata.Item;
 import com.uprfvx.romio.gamedata.MoveLearnt;
 import com.uprfvx.romio.gamedata.Species;
+import com.uprfvx.romio.gamedata.StaticEncounter;
 import com.uprfvx.romio.gamedata.Trainer;
 import com.uprfvx.romio.gamedata.TrainerPokemon;
 import com.uprfvx.romio.gamedata.Type;
@@ -38,6 +43,7 @@ import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
 import com.uprfvx.romio.romhandlers.RomHandler;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -52,13 +58,23 @@ public class GameDocumentationWriter {
     private final RandomSource randomSource;
     private final Settings settings;
     private final RomHandler romHandler;
+    private final List<StaticEncounter> originalStatics;
     private final StringBuilder out = new StringBuilder();
     private final JsonWriter w = new JsonWriter(out);
 
-    public GameDocumentationWriter(RandomSource randomSource, Settings settings, RomHandler romHandler) {
+    /**
+     * @param originalStatics The pre-randomisation static Pokemon snapshot (see
+     *                        {@link RandomizationLogger#getOriginalStatics()}), used to label
+     *                        statics by the vanilla species they replaced — the ROM records no
+     *                        location data to identify a static encounter by otherwise. Null if
+     *                        the game can't have its statics randomised at all.
+     */
+    public GameDocumentationWriter(RandomSource randomSource, Settings settings, RomHandler romHandler,
+                                    List<StaticEncounter> originalStatics) {
         this.randomSource = randomSource;
         this.settings = settings;
         this.romHandler = romHandler;
+        this.originalStatics = originalStatics;
     }
 
     public String write() {
@@ -68,6 +84,7 @@ public class GameDocumentationWriter {
         writeCapabilities();
         writeSpecies();
         writeTrainers();
+        writeEncounters();
         w.endObject();
         return out.toString();
     }
@@ -276,6 +293,132 @@ public class GameDocumentationWriter {
         }
 
         w.endObject();
+    }
+
+    private void writeEncounters() {
+        w.name("encounters").beginObject();
+        writeEncounterAreas();
+        writeStatics();
+        writeTrades();
+        w.endObject();
+    }
+
+    /**
+     * Areas with {@code encounterType == UNUSED} are dummy ROM slots (see the identical skip in
+     * {@code RandomizationLogger.logWildPokemon()}) and are not real encounters.
+     */
+    private void writeEncounterAreas() {
+        w.name("areas").beginArray();
+        List<EncounterArea> areas = romHandler.getSortedEncounters(romHandler.hasTimeBasedEncounters());
+        int progressionOrder = 0;
+        for (EncounterArea area : areas) {
+            if (area.getEncounterType() == EncounterType.UNUSED) {
+                continue;
+            }
+            writeOneArea(area, progressionOrder);
+            progressionOrder++;
+        }
+        w.endArray();
+    }
+
+    private void writeOneArea(EncounterArea area, int progressionOrder) {
+        w.beginObject();
+        w.name("displayName").value(area.getDisplayName());
+        w.name("locationTag").value(area.getLocationTag());
+        w.name("encounterType").value(area.getEncounterType().name());
+        w.name("rate").value(area.getRate());
+        w.name("postGame").value(area.isPostGame());
+        w.name("progressionOrder").value(progressionOrder);
+        w.name("slotCount").value(area.size());
+
+        // Aggregate duplicate slots per species into one entry with a slot count and level range —
+        // never a percentage, since no generation's constants file records per-slot probabilities.
+        Map<Integer, Integer> slotCountBySpeciesNumber = new LinkedHashMap<>();
+        Map<Integer, int[]> levelRangeBySpeciesNumber = new HashMap<>();
+        for (Encounter e : area) {
+            int number = e.getSpecies().getNumber();
+            int lo = e.getLevel();
+            int hi = e.getMaxLevel() > 0 ? e.getMaxLevel() : e.getLevel();
+            int[] range = levelRangeBySpeciesNumber.get(number);
+            if (range == null) {
+                levelRangeBySpeciesNumber.put(number, new int[] { lo, hi });
+                slotCountBySpeciesNumber.put(number, 1);
+            } else {
+                range[0] = Math.min(range[0], lo);
+                range[1] = Math.max(range[1], hi);
+                slotCountBySpeciesNumber.put(number, slotCountBySpeciesNumber.get(number) + 1);
+            }
+        }
+
+        w.name("species").beginArray();
+        for (Map.Entry<Integer, Integer> entry : slotCountBySpeciesNumber.entrySet()) {
+            int number = entry.getKey();
+            int[] range = levelRangeBySpeciesNumber.get(number);
+            w.beginObject();
+            w.name("number").value(number);
+            w.name("minLevel").value(range[0]);
+            w.name("maxLevel").value(range[1]);
+            w.name("slots").value(entry.getValue());
+            w.endObject();
+        }
+        w.endArray();
+
+        w.endObject();
+    }
+
+    private void writeStatics() {
+        w.name("statics").beginArray();
+        List<StaticEncounter> statics = romHandler.getStaticPokemon();
+        List<Integer> mainGameLegendaries = romHandler.hasMainGameLegendaries()
+                ? romHandler.getMainGameLegendaries() : null;
+        for (int i = 0; i < statics.size(); i++) {
+            writeOneStatic(statics.get(i), i, mainGameLegendaries);
+        }
+        w.endArray();
+    }
+
+    private void writeOneStatic(StaticEncounter se, int index, List<Integer> mainGameLegendaries) {
+        w.beginObject();
+
+        Integer vanillaSpecies = null;
+        if (originalStatics != null && index < originalStatics.size()) {
+            vanillaSpecies = originalStatics.get(index).getSpecies().getNumber();
+        }
+        writeNullableInt("vanillaSpecies", vanillaSpecies);
+
+        w.name("species").value(se.getSpecies().getNumber());
+        w.name("level").value(se.getLevel());
+        Item heldItem = se.getHeldItem();
+        w.name("heldItem").value(heldItem == null ? null : heldItem.getName());
+        w.name("isEgg").value(se.isEgg());
+        w.name("isLegendary").value(se.getSpecies().isLegendary());
+        boolean mainGame = mainGameLegendaries != null
+                && mainGameLegendaries.contains(se.getSpecies().getBaseForme().getNumber());
+        w.name("mainGame").value(mainGame);
+
+        w.endObject();
+    }
+
+    private void writeTrades() {
+        w.name("trades").beginArray();
+        for (InGameTrade trade : romHandler.getInGameTrades()) {
+            w.beginObject();
+            Species requested = trade.getRequestedSpecies();
+            writeNullableInt("requestedSpecies", requested == null ? null : requested.getNumber());
+            w.name("givenSpecies").value(trade.getGivenSpecies().getNumber());
+            w.name("nickname").value(trade.getNickname());
+            w.endObject();
+        }
+        w.endArray();
+    }
+
+    private void writeNullableInt(String name, Integer value) {
+        w.name(name);
+        if (value == null) {
+            w.nullValue();
+        } else {
+            w.value(value.longValue());
+        }
     }
 
     private void writeBaseStats(Species pk, boolean gen1) {
