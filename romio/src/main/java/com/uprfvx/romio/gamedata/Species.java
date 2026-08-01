@@ -25,7 +25,11 @@ package com.uprfvx.romio.gamedata;
 /*----------------------------------------------------------------------------*/
 
 import com.uprfvx.romio.constants.SpeciesIDs;
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
+import com.uprfvx.romio.gamedata.basestats.ShedinjaBaseStats;
 import com.uprfvx.romio.graphics.palettes.Palette;
+import com.uprfvx.romio.graphics.palettes.SGBPaletteID;
 
 import java.util.*;
 import java.util.function.Function;
@@ -99,6 +103,8 @@ public class Species implements Comparable<Species> {
     private Species baseForme = null;
     private Species conceptualBaseForme = null; // for "formes-of-formes"
 
+    private boolean megaEvolution = false;
+    private Item megaEvolutionItem = null;
     private boolean alolan = false;
     private boolean essentiallyCosmetic = false;
 
@@ -114,13 +120,8 @@ public class Species implements Comparable<Species> {
     private boolean hasSetPrimaryType;
     private boolean hasSetSecondaryType;
 
-    private int hp;
-    private int attack;
-    private int defense;
-    private int spatk;
-    private int spdef;
-    private int speed;
-    private int special;
+    private BaseStats baseStats;
+    private int originalBST = -1;
 
     private int ability1;
     private int ability2;
@@ -144,39 +145,16 @@ public class Species implements Comparable<Species> {
     private ExpCurve growthCurve;
 
     private BreedingInfo breedingInfo;
-    
+
+    private SGBPaletteID paletteID; // only relevant for Gen 1
     private Palette normalPalette;
     private Palette shinyPalette;
 
     private List<Evolution> evolutionsFrom = new ArrayList<>();
     private List<Evolution> evolutionsTo = new ArrayList<>();
 
-    private List<MegaEvolution> megaEvolutionsFrom = new ArrayList<>();
-    private List<MegaEvolution> megaEvolutionsTo = new ArrayList<>();
-
     public Species(int number) {
         this.number = number;
-    }
-
-    /**
-     * Gets the raw Base Stat Total. In most cases, {@link #getBSTForPowerLevels()}
-     * should be used instead.
-     */
-    public int getBST() {
-        return hp + attack + defense + spatk + spdef + speed;
-    }
-
-    public int getBSTForPowerLevels() {
-        // Take into account Shedinja's purposefully nerfed HP
-        if (number == SpeciesIDs.shedinja) {
-            return (attack + defense + spatk + spdef + speed) * 6 / 5;
-        } else {
-            return hp + attack + defense + spatk + spdef + speed;
-        }
-    }
-
-    public double getAttackSpecialAttackRatio() {
-        return (double)attack / ((double)attack + (double)spatk);
     }
 
     /**
@@ -534,24 +512,10 @@ public class Species implements Comparable<Species> {
         originalPreEvolvedForms = SpeciesSet.unmodifiable(getPreEvolvedSpecies(false));
     }
 
-    public void copyBaseFormeBaseStats(Species baseForme) {
-        hp = baseForme.hp;
-        attack = baseForme.attack;
-        defense = baseForme.defense;
-        speed = baseForme.speed;
-        spatk = baseForme.spatk;
-        spdef = baseForme.spdef;
-    }
-
-    public void copyBaseFormeAbilities(Species baseForme) {
-        ability1 = baseForme.ability1;
-        ability2 = baseForme.ability2;
-        ability3 = baseForme.ability3;
-    }
-
-    public void copyBaseFormeEvolutions(Species baseForme) {
-        evolutionsFrom = baseForme.evolutionsFrom;
-        //Doesn't copy evolutions to as that would result in poorly-defined behavior
+    public void copyBaseFormeAbilities(Species other) {
+        ability1 = other.ability1;
+        ability2 = other.ability2;
+        ability3 = other.ability3;
     }
 
     /**
@@ -569,8 +533,7 @@ public class Species implements Comparable<Species> {
     @Override
     public String toString() {
         return "Species [name=" + name + formeSuffix + ", number=" + number + ", primaryType=" + primaryType
-                + ", secondaryType=" + secondaryType + ", hp=" + hp + ", attack=" + attack + ", defense=" + defense
-                + ", spatk=" + spatk + ", spdef=" + spdef + ", speed=" + speed + "]";
+                + ", secondaryType=" + secondaryType + ", " + baseStats + "]";
     }
 
     @Override
@@ -819,6 +782,34 @@ public class Species implements Comparable<Species> {
     }
 
     /**
+     * Returns whether this is a mega evolution.
+     */
+    public boolean isMegaEvolution() {
+        return megaEvolution;
+    }
+
+    /**
+     * Marks this alt forme as a mega evolution.
+     * @param item The item this needs to mega evolve. Can be null, in which no item is required (Mega Rayquaza).
+     * @throws IllegalStateException if this is not an alt forme.
+     */
+    public void setMegaEvolution(Item item) {
+        if (isBaseForme()) {
+            throw new IllegalStateException(getNumberAndFullName() + " is a base forme.");
+        }
+        this.megaEvolution = true;
+        this.megaEvolutionItem = item;
+    }
+
+    public boolean needsMegaEvolutionItem() {
+        return megaEvolutionItem != null;
+    }
+
+    public Item getMegaEvolutionItem() {
+        return megaEvolutionItem;
+    }
+
+    /**
      * Returns whether this is an Alolan forme.
      */
     public boolean isAlolan() {
@@ -985,60 +976,23 @@ public class Species implements Comparable<Species> {
                 (getSecondaryType(false).equals(other.getPrimaryType(false)) || getSecondaryType(false).equals(other.getSecondaryType(false))));
     }
 
-    public int getHp() {
-        return hp;
+    public BaseStats getBaseStats() {
+        return baseStats;
     }
 
-    public void setHp(int hp) {
-        this.hp = hp;
+    public void setBaseStats(BaseStats baseStats) {
+        this.baseStats = baseStats;
+        if (originalBST == -1) {
+            originalBST = baseStats.getBST();
+        }
     }
 
-    public int getAttack() {
-        return attack;
-    }
-
-    public void setAttack(int attack) {
-        this.attack = attack;
-    }
-
-    public int getDefense() {
-        return defense;
-    }
-
-    public void setDefense(int defense) {
-        this.defense = defense;
-    }
-
-    public int getSpatk() {
-        return spatk;
-    }
-
-    public void setSpatk(int spatk) {
-        this.spatk = spatk;
-    }
-
-    public int getSpdef() {
-        return spdef;
-    }
-
-    public void setSpdef(int spdef) {
-        this.spdef = spdef;
-    }
-
-    public int getSpeed() {
-        return speed;
-    }
-
-    public void setSpeed(int speed) {
-        this.speed = speed;
-    }
-
-    public int getSpecial() {
-        return special;
-    }
-
-    public void setSpecial(int special) {
-        this.special = special;
+    /**
+     * Short for {@link #getBaseStats()}.{@link BaseStats#getBST() getBST()}.
+     * @param useOriginal Whether to use base stat data from before randomization.
+     */
+    public int getBST(boolean useOriginal) {
+        return useOriginal ? originalBST : getBaseStats().getBST();
     }
 
     public int getAbility1() {
@@ -1129,15 +1083,6 @@ public class Species implements Comparable<Species> {
         this.genderRatio = genderRatio;
     }
 
-    // TODO: move this to be a RomHandler internal field; it is not interesting to other classes
-    public int getFrontImageDimensions() {
-        return frontImageDimensions;
-    }
-
-    public void setFrontImageDimensions(int frontImageDimensions) {
-        this.frontImageDimensions = frontImageDimensions;
-    }
-
     public int getCallRate() {
         return callRate;
     }
@@ -1160,6 +1105,20 @@ public class Species implements Comparable<Species> {
 
     public void setBreedingInfo(BreedingInfo breedingInfo) {
         this.breedingInfo = breedingInfo;
+    }
+
+    /**
+     * Gets the Palette ID. Relevant only for Gen 1.
+     */
+    public SGBPaletteID getPaletteID() {
+        return paletteID;
+    }
+
+    /**
+     * Sets the Palette ID. Relevant only for Gen 1.
+     */
+    public void setPaletteID(SGBPaletteID paletteID) {
+        this.paletteID = paletteID;
     }
 
     public Palette getNormalPalette() {
@@ -1202,22 +1161,6 @@ public class Species implements Comparable<Species> {
      */
     public List<Evolution> getEvolutionsTo() {
         return evolutionsTo;
-    }
-
-    public List<MegaEvolution> getMegaEvolutionsFrom() {
-        return megaEvolutionsFrom;
-    }
-
-    public void setMegaEvolutionsFrom(List<MegaEvolution> megaEvolutionsFrom) {
-        this.megaEvolutionsFrom = megaEvolutionsFrom;
-    }
-
-    public List<MegaEvolution> getMegaEvolutionsTo() {
-        return megaEvolutionsTo;
-    }
-
-    public void setMegaEvolutionsTo(List<MegaEvolution> megaEvolutionsTo) {
-        this.megaEvolutionsTo = megaEvolutionsTo;
     }
 
     /**
@@ -1283,13 +1226,13 @@ public class Species implements Comparable<Species> {
         copy.hasSetSecondaryType = original.hasSetSecondaryType;
 
         //base stats
-        copy.hp = original.hp;
-        copy.attack = original.attack;
-        copy.defense = original.defense;
-        copy.spatk = original.spatk;
-        copy.spdef = original.spdef;
-        copy.speed = original.speed;
-        copy.special = original.special;
+        copy.baseStats = switch (original.baseStats) {
+            case null -> null;
+            case Gen1BaseStats origGen1BaseStats -> new Gen1BaseStats(origGen1BaseStats);
+            case ShedinjaBaseStats origShedinjaBaseStats -> new ShedinjaBaseStats(origShedinjaBaseStats);
+            default -> new BaseStats(original.baseStats);
+        };
+        copy.originalBST = original.originalBST;
 
         //abilities
         copy.ability1 = original.ability1;
@@ -1316,6 +1259,7 @@ public class Species implements Comparable<Species> {
                 null : new BreedingInfo(original.breedingInfo);
 
         //palettes
+        copy.paletteID = original.paletteID;
         copy.normalPalette = original.normalPalette == null ?
                 null : new Palette(original.normalPalette);
         copy.shinyPalette = original.shinyPalette == null ?
@@ -1326,7 +1270,6 @@ public class Species implements Comparable<Species> {
                                                         Map<Species, Species> originalToCopies) {
         transferFormesToCopy(copy, original, originalToCopies);
         transferEvolutionsToCopy(copy, original, originalToCopies);
-        transferMegaEvolutionsToCopy(copy, original, originalToCopies);
     }
 
     private static void transferFormesToCopy(Species copy, Species original,
@@ -1339,6 +1282,8 @@ public class Species implements Comparable<Species> {
         copy.formeSuffix = original.formeSuffix;
         copy.formeNumber = original.formeNumber;
 
+        copy.megaEvolution = original.megaEvolution;
+        copy.megaEvolutionItem = original.megaEvolutionItem;
         copy.alolan = original.alolan;
         copy.essentiallyCosmetic = original.essentiallyCosmetic;
 
@@ -1359,16 +1304,6 @@ public class Species implements Comparable<Species> {
                     evo.getType(), evo.getExtraInfo(), evo.getEstimatedEvoLvl());
             copy.getEvolutionsFrom().add(evoCopy);
             evoCopy.getTo().getEvolutionsTo().add(evoCopy);
-        }
-    }
-
-    private static void transferMegaEvolutionsToCopy(Species copy, Species original,
-                                                     Map<Species, Species> originalToCopies) {
-        for (MegaEvolution mevo : original.getMegaEvolutionsFrom()) {
-            MegaEvolution mevoCopy = new MegaEvolution(copy, originalToCopies.get(mevo.getTo()),
-                    mevo.isNeedsItem(), mevo.getItem());
-            copy.getMegaEvolutionsFrom().add(mevoCopy);
-            mevoCopy.getTo().getMegaEvolutionsTo().add(mevoCopy);
         }
     }
 }

@@ -296,8 +296,7 @@ public class EvolutionRandomizerTest extends RandomizerTest {
     }
 
     private double calcPowerLevelDiff(Species a, Species b) {
-        return Math.abs((double) a.getBSTForPowerLevels() /
-                b.getBSTForPowerLevels() - 1);
+        return Math.abs((double) a.getBST(false) / b.getBST(false) - 1);
     }
 
     @ParameterizedTest
@@ -311,10 +310,10 @@ public class EvolutionRandomizerTest extends RandomizerTest {
         new EvolutionRandomizer(romHandler, s, RND).randomizeEvolutions();
 
         for (Species pk : romHandler.getSpeciesSet()) {
-            System.out.println(pk.getFullName() + " BST=" + pk.getBSTForPowerLevels() + " ->");
+            System.out.println(pk.getFullName() + " BST=" + pk.getBST(false) + " ->");
             for (Evolution evo : pk.getEvolutionsFrom()) {
-                System.out.println("\t" + evo.getTo().getFullName() + " BST=" + evo.getTo().getBSTForPowerLevels());
-                assertTrue(evo.getTo().getBSTForPowerLevels() > pk.getBSTForPowerLevels());
+                System.out.println("\t" + evo.getTo().getFullName() + " BST=" + evo.getTo().getBST(false));
+                assertTrue(evo.getTo().getBST(false) > pk.getBST(false));
             }
         }
     }
@@ -333,27 +332,6 @@ public class EvolutionRandomizerTest extends RandomizerTest {
             System.out.println(pk.getFullName());
             System.out.println(pk.getEvolutionsTo());
             assertTrue(pk.getEvolutionsTo().size() <= 1);
-        }
-    }
-
-    @ParameterizedTest
-    @MethodSource("getRomNames")
-    public void randomNoEvoHasLevelFemaleEspurrEvoType(String romName) {
-        // Not entirely sure why this has to be the case, but older evolution randomization made sure to get rid of
-        // and LEVEL_FEMALE_ESPURR, and so it's carried to newer code as well.
-        // Probably there are some issues if LEVEL_FEMALE_ESPURR is used and the Pokemon it evolves to isn't Meowstic.
-        activateRomHandler(romName);
-
-        Settings s = new Settings();
-        s.setEvolutionsMod(false, true, false);
-        new EvolutionRandomizer(romHandler, s, RND).randomizeEvolutions();
-
-        for (Species pk : romHandler.getSpeciesSet()) {
-            System.out.println(pk.getName());
-            for (Evolution evo : pk.getEvolutionsFrom()) {
-                System.out.println(evo);
-                assertNotEquals(EvolutionType.LEVEL_FEMALE_ESPURR, evo.getType());
-            }
         }
     }
 

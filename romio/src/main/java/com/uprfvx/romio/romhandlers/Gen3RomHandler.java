@@ -28,6 +28,8 @@ import com.uprfvx.romio.constants.*;
 import com.uprfvx.romio.constants.enctaggers.Gen3EncounterAreaTagger;
 import com.uprfvx.romio.exceptions.RomIOException;
 import com.uprfvx.romio.gamedata.*;
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
+import com.uprfvx.romio.gamedata.basestats.ShedinjaBaseStats;
 import com.uprfvx.romio.gbspace.FreedSpace;
 import com.uprfvx.romio.graphics.images.GBAImage;
 import com.uprfvx.romio.graphics.packs.*;
@@ -530,12 +532,14 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
             if (offset > 0) {
                 offset += deoxysStatPrefix.length() / 2; // because it was a prefix
                 Species deoxys = pokes[SpeciesIDs.deoxys];
-                deoxys.setHp(readWord(offset));
-                deoxys.setAttack(readWord(offset + 2));
-                deoxys.setDefense(readWord(offset + 4));
-                deoxys.setSpeed(readWord(offset + 6));
-                deoxys.setSpatk(readWord(offset + 8));
-                deoxys.setSpdef(readWord(offset + 10));
+                deoxys.setBaseStats(new BaseStats(
+                        readWord(offset) & 0xFF,
+                        readWord(offset + 2) & 0xFF,
+                        readWord(offset + 4) & 0xFF,
+                        readWord(offset + 8) & 0xFF,
+                        readWord(offset + 10) & 0xFF,
+                        readWord(offset + 6) & 0xFF
+                ));
             }
         }
 
@@ -573,12 +577,13 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
             if (offset > 0) {
                 offset += deoxysStatPrefix.length() / 2; // because it was a prefix
                 Species deoxys = pokes[SpeciesIDs.deoxys];
-                writeWord(offset, deoxys.getHp());
-                writeWord(offset + 2, deoxys.getAttack());
-                writeWord(offset + 4, deoxys.getDefense());
-                writeWord(offset + 6, deoxys.getSpeed());
-                writeWord(offset + 8, deoxys.getSpatk());
-                writeWord(offset + 10, deoxys.getSpdef());
+                BaseStats bs = deoxys.getBaseStats();
+                writeWord(offset, bs.getHp());
+                writeWord(offset + 2, bs.getAttack());
+                writeWord(offset + 4, bs.getDefense());
+                writeWord(offset + 6, bs.getSpeed());
+                writeWord(offset + 8, bs.getSpatk());
+                writeWord(offset + 10, bs.getSpdef());
             }
         }
 
@@ -1038,12 +1043,24 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
     }
 
     private void loadBasicPokeStats(Species pkmn, int offset) {
-        pkmn.setHp(rom[offset + Gen3Constants.bsHPOffset] & 0xFF);
-        pkmn.setAttack(rom[offset + Gen3Constants.bsAttackOffset] & 0xFF);
-        pkmn.setDefense(rom[offset + Gen3Constants.bsDefenseOffset] & 0xFF);
-        pkmn.setSpeed(rom[offset + Gen3Constants.bsSpeedOffset] & 0xFF);
-        pkmn.setSpatk(rom[offset + Gen3Constants.bsSpAtkOffset] & 0xFF);
-        pkmn.setSpdef(rom[offset + Gen3Constants.bsSpDefOffset] & 0xFF);
+        if (pkmn.getNumber() == SpeciesIDs.shedinja) {
+            pkmn.setBaseStats(new ShedinjaBaseStats(
+                    rom[offset + Gen3Constants.bsAttackOffset] & 0xFF,
+                    rom[offset + Gen3Constants.bsDefenseOffset] & 0xFF,
+                    rom[offset + Gen3Constants.bsSpAtkOffset] & 0xFF,
+                    rom[offset + Gen3Constants.bsSpDefOffset] & 0xFF,
+                    rom[offset + Gen3Constants.bsSpeedOffset] & 0xFF
+            ));
+        } else {
+            pkmn.setBaseStats(new BaseStats(
+                    rom[offset + Gen3Constants.bsHPOffset] & 0xFF,
+                    rom[offset + Gen3Constants.bsAttackOffset] & 0xFF,
+                    rom[offset + Gen3Constants.bsDefenseOffset] & 0xFF,
+                    rom[offset + Gen3Constants.bsSpAtkOffset] & 0xFF,
+                    rom[offset + Gen3Constants.bsSpDefOffset] & 0xFF,
+                    rom[offset + Gen3Constants.bsSpeedOffset] & 0xFF
+            ));
+        }
         // Type
         pkmn.setPrimaryType(Gen3Constants.typeTable[rom[offset + Gen3Constants.bsPrimaryTypeOffset] & 0xFF]);
         pkmn.setSecondaryType(Gen3Constants.typeTable[rom[offset + Gen3Constants.bsSecondaryTypeOffset] & 0xFF]);
@@ -1083,12 +1100,13 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
     }
 
     private void saveBasicPokeStats(Species pkmn, int offset) {
-        writeByte(offset + Gen3Constants.bsHPOffset, (byte) pkmn.getHp());
-        writeByte(offset + Gen3Constants.bsAttackOffset, (byte) pkmn.getAttack());
-        writeByte(offset + Gen3Constants.bsDefenseOffset, (byte) pkmn.getDefense());
-        writeByte(offset + Gen3Constants.bsSpeedOffset, (byte) pkmn.getSpeed());
-        writeByte(offset + Gen3Constants.bsSpAtkOffset, (byte) pkmn.getSpatk());
-        writeByte(offset + Gen3Constants.bsSpDefOffset, (byte) pkmn.getSpdef());
+        BaseStats bs = pkmn.getBaseStats();
+        writeByte(offset + Gen3Constants.bsHPOffset, (byte) bs.getHp());
+        writeByte(offset + Gen3Constants.bsAttackOffset, (byte) bs.getAttack());
+        writeByte(offset + Gen3Constants.bsDefenseOffset, (byte) bs.getDefense());
+        writeByte(offset + Gen3Constants.bsSpeedOffset, (byte) bs.getSpeed());
+        writeByte(offset + Gen3Constants.bsSpAtkOffset, (byte) bs.getSpatk());
+        writeByte(offset + Gen3Constants.bsSpDefOffset, (byte) bs.getSpdef());
         writeByte(offset + Gen3Constants.bsPrimaryTypeOffset, Gen3Constants.typeToByte(pkmn.getPrimaryType(false)));
         writeByte(offset + Gen3Constants.bsSecondaryTypeOffset, Gen3Constants.typeToByte(
                 pkmn.getSecondaryType(false) == null ? pkmn.getPrimaryType(false) : pkmn.getSecondaryType(false)
@@ -1915,11 +1933,6 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
     }
 
     @Override
-    public List<MegaEvolution> getMegaEvolutions() {
-        return new ArrayList<>();
-    }
-
-    @Override
     public SpeciesSet getIrregularFormes() {
         return new SpeciesSet();
     }
@@ -2415,23 +2428,32 @@ public class Gen3RomHandler extends AbstractGBRomHandler {
 			int idOffset = romEntry.getIntValue("ItemData");
 			int mdOffset = romEntry.getIntValue("MoveDescriptions");
 			int entrySize = romEntry.getIntValue("ItemEntrySize");
-			int limitPerLine = (romEntry.getRomType() == Gen3Constants.RomType_FRLG) ? Gen3Constants.frlgItemDescCharsPerLine
-					: Gen3Constants.rseItemDescCharsPerLine;
+
 			for (int i = 0; i < Gen3Constants.tmCount; i++) {
 				int itemBaseOffset = idOffset + Gen3Constants.itemIDToInternal(ItemIDs.tm01 + i) * entrySize;
-				int moveBaseOffset = mdOffset + (moveIndexes.get(i) - 1) * 4;
-				int moveTextPointer = readPointer(moveBaseOffset);
-				String moveDesc = readVariableLengthString(moveTextPointer);
-				String newItemDesc = RomFunctions.rewriteDescriptionForNewLineSize(moveDesc, "\\n", limitPerLine, ssd);
-
 				int itemDescPointerOffset = itemBaseOffset + Gen3Constants.itemDataDescriptionOffset;
-				try {
-					rewriteVariableLengthString(itemDescPointerOffset, newItemDesc);
-				} catch (RomIOException e) {
-                    // This used to be a simple logging, turned it into a full error because I don't *think* it
-                    // should be too common? Plus the RomHandler arguably should not do logging.
-					throw new RomIOException("Couldn't insert new item description. " + e.getMessage());
-				}
+                int moveDescPointerOffset = mdOffset + (moveIndexes.get(i) - 1) * 4;
+
+
+                if (romEntry.getRomType() == Gen3Constants.RomType_FRLG) {
+                    // In FRLG, the same strings are used for move descriptions and TM descriptions.
+                    int descOffset = readPointer(moveDescPointerOffset);
+                    writePointer(itemDescPointerOffset, descOffset);
+
+                } else {
+                    // In RSE, TMs use separate strings, formatted like item descriptions (more chars per line)
+                    int limitPerLine = Gen3Constants.rseItemDescCharsPerLine;
+                    String moveDesc = readVariableLengthString(readPointer(moveDescPointerOffset));
+                    String newItemDesc = RomFunctions.rewriteDescriptionForNewLineSize(moveDesc, "\\n", limitPerLine, ssd);
+
+                    try {
+                        rewriteVariableLengthString(itemDescPointerOffset, newItemDesc);
+                    } catch (RomIOException e) {
+                        // This used to be a simple logging, turned it into a full error because I don't *think* it
+                        // should be too common? Plus the RomHandler arguably should not do logging.
+                        throw new RomIOException("Couldn't insert new item description. " + e.getMessage());
+                    }
+                }
 			}
 		}
     }

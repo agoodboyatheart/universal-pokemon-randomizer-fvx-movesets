@@ -29,6 +29,7 @@ import com.uprfvx.romio.constants.*;
 import com.uprfvx.romio.constants.enctaggers.Gen1EncounterAreaTagger;
 import com.uprfvx.romio.exceptions.RomIOException;
 import com.uprfvx.romio.gamedata.*;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
 import com.uprfvx.romio.graphics.images.GBCImage;
 import com.uprfvx.romio.graphics.packs.CustomPlayerGraphics;
 import com.uprfvx.romio.graphics.packs.GBCPlayerCharacterGraphics;
@@ -103,6 +104,10 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
     private SubMap[] maps;
     private boolean xAccNerfed;
     private Species yellowRivalStarter;
+
+    private final Map<Species, Integer> speciesFrontImageDimensions = new HashMap<>();
+    private final Map<Species, Integer> speciesFrontImagePointers = new HashMap<>();
+    private final Map<Species, Integer> speciesBackImagePointers = new HashMap<>();
 
     @Override
     public boolean detectRom(byte[] rom) {
@@ -560,22 +565,22 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
     public void loadSpeciesStats() {
         loadPokedexOrder();
 
-        pokes = new Gen1Species[pokedexCount + 1];
+        pokes = new Species[pokedexCount + 1];
         // Fetch our names
         String[] pokeNames = readPokemonNames();
         // Get base stats
         int pokeStatsOffset = romEntry.getIntValue("PokemonStatsOffset");
         for (int i = 1; i <= pokedexCount; i++) {
-            pokes[i] = new Gen1Species(i);
+            pokes[i] = new Species(i);
             if (i != SpeciesIDs.mew || romEntry.isYellow()) {
-                loadBasicPokeStats((Gen1Species) pokes[i], pokeStatsOffset + (i - 1) * Gen1Constants.baseStatsEntrySize);
+                loadBasicPokeStats(pokes[i], pokeStatsOffset + (i - 1) * Gen1Constants.baseStatsEntrySize);
             }
             pokes[i].setName(pokeNames[pokeNumToRBYTable[i]]);
         }
 
         // Mew override for R/B
         if (!romEntry.isYellow()) {
-            loadBasicPokeStats((Gen1Species) pokes[SpeciesIDs.mew], romEntry.getIntValue("MewStatsOffset"));
+            loadBasicPokeStats(pokes[SpeciesIDs.mew], romEntry.getIntValue("MewStatsOffset"));
         }
 
         this.speciesList = Arrays.asList(pokes);
@@ -608,12 +613,14 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
         saveEvosAndMovesLearnt();
     }
 
-    private void loadBasicPokeStats(Gen1Species pkmn, int offset) {
-        pkmn.setHp(rom[offset + Gen1Constants.bsHPOffset] & 0xFF);
-        pkmn.setAttack(rom[offset + Gen1Constants.bsAttackOffset] & 0xFF);
-        pkmn.setDefense(rom[offset + Gen1Constants.bsDefenseOffset] & 0xFF);
-        pkmn.setSpeed(rom[offset + Gen1Constants.bsSpeedOffset] & 0xFF);
-        pkmn.setSpecial(rom[offset + Gen1Constants.bsSpecialOffset] & 0xFF);
+    private void loadBasicPokeStats(Species pkmn, int offset) {
+        pkmn.setBaseStats(new Gen1BaseStats(
+                rom[offset + Gen1Constants.bsHPOffset] & 0xFF,
+                rom[offset + Gen1Constants.bsAttackOffset] & 0xFF,
+                rom[offset + Gen1Constants.bsDefenseOffset] & 0xFF,
+                rom[offset + Gen1Constants.bsSpeedOffset] & 0xFF,
+                rom[offset + Gen1Constants.bsSpecialOffset] & 0xFF
+        ));
         // Type
         pkmn.setPrimaryType(Gen1Constants.typeTable[rom[offset + Gen1Constants.bsPrimaryTypeOffset] & 0xFF]);
         pkmn.setSecondaryType(Gen1Constants.typeTable[rom[offset + Gen1Constants.bsSecondaryTypeOffset] & 0xFF]);
@@ -625,17 +632,21 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
         pkmn.setCatchRate(rom[offset + Gen1Constants.bsCatchRateOffset] & 0xFF);
         pkmn.setExpYield(rom[offset + Gen1Constants.bsExpYieldOffset] & 0xFF);
         pkmn.setGrowthCurve(ExpCurve.fromByte(rom[offset + Gen1Constants.bsGrowthCurveOffset]));
-        pkmn.setFrontImageDimensions(rom[offset + Gen1Constants.bsFrontImageDimensionsOffset] & 0xFF);
-        pkmn.setFrontImagePointer(readWord(offset + Gen1Constants.bsFrontImagePointerOffset));
-        pkmn.setBackImagePointer(readWord(offset + Gen1Constants.bsBackImagePointerOffset));
+
+        pkmn.setGeneration(1);
+
+        speciesFrontImageDimensions.put(pkmn, rom[offset + Gen1Constants.bsFrontImageDimensionsOffset] & 0xFF);
+        speciesFrontImagePointers.put(pkmn, readWord(offset + Gen1Constants.bsFrontImagePointerOffset));
+        speciesBackImagePointers.put(pkmn, readWord(offset + Gen1Constants.bsBackImagePointerOffset));
     }
 
     private void saveBasicPokeStats(Species pkmn, int offset) {
-        writeByte(offset + Gen1Constants.bsHPOffset, (byte) pkmn.getHp());
-        writeByte(offset + Gen1Constants.bsAttackOffset, (byte) pkmn.getAttack());
-        writeByte(offset + Gen1Constants.bsDefenseOffset, (byte) pkmn.getDefense());
-        writeByte(offset + Gen1Constants.bsSpeedOffset, (byte) pkmn.getSpeed());
-        writeByte(offset + Gen1Constants.bsSpecialOffset, (byte) pkmn.getSpecial());
+        Gen1BaseStats bs = (Gen1BaseStats) pkmn.getBaseStats();
+        writeByte(offset + Gen1Constants.bsHPOffset, (byte) bs.getHp());
+        writeByte(offset + Gen1Constants.bsAttackOffset, (byte) bs.getAttack());
+        writeByte(offset + Gen1Constants.bsDefenseOffset, (byte) bs.getDefense());
+        writeByte(offset + Gen1Constants.bsSpeedOffset, (byte) bs.getSpeed());
+        writeByte(offset + Gen1Constants.bsSpecialOffset, (byte) bs.getSpecial());
         writeByte(offset + Gen1Constants.bsPrimaryTypeOffset, Gen1Constants.typeToByte(pkmn.getPrimaryType(false)));
         byte secondaryTypeByte = pkmn.getSecondaryType(false) == null ? rom[offset + Gen1Constants.bsPrimaryTypeOffset]
                 : Gen1Constants.typeToByte(pkmn.getSecondaryType(false));
@@ -1140,11 +1151,6 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
     @Override
     public SpeciesSet getAltFormes() {
         return new SpeciesSet();
-    }
-
-    @Override
-    public List<MegaEvolution> getMegaEvolutions() {
-        return new ArrayList<>();
     }
 
     @Override
@@ -2907,8 +2913,9 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
         }
     }
 
-    private int calculateFrontSpriteBank(Gen1Species pk) {
+    private int calculateFrontSpriteBank(Species pk) {
         int idx = pokeNumToRBYTable[pk.getNumber()];
+        int pointer = speciesFrontImagePointers.get(pk);
         int fsBank;
         // define (by index number) the bank that a pokemon's image is in
         // using pokered code
@@ -2918,9 +2925,9 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
             fsBank = 0x9;
         } else if (idx < 0x4A) {
             fsBank = 0xA;
-        } else if (idx < 0x74 || idx == 0x74 && pk.getFrontImagePointer() > 0x7000) {
+        } else if (idx < 0x74 || idx == 0x74 && pointer > 0x7000) {
             fsBank = 0xB;
-        } else if (idx < 0x99 || idx == 0x99 && pk.getFrontImagePointer() > 0x7000) {
+        } else if (idx < 0x99 || idx == 0x99 && pointer > 0x7000) {
             fsBank = 0xC;
         } else {
             fsBank = 0xD;
@@ -2933,8 +2940,7 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
 		int palIndex = romEntry.getIntValue("MonPaletteIndicesOffset");
 		for (Species pk : getSpeciesSet()) {
             // they are in Pokédex order
-			Gen1Species gen1pk = (Gen1Species) pk;
-			gen1pk.setPaletteID((SGBPaletteID.values()[rom[palIndex + gen1pk.getNumber()]]));
+            pk.setPaletteID((SGBPaletteID.values()[rom[palIndex + pk.getNumber()]]));
 		}
 	}
 
@@ -2943,8 +2949,7 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
 		int palIndex = romEntry.getIntValue("MonPaletteIndicesOffset");
 		for (Species pk : getSpeciesSet()) {
             // they are in Pokédex order
-			Gen1Species gen1pk = (Gen1Species) pk;
-			writeByte(palIndex + gen1pk.getNumber(), (byte) gen1pk.getPaletteID().ordinal());
+			writeByte(palIndex + pk.getNumber(), (byte) pk.getPaletteID().ordinal());
 		}
 	}
     
@@ -3082,14 +3087,9 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
     }
 
     public class Gen1PokemonImageGetter extends GBPokemonImageGetter {
-        private final Gen1Species pk;
 
         public Gen1PokemonImageGetter(Species pk) {
             super(pk);
-            if (!(pk instanceof Gen1Species)) {
-                throw new IllegalArgumentException("Argument \"pk\" is not a Gen1Pokemon");
-            }
-            this.pk = (Gen1Species) pk;
         }
 
         @Override
@@ -3104,11 +3104,15 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
 
         @Override
         public BufferedImage get() {
-            int width = back ? 4 : pk.getFrontImageDimensions() & 0x0F;
-            int height = back ? 4 : (pk.getFrontImageDimensions() >> 4) & 0x0F;
+            int dims = speciesFrontImageDimensions.get(pk);
+            int width = back ? 4 : dims & 0x0F;
+            int height = back ? 4 : (dims >> 4) & 0x0F;
 
             int bank = calculateFrontSpriteBank(pk);
-            int imageOffset = calculateOffset(back ? pk.getBackImagePointer() : pk.getFrontImagePointer(), bank);
+            int imageOffset = calculateOffset(
+                    back ? speciesBackImagePointers.get(pk) : speciesFrontImagePointers.get(pk),
+                    bank
+            );
             byte[] data = readImageData(imageOffset);
             Palette palette = getVisiblePokemonPalette(pk);
 
@@ -3132,7 +3136,7 @@ public class Gen1RomHandler extends AbstractGBCRomHandler {
             return image.getData();
         }
 
-        private Palette getVisiblePokemonPalette(Gen1Species pk) {
+        private Palette getVisiblePokemonPalette(Species pk) {
             Palette palette;
             if (romEntry.getIntValue("MonPaletteIndicesOffset") > 0 && romEntry.getIntValue("SGBPalettesOffset") > 0) {
                 int palIndex = pk.getPaletteID().ordinal();
