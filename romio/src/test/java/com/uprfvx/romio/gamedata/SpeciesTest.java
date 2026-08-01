@@ -1,7 +1,11 @@
 package com.uprfvx.romio.gamedata;
 
+import com.uprfvx.romio.gamedata.basestats.BaseStats;
+import com.uprfvx.romio.gamedata.basestats.Gen1BaseStats;
+import com.uprfvx.romio.gamedata.basestats.ShedinjaBaseStats;
 import com.uprfvx.romio.graphics.palettes.Color;
 import com.uprfvx.romio.graphics.palettes.Palette;
+import com.uprfvx.romio.graphics.palettes.SGBPaletteID;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -344,8 +348,18 @@ public class SpeciesTest {
     
     @Test
     public void transferAttributesToCopy_CopyHasDifferentClass_ThrowsIllegalArgumentException() {
+        // At the time of writing, we don't have any subclasses of Species.
+        // There might be in the future, perhaps? Or perhaps not.
+        // In any case there used to be a Gen1RomHandler subclass, and so this test was written.
+        // Felt like a waste to erase it.
+        // -- voliol 2026-06-22
         use(a, b);
-        Species aCopy = new Gen1Species(A_NUM);
+        class SpeciesExtension extends Species {
+            public SpeciesExtension(int number) {
+                super(number);
+            }
+        }
+        Species aCopy = new SpeciesExtension(A_NUM);
         assertThrowsExactly(IllegalArgumentException.class,
                 () -> Species.transferAttributesToCopy(a, Map.of(a, aCopy)));
     }
@@ -363,21 +377,13 @@ public class SpeciesTest {
         a.setSecondaryType(null);
         a.setPrimaryType(Type.FIRE);
         a.setSecondaryType(Type.FIGHTING);
-        a.setHp(2);
-        a.setAttack(3);
-        a.setDefense(4);
-        a.setSpatk(5);
-        a.setSpdef(6);
-        a.setSpeed(7);
-        a.setSpecial(8);
-        a.setAbility1(9);
-        a.setAbility2(10);
-        a.setAbility3(11);
-        a.setExpYield(12);
-        a.setCatchRate(13);
-        a.setGenderRatio(14);
-        a.setCallRate(15);
-        a.setFrontImageDimensions(16);
+        a.setAbility1(2);
+        a.setAbility2(3);
+        a.setAbility3(4);
+        a.setExpYield(5);
+        a.setCatchRate(6);
+        a.setGenderRatio(7);
+        a.setCallRate(8);
         a.setGrowthCurve(ExpCurve.MEDIUM_FAST);
 
         transferAttributesToCopies();
@@ -388,23 +394,68 @@ public class SpeciesTest {
         assertNull(aCopy.getSecondaryType(true));
         assertEquals(Type.FIRE, aCopy.getPrimaryType(false));
         assertEquals(Type.FIGHTING, aCopy.getSecondaryType(false));
-        assertEquals(2, aCopy.getHp());
-        assertEquals(3, aCopy.getAttack());
-        assertEquals(4, aCopy.getDefense());
-        assertEquals(5, aCopy.getSpatk());
-        assertEquals(6, aCopy.getSpdef());
-        assertEquals(7, aCopy.getSpeed());
-        assertEquals(8, aCopy.getSpecial());
-        assertEquals(9, aCopy.getAbility1());
-        assertEquals(10, aCopy.getAbility2());
-        assertEquals(11, aCopy.getAbility3());
-        assertEquals(12, aCopy.getExpYield());
-        assertEquals(13, aCopy.getCatchRate());
-        assertEquals(14, aCopy.getGenderRatio());
-        assertEquals(15, aCopy.getCallRate());
-        assertEquals(16, aCopy.getFrontImageDimensions());
+        assertEquals(2, aCopy.getAbility1());
+        assertEquals(3, aCopy.getAbility2());
+        assertEquals(4, aCopy.getAbility3());
+        assertEquals(5, aCopy.getExpYield());
+        assertEquals(6, aCopy.getCatchRate());
+        assertEquals(7, aCopy.getGenderRatio());
+        assertEquals(8, aCopy.getCallRate());
         assertEquals(ExpCurve.MEDIUM_FAST, aCopy.getGrowthCurve());
     }
+
+    @Test
+    public void transferAttributesToCopy_WithNormalBaseStats_TransfersBaseStats() {
+        use(a, aCopy);
+        a.setBaseStats(new BaseStats(
+                1, 2, 3, 4, 5, 6
+        ));
+
+        transferAttributesToCopies();
+
+        assertEquals(1, aCopy.getBaseStats().getHp());
+        assertEquals(2, aCopy.getBaseStats().getAttack());
+        assertEquals(3, aCopy.getBaseStats().getDefense());
+        assertEquals(4, aCopy.getBaseStats().getSpatk());
+        assertEquals(5, aCopy.getBaseStats().getSpdef());
+        assertEquals(6, aCopy.getBaseStats().getSpeed());
+        assertEquals(1 + 2 + 3 + 4 + 5 + 6, aCopy.getBST(true)); // the originalBST field
+    }
+
+    @Test
+    public void transferAttributesToCopy_WithGen1BaseStats_TransfersBaseStats() {
+        use(a, aCopy);
+        a.setBaseStats(new Gen1BaseStats(
+                1, 2, 3, 4, 5
+        ));
+
+        transferAttributesToCopies();
+
+        assertInstanceOf(Gen1BaseStats.class, aCopy.getBaseStats());
+        Gen1BaseStats aCopyBaseStats = (Gen1BaseStats) aCopy.getBaseStats();
+        assertEquals(1, aCopyBaseStats.getHp());
+        assertEquals(2, aCopyBaseStats.getAttack());
+        assertEquals(3, aCopyBaseStats.getDefense());
+        assertEquals(4, aCopyBaseStats.getSpeed());
+        assertEquals(5, aCopyBaseStats.getSpecial());
+    }
+
+    @Test
+    public void transferAttributesToCopy_WithShedinjaBaseStats_TransfersBaseStats() {
+        use(a, aCopy);
+        a.setBaseStats(new ShedinjaBaseStats(
+                1, 2, 3, 4, 5
+        ));
+
+        transferAttributesToCopies();
+
+        assertEquals(1, aCopy.getBaseStats().getAttack());
+        assertEquals(2, aCopy.getBaseStats().getDefense());
+        assertEquals(3, aCopy.getBaseStats().getSpatk());
+        assertEquals(4, aCopy.getBaseStats().getSpdef());
+        assertEquals(5, aCopy.getBaseStats().getSpeed());
+    }
+
 
     @Test
     public void transferAttributesToCopy_WithGuaranteedHeldItem_TransfersGuaranteedHeldItem() {
@@ -463,11 +514,13 @@ public class SpeciesTest {
     @Test
     public void transferAttributesToCopy_WithPalettes_TransfersPalettes() {
         use(a, aCopy);
+        a.setPaletteID(SGBPaletteID.MEWMON);
         a.setNormalPalette(new Palette(1, Color.BLACK));
         a.setShinyPalette(new Palette(1, Color.WHITE));
 
         transferAttributesToCopies();
 
+        assertEquals(SGBPaletteID.MEWMON, aCopy.getPaletteID());
         assertNotNull(aCopy.getNormalPalette());
         assertEquals(new Palette(1, Color.BLACK), aCopy.getNormalPalette());
         assertNotNull(aCopy.getShinyPalette());
@@ -549,6 +602,19 @@ public class SpeciesTest {
         transferAttributesToCopies();
 
         assertSame(bCopy, cCopy.getConceptualBaseForme());
+    }
+
+    @Test
+    public void transferAttributesToCopy_WithFormes_MegaEvolutionAttributesGetsCopied() {
+        use(a, b, aCopy, bCopy);
+        a.addAltForme(1, b);
+        Item megaEvolutionItem = new Item(1, "dummy");
+        b.setMegaEvolution(megaEvolutionItem);
+
+        transferAttributesToCopies();
+
+        assertTrue(bCopy.isMegaEvolution());
+        assertEquals(megaEvolutionItem, bCopy.getMegaEvolutionItem());
     }
 
     @Test
@@ -644,66 +710,4 @@ public class SpeciesTest {
 
         assertEquals(2, aCopy.getEvolutionsFrom().getFirst().getEstimatedEvoLvl());
     }
-
-    @Test
-    public void transferAttributesToCopy_WithMegaEvolutions_MatchingMegaEvolutionsFromAndToAreSame() {
-        use(a, b, aCopy, bCopy);
-        MegaEvolution megaEvolution = new MegaEvolution(a, b, false, null);
-        a.getMegaEvolutionsFrom().add(megaEvolution);
-        b.getMegaEvolutionsTo().add(megaEvolution);
-
-        transferAttributesToCopies();
-
-        assertSame(aCopy.getMegaEvolutionsFrom().getFirst(), bCopy.getMegaEvolutionsTo().getFirst());
-    }
-
-    @Test
-    public void transferAttributesToCopy_WithMegaEvolutions_FromReferenceGetCopied() {
-        use(a, b, aCopy, bCopy);
-        MegaEvolution megaEvolution = new MegaEvolution(a, b, false, null);
-        a.getMegaEvolutionsFrom().add(megaEvolution);
-        b.getMegaEvolutionsTo().add(megaEvolution);
-
-        transferAttributesToCopies();
-
-        assertSame(aCopy, aCopy.getMegaEvolutionsFrom().getFirst().getFrom());
-    }
-
-    @Test
-    public void transferAttributesToCopy_WithMegaEvolutions_ToReferenceGetCopied() {
-        use(a, b, aCopy, bCopy);
-        MegaEvolution megaEvolution = new MegaEvolution(a, b, false, null);
-        a.getMegaEvolutionsFrom().add(megaEvolution);
-        b.getMegaEvolutionsTo().add(megaEvolution);
-
-        transferAttributesToCopies();
-
-        assertSame(bCopy, aCopy.getMegaEvolutionsFrom().getFirst().getTo());
-    }
-
-    @Test
-    public void transferAttributesToCopy_WithMegaEvolutions_NeedsItemGetsCopied() {
-        use(a, b, aCopy, bCopy);
-        MegaEvolution megaEvolution = new MegaEvolution(a, b, true, null);
-        a.getMegaEvolutionsFrom().add(megaEvolution);
-        b.getMegaEvolutionsTo().add(megaEvolution);
-
-        transferAttributesToCopies();
-
-        assertTrue(aCopy.getMegaEvolutionsFrom().getFirst().isNeedsItem());
-    }
-
-    @Test
-    public void transferAttributesToCopy_WithMegaEvolutions_ItemGetsCopied() {
-        use(a, b, aCopy, bCopy);
-        Item item = new Item(1, "Item");
-        MegaEvolution megaEvolution = new MegaEvolution(a, b, true, item);
-        a.getMegaEvolutionsFrom().add(megaEvolution);
-        b.getMegaEvolutionsTo().add(megaEvolution);
-
-        transferAttributesToCopies();
-
-        assertEquals(item, aCopy.getMegaEvolutionsFrom().getFirst().getItem());
-    }
-
 }
