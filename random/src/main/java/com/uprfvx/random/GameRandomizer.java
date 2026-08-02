@@ -239,7 +239,7 @@ public class GameRandomizer {
 
             try {
                 results.documentationJson = new GameDocumentationWriter(randomSource, settings, romHandler,
-                        logger.getOriginalStatics()).write();
+                        logger.getOriginalStatics(), logger.getOriginalTrades()).write();
             } catch (Exception e) {
                 results.docE = e;
             }

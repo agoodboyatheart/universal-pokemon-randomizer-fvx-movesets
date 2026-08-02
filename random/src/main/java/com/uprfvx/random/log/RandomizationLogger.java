@@ -135,6 +135,16 @@ public class RandomizationLogger {
     }
 
     /**
+     * The pre-randomisation in-game trade snapshot captured in the constructor (see
+     * {@link #logInGameTrades(List)}). Public: {@link com.uprfvx.random.GameRandomizer} reads this
+     * to hand it to {@link GameDocumentationWriter}, which labels trades by the vanilla Pokemon the
+     * NPC originally gave — the ROM records no location data to identify a trade NPC by otherwise.
+     */
+    public List<InGameTrade> getOriginalTrades() {
+        return originalTrades;
+    }
+
+    /**
      * Just a shorter alias of {@link ResourceBundle#getString(String) bundle.getString(String)},
      * since we're using that a lot.
      */

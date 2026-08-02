@@ -60,6 +60,7 @@ public class GameDocumentationWriter {
     private final Settings settings;
     private final RomHandler romHandler;
     private final List<StaticEncounter> originalStatics;
+    private final List<InGameTrade> originalTrades;
     private final StringBuilder out = new StringBuilder();
     private final JsonWriter w = new JsonWriter(out);
 
@@ -69,13 +70,18 @@ public class GameDocumentationWriter {
      *                        statics by the vanilla species they replaced — the ROM records no
      *                        location data to identify a static encounter by otherwise. Null if
      *                        the game can't have its statics randomised at all.
+     * @param originalTrades The pre-randomisation in-game trade snapshot (see
+     *                       {@link RandomizationLogger#getOriginalTrades()}), used to label trades
+     *                       by the vanilla Pokemon the NPC originally gave — the ROM records no
+     *                       location data to identify a trade NPC by otherwise.
      */
     public GameDocumentationWriter(RandomSource randomSource, Settings settings, RomHandler romHandler,
-                                    List<StaticEncounter> originalStatics) {
+                                    List<StaticEncounter> originalStatics, List<InGameTrade> originalTrades) {
         this.randomSource = randomSource;
         this.settings = settings;
         this.romHandler = romHandler;
         this.originalStatics = originalStatics;
+        this.originalTrades = originalTrades;
     }
 
     public String write() {
@@ -450,15 +456,27 @@ public class GameDocumentationWriter {
 
     private void writeTrades() {
         w.name("trades").beginArray();
-        for (InGameTrade trade : romHandler.getInGameTrades()) {
-            w.beginObject();
-            Species requested = trade.getRequestedSpecies();
-            writeNullableInt("requestedSpecies", requested == null ? null : requested.getNumber());
-            w.name("givenSpecies").value(trade.getGivenSpecies().getNumber());
-            w.name("nickname").value(trade.getNickname());
-            w.endObject();
+        List<InGameTrade> trades = romHandler.getInGameTrades();
+        for (int i = 0; i < trades.size(); i++) {
+            writeOneTrade(trades.get(i), i);
         }
         w.endArray();
+    }
+
+    private void writeOneTrade(InGameTrade trade, int index) {
+        w.beginObject();
+
+        Integer vanillaGivenSpecies = null;
+        if (originalTrades != null && index < originalTrades.size()) {
+            vanillaGivenSpecies = originalTrades.get(index).getGivenSpecies().getNumber();
+        }
+        writeNullableInt("vanillaGivenSpecies", vanillaGivenSpecies);
+
+        Species requested = trade.getRequestedSpecies();
+        writeNullableInt("requestedSpecies", requested == null ? null : requested.getNumber());
+        w.name("givenSpecies").value(trade.getGivenSpecies().getNumber());
+        w.name("nickname").value(trade.getNickname());
+        w.endObject();
     }
 
     private void writeNullableInt(String name, Integer value) {

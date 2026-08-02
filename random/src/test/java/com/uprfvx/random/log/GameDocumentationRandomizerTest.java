@@ -25,6 +25,7 @@ package com.uprfvx.random.log;
 import com.uprfvx.random.Settings;
 import com.uprfvx.random.random.RandomSource;
 import com.uprfvx.romio.gamedata.ExpCurve;
+import com.uprfvx.romio.gamedata.InGameTrade;
 import com.uprfvx.romio.gamedata.StaticEncounter;
 import com.uprfvx.romio.romhandlers.Generation;
 import com.uprfvx.romio.romhandlers.RomHandler;
@@ -77,15 +78,17 @@ public class GameDocumentationRandomizerTest {
     }
 
     /**
-     * Builds the documentation JSON the way production does: capture {@code originalStatics}
-     * before any randomization (here, none happens — settings are all-unchanged), mirroring how
-     * {@code RandomizationLogger} captures it in its own constructor for the real pipeline.
+     * Builds the documentation JSON the way production does: capture {@code originalStatics} and
+     * {@code originalTrades} before any randomization (here, none happens — settings are
+     * all-unchanged), mirroring how {@code RandomizationLogger} captures both in its own
+     * constructor for the real pipeline.
      */
     private String writeDocumentation(RomHandler rh, Settings settings, long seed) {
         RandomSource rs = new RandomSource();
         rs.seed(seed);
         List<StaticEncounter> originalStatics = rh.canChangeStaticPokemon() ? rh.getStaticPokemon() : null;
-        return new GameDocumentationWriter(rs, settings, rh, originalStatics).write();
+        List<InGameTrade> originalTrades = rh.getInGameTrades();
+        return new GameDocumentationWriter(rs, settings, rh, originalStatics, originalTrades).write();
     }
 
     @Test
@@ -174,6 +177,7 @@ public class GameDocumentationRandomizerTest {
         assertTrue(json.contains("\"statics\""), "statics missing");
         assertTrue(json.contains("\"vanillaSpecies\""), "vanilla static identity missing");
         assertTrue(json.contains("\"trades\""), "trades missing");
+        assertTrue(json.contains("\"vanillaGivenSpecies\""), "vanilla trade given-species identity missing");
         // Forbidden: no authored data.
         assertFalse(json.contains("\"percent\""), "slot percentages are authored data");
         assertFalse(json.contains("\"location\":"), "static locations are authored data");
