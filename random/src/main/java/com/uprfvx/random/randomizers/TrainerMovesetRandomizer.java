@@ -62,7 +62,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
             for (TrainerPokemon tp : assignmentOrder) {
                 tp.setResetMoves(false);
 
-                List<Move> movesAtLevel = getMoveSelectionPoolAtLevel(tp, isCyclicEvolutions);
+                // Boss/Important get the full curated structure (STAB + coverage + status + wildcard); Regular
+                // trainers are deliberately dumbed down (STAB + plain second attack + two wildcards, no coverage
+                // or status slot) so the tier gap reads like the mainline games. Computed up front (not just at
+                // the role-slot stage below) so the pool builder can apply the STAB-rescue ceiling exemption
+                // below Boss/Important-only.
+                boolean isBossTier = t.isBoss() || t.isImportant();
+
+                List<Move> movesAtLevel = getMoveSelectionPoolAtLevel(tp, isCyclicEvolutions, isBossTier);
 
                 Species pk = tp.getSpecies();
                 int ability = hasAbilities ? romHandler.getAbilityForTrainerPokemon(tp) : 0;
@@ -151,10 +158,6 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
                 int level = tp.getLevel();
                 AttackerProfile profile = classifyAttacker(pk, ability);
-                // Boss/Important get the full curated structure (STAB + coverage + status + wildcard); Regular
-                // trainers are deliberately dumbed down (STAB + plain second attack + two wildcards, no coverage
-                // or status slot) so the tier gap reads like the mainline games.
-                boolean isBossTier = t.isBoss() || t.isImportant();
 
                 List<Move> distinctPool = movesAtLevel.stream().distinct().collect(Collectors.toList());
                 List<Move> picked = new ArrayList<>();
@@ -374,11 +377,36 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // Hard sliding ceiling (pool stage): removes attacking moves too strong for the mon's level. Status/gimmick
     // moves and the mon's own level-up moves are exempt; below-level weakness is handled softly elsewhere.
-    private void applyPowerBandFilter(List<Move> pool, int level, Set<Integer> ownLevelUpMoveNumbers) {
+    //
+    // Boss/Important only: some early-game types (e.g. Gen 4 Rock, whose only non-level-up damaging moves are
+    // Rock Slide/Bone Rush at 75 BP) have no low-power representative outside level-up at all, so a mon whose
+    // randomised learnset hasn't yet granted an own-type move can lose the type entirely before pickStabMove
+    // even runs - the type-match tier is supposed to be the one truly hard tier (see the STAB-slot comment
+    // block), but this pool-stage filter ran ahead of it with no type awareness. Fix: a type-scoped keep-best
+    // guard, same idiom as applyBossDamagingPowerFloor's pool-wide one - if the ceiling would strip a mon's
+    // OWN type down to zero damaging candidates, spare that type's over-ceiling moves so pickStabMove still has
+    // a real (if too-strong) STAB option instead of falling through to an off-type pickBestDamaging. Regular
+    // trainers keep the plain ceiling - see applyPowerBandFilter's caller.
+    private void applyPowerBandFilter(List<Move> pool, int level, Set<Integer> ownLevelUpMoveNumbers,
+                                       boolean bossTier, Species pk) {
         double ceiling = powerCeiling(level);
+        Set<Type> stabTypesToRescue = EnumSet.noneOf(Type.class);
+        if (bossTier) {
+            for (Type stabType : new Type[]{pk.getPrimaryType(false), pk.getSecondaryType(false)}) {
+                if (stabType == null) {
+                    continue;
+                }
+                boolean anySurvives = pool.stream().anyMatch(mv -> mv.type == stabType
+                        && effectivePower(mv, level) > 0
+                        && (effectivePower(mv, level) <= ceiling || ownLevelUpMoveNumbers.contains(mv.number)));
+                if (!anySurvives) {
+                    stabTypesToRescue.add(stabType);
+                }
+            }
+        }
         pool.removeIf(mv -> {
             double ep = effectivePower(mv, level);
-            if (ep <= 0 || ownLevelUpMoveNumbers.contains(mv.number)) {
+            if (ep <= 0 || ownLevelUpMoveNumbers.contains(mv.number) || stabTypesToRescue.contains(mv.type)) {
                 return false;
             }
             return ep > ceiling;
@@ -1559,7 +1587,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
     }
 
-    private List<Move> getMoveSelectionPoolAtLevel(TrainerPokemon tp, boolean cyclicEvolutions) {
+    private List<Move> getMoveSelectionPoolAtLevel(TrainerPokemon tp, boolean cyclicEvolutions, boolean isBossTier) {
 
         ensureMoveSourceCaches();
 
@@ -1568,7 +1596,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // since Smeargle already gets a randomised learnset then.
         if (tp.getSpecies().getNumber() == SpeciesIDs.smeargle
                 && settings.getMovesetsMod() == Settings.MovesetsMod.UNCHANGED) {
-            return buildSmeargleSketchPool(tp);
+            return buildSmeargleSketchPool(tp, isBossTier);
         }
 
         List<Move> moves = romHandler.getMoves();
@@ -1659,7 +1687,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
 
         // Hard sliding ceiling: removes over-level attacking moves (status/gimmick and own level-up moves exempt).
-        applyPowerBandFilter(moveSelectionPoolAtLevel, tp.getLevel(), ownLevelUpMoveNumbers);
+        applyPowerBandFilter(moveSelectionPoolAtLevel, tp.getLevel(), ownLevelUpMoveNumbers, isBossTier, tp.getSpecies());
 
         // Mutable: the caller's up-front removeIf strips narrow this pool in place.
         return moveSelectionPoolAtLevel.stream().distinct().collect(Collectors.toCollection(ArrayList::new));
@@ -1668,7 +1696,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // The candidate pool for a trainer Smeargle: the full usable move universe (Sketch can copy anything), minus
     // banned moves, run through the same power-band ceiling as every other mon's pool. None of these are "own
     // level-up" moves, so everything downstream (trimMoveList, role slots) treats Smeargle identically.
-    private List<Move> buildSmeargleSketchPool(TrainerPokemon tp) {
+    private List<Move> buildSmeargleSketchPool(TrainerPokemon tp, boolean isBossTier) {
         Set<Integer> banned = new HashSet<>();
         banned.addAll(romHandler.getGameBreakingMoves());
         banned.addAll(romHandler.getIllegalMoves());
@@ -1688,7 +1716,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             }
             pool.add(mv);
         }
-        applyPowerBandFilter(pool, tp.getLevel(), Collections.emptySet());
+        applyPowerBandFilter(pool, tp.getLevel(), Collections.emptySet(), isBossTier, tp.getSpecies());
         // Mutable: shares the caller's in-place removeIf strips with the ordinary pool.
         return pool.stream().distinct().collect(Collectors.toCollection(ArrayList::new));
     }
