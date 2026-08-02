@@ -158,13 +158,17 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
                 List<Move> distinctPool = movesAtLevel.stream().distinct().collect(Collectors.toList());
                 List<Move> picked = new ArrayList<>();
+                // Boss/Important only: bars sub-60 BP damaging moves from every attacking slot below, including
+                // the backfill pool at the bottom. Falls back to distinctPool internally on a starved pool -
+                // see applyBossDamagingPowerFloor's keep-best guard.
+                List<Move> slotPool = isBossTier ? applyBossDamagingPowerFloor(distinctPool, level) : distinctPool;
 
                 if (distinctPool.size() <= 4) {
                     // Too few candidates to be choosy - take what is available.
                     picked.addAll(distinctPool);
                 } else {
                     // Slot 1: a STAB attacking move, base power scaled to the Pokemon's level.
-                    Move stab = pickStabMove(pk, ability, distinctPool, level, profile, picked, isBossTier);
+                    Move stab = pickStabMove(pk, ability, slotPool, level, profile, picked, isBossTier);
                     if (stab == null) {
                         stab = pickBestDamaging(distinctPool, picked, level, ability, isBossTier);
                     }
@@ -176,7 +180,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     // hole; Regular trainers get a plain damaging move so their teams look less curated.
                     Move secondAttack;
                     if (isBossTier) {
-                        secondAttack = pickCoverageMove(pk, ability, distinctPool, level,
+                        secondAttack = pickCoverageMove(pk, ability, slotPool, level,
                                 stab == null ? null : stab.type, profile, picked);
                     } else {
                         secondAttack = pickRegularSecondAttack(distinctPool, picked, level, ability, profile);
@@ -190,7 +194,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
                     // Slot 3 (bosses/important only): a non-redundant status move.
                     if (isBossTier) {
-                        Move status = pickStatusMove(pk, ability, distinctPool, picked, level);
+                        Move status = pickStatusMove(pk, ability, slotPool, picked, level);
                         if (status == null) {
                             status = pickBestDamaging(distinctPool, picked, level, ability, isBossTier);
                         }
@@ -200,12 +204,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     }
 
                     // Remaining slots: wildcard picks reusing the existing synergy-weighted logic.
-                    fillWildcardMoves(tp, pk, ability, distinctPool, picked, doubles, level, isBossTier);
+                    fillWildcardMoves(tp, pk, ability, slotPool, picked, doubles, level, isBossTier);
                 }
 
                 // Drop any dependent whose enabler didn't make the final set, then backfill with the next-best
                 // damaging move.
-                enforceEnablerDependencies(picked, distinctPool, level, ability, isBossTier,
+                enforceEnablerDependencies(picked, slotPool, level, ability, isBossTier,
                         pk.getPrimaryType(false), pk.getSecondaryType(false));
 
                 writeMoves(tp, picked);
@@ -379,6 +383,25 @@ public class TrainerMovesetRandomizer extends Randomizer {
             }
             return ep > ceiling;
         });
+    }
+
+    // Absolute hard floor (pool stage, Boss/Important only): unlike levelAppropriatenessWeight (soft, level-scaled,
+    // never excludes) or pickStabMove's own STAB-only floor (level-scaled, ~34 BP at level 1), this is a flat bar
+    // that never relaxes with level - a level-5 boss shouldn't get a 25 BP filler any more than a level-50 one.
+    // goodWeakMoves (priority chip/utility, e.g. Aqua Jet) earn a pass on raw power; status and other power<=1
+    // moves (ep<=0, e.g. OHKO gimmicks) are untouched - this only bars weak *damaging* moves. Keep-best guard: if
+    // the floor would strip every damaging move from the pool, skip it rather than leave the mon with none at all.
+    private static final double BOSS_MIN_DAMAGING_POWER = 60.0;
+
+    private List<Move> applyBossDamagingPowerFloor(List<Move> pool, int level) {
+        List<Move> filtered = pool.stream()
+                .filter(mv -> {
+                    double ep = effectivePower(mv, level);
+                    return ep <= 0 || ep >= BOSS_MIN_DAMAGING_POWER || GlobalConstants.goodWeakMoves.contains(mv.number);
+                })
+                .collect(Collectors.toList());
+        boolean anyDamagingSurvived = filtered.stream().anyMatch(mv -> effectivePower(mv, level) > 0);
+        return anyDamagingSurvived ? filtered : pool;
     }
 
     // Soft sliding floor (pick stage): demotes, never removes, moves weaker than the mon's level warrants, falling
