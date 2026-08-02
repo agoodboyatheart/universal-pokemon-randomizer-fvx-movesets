@@ -112,9 +112,33 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 movesAtLevel.removeIf(mv -> GlobalConstants.isFixedConstantDamageTooStrongForLevel(mv.number, tp.getLevel()));
 
                 if (movesAtLevel.isEmpty()) {
-                    // No custom moves to offer (e.g. a low-level rival starter): let the game assign its natural
-                    // level-up moveset at ROM-write time instead of leaving it moveless.
-                    tp.setResetMoves(true);
+                    // No custom moves to offer (e.g. a low-level rival starter): reproduce the game's own natural
+                    // level-up moveset (same computation ROM-write would otherwise defer to via resetMoves), but
+                    // still screen it for AI-unusable / useless / (in singles) doubles-only moves - the trainer AI
+                    // gets no "player agency" exemption from that filtering the way the species pool intentionally
+                    // does, so an unfiltered species learnset (e.g. Follow Me/Splash rolled onto a low-level mon by
+                    // species-moveset randomization) must not reach a trainer's actual battle moves unchecked.
+                    int[] naturalMoveNumbers = romHandler.getMovesAtLevel(pk, allLevelUpMoves, tp.getLevel());
+                    List<Move> unfilteredNaturalMoves = Arrays.stream(naturalMoveNumbers)
+                            .filter(m -> m != 0)
+                            .mapToObj(m -> romHandler.getMoves().get(m))
+                            .collect(Collectors.toList());
+                    if (unfilteredNaturalMoves.isEmpty()) {
+                        // Genuinely nothing learnable yet (e.g. a low-level rival starter below its own species'
+                        // first level-up move) - defer to the game's own fallback exactly as before; there is
+                        // nothing here to filter.
+                        tp.setResetMoves(true);
+                        continue;
+                    }
+                    List<Move> naturalMoves = unfilteredNaturalMoves.stream()
+                            .filter(mv -> !GlobalConstants.uselessMoves.contains(mv.number))
+                            .filter(mv -> !AI_UNUSABLE_MOVES.contains(mv.number))
+                            .filter(mv -> doubles || !isDoublesSupportMove(mv))
+                            .collect(Collectors.toList());
+                    // A mon whose entire natural learnset so far is useless/unusable (e.g. a pre-Tackle Magikarp,
+                    // Splash-only) has nothing better to offer - keep its one real vanilla move rather than leave
+                    // it moveless.
+                    writeMoves(tp, naturalMoves.isEmpty() ? unfilteredNaturalMoves : naturalMoves);
                     continue;
                 }
 
@@ -1361,15 +1385,17 @@ public class TrainerMovesetRandomizer extends Randomizer {
     }
 
     private List<Move> trimMoveList(TrainerPokemon tp, List<Move> movesAtLevel, boolean isDoubleBattle, int ability) {
-        if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
-            return new ArrayList<>();
-        }
-
-        movesAtLevel = movesAtLevel
+        // Filter BEFORE the small-pool shortcut below - otherwise an already-small pool (e.g. Magikarp: Splash +
+        // Tackle + little else) writes straight to the Pokemon unfiltered, letting uselessMoves/doubleBattleMoves
+        // slip through untouched.
+        List<Move> filtered = movesAtLevel
                 .stream()
                 .filter(mv -> !GlobalConstants.uselessMoves.contains(mv.number) &&
                         (isDoubleBattle || !GlobalConstants.doubleBattleMoves.contains(mv.number)))
                 .collect(Collectors.toList());
+        // If filtering strips the pool to nothing (e.g. a pre-Tackle Magikarp whose only candidate was Splash),
+        // there's nothing better to offer - fall back to the unfiltered pool rather than leaving the mon moveless.
+        movesAtLevel = filtered.isEmpty() ? movesAtLevel : filtered;
 
         if (writeMovesetIfSmallEnough(tp, movesAtLevel)) {
             return new ArrayList<>();
