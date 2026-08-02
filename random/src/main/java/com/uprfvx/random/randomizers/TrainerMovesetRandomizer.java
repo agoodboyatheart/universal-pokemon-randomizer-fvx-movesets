@@ -164,7 +164,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // Boss/Important only: bars sub-60 BP damaging moves from every attacking slot below, including
                 // the backfill pool at the bottom. Falls back to distinctPool internally on a starved pool -
                 // see applyBossDamagingPowerFloor's keep-best guard.
-                List<Move> slotPool = isBossTier ? applyBossDamagingPowerFloor(distinctPool, level) : distinctPool;
+                List<Move> slotPool = isBossTier ? applyBossDamagingPowerFloor(distinctPool, level, pk) : distinctPool;
 
                 if (distinctPool.size() <= 4) {
                     // Too few candidates to be choosy - take what is available.
@@ -383,10 +383,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // randomised learnset hasn't yet granted an own-type move can lose the type entirely before pickStabMove
     // even runs - the type-match tier is supposed to be the one truly hard tier (see the STAB-slot comment
     // block), but this pool-stage filter ran ahead of it with no type awareness. Fix: a type-scoped keep-best
-    // guard, same idiom as applyBossDamagingPowerFloor's pool-wide one - if the ceiling would strip a mon's
-    // OWN type down to zero damaging candidates, spare that type's over-ceiling moves so pickStabMove still has
-    // a real (if too-strong) STAB option instead of falling through to an off-type pickBestDamaging. Regular
-    // trainers keep the plain ceiling - see applyPowerBandFilter's caller.
+    // guard (applyBossDamagingPowerFloor below got the same treatment for the same reason) - if the ceiling
+    // would strip a mon's OWN type down to zero damaging candidates, spare that type's over-ceiling moves so
+    // pickStabMove still has a real (if too-strong) STAB option instead of falling through to an off-type
+    // pickBestDamaging. Regular trainers keep the plain ceiling - see applyPowerBandFilter's caller.
     private void applyPowerBandFilter(List<Move> pool, int level, Set<Integer> ownLevelUpMoveNumbers,
                                        boolean bossTier, Species pk) {
         double ceiling = powerCeiling(level);
@@ -419,13 +419,33 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // goodWeakMoves (priority chip/utility, e.g. Aqua Jet) earn a pass on raw power; status and other power<=1
     // moves (ep<=0, e.g. OHKO gimmicks) are untouched - this only bars weak *damaging* moves. Keep-best guard: if
     // the floor would strip every damaging move from the pool, skip it rather than leave the mon with none at all.
+    //
+    // That whole-pool guard has the same blind spot applyPowerBandFilter's ceiling had: a mon's only same-type
+    // move can be the one thing stripped while off-type moves elsewhere keep the pool non-empty, so pickStabMove
+    // sees zero candidates and falls through to an off-type pickBestDamaging (real case: Anorith's only Rock
+    // move, TM Rock Throw at 50 BP, culled here while Covet/Psybeam at 60+ kept the pool "fine"). Same
+    // type-scoped keep-best guard as the ceiling: if a mon's own type would be zeroed out, spare that type's
+    // sub-floor moves too.
     private static final double BOSS_MIN_DAMAGING_POWER = 60.0;
 
-    private List<Move> applyBossDamagingPowerFloor(List<Move> pool, int level) {
+    private List<Move> applyBossDamagingPowerFloor(List<Move> pool, int level, Species pk) {
+        Set<Type> stabTypesToRescue = EnumSet.noneOf(Type.class);
+        for (Type stabType : new Type[]{pk.getPrimaryType(false), pk.getSecondaryType(false)}) {
+            if (stabType == null) {
+                continue;
+            }
+            boolean anySurvives = pool.stream().anyMatch(mv -> mv.type == stabType
+                    && (effectivePower(mv, level) <= 0 || effectivePower(mv, level) >= BOSS_MIN_DAMAGING_POWER
+                            || GlobalConstants.goodWeakMoves.contains(mv.number)));
+            if (!anySurvives) {
+                stabTypesToRescue.add(stabType);
+            }
+        }
         List<Move> filtered = pool.stream()
                 .filter(mv -> {
                     double ep = effectivePower(mv, level);
-                    return ep <= 0 || ep >= BOSS_MIN_DAMAGING_POWER || GlobalConstants.goodWeakMoves.contains(mv.number);
+                    return ep <= 0 || ep >= BOSS_MIN_DAMAGING_POWER || GlobalConstants.goodWeakMoves.contains(mv.number)
+                            || stabTypesToRescue.contains(mv.type);
                 })
                 .collect(Collectors.toList());
         boolean anyDamagingSurvived = filtered.stream().anyMatch(mv -> effectivePower(mv, level) > 0);
@@ -677,27 +697,28 @@ public class TrainerMovesetRandomizer extends Randomizer {
                               List<Move> exclude, boolean bossTier) {
         Type t1 = pk.getPrimaryType(false);
         Type t2 = pk.getSecondaryType(false);
-        List<Move> candidates = pool.stream()
+        List<Move> typeMatched = pool.stream()
                 .filter(mv -> !exclude.contains(mv))
                 .filter(mv -> mv.type == t1 || (t2 != null && mv.type == t2))
                 .filter(mv -> isAttackSlotEligible(mv, level))
                 .filter(mv -> !isStabSlotIneligible(mv))
-                // goodWeakMoves (priority chip/utility, e.g. Aqua Jet) are reserved for coverage/wildcard slots,
-                // not a mon's main STAB - also stops the large low-BP set from swamping the pick. The fallback
-                // below still lets one through on a genuinely starved pool, so the mon keeps its identity.
-                .filter(mv -> !GlobalConstants.goodWeakMoves.contains(mv.number))
                 // Fake Out only fires the turn the user switches in - a dead pick as a main STAB.
                 .filter(mv -> mv.number != MoveIDs.fakeOut)
                 .collect(Collectors.toList());
-        if (candidates.isEmpty()) {
-            // No good-damaging STAB at all: fall back to any damaging STAB (effectivePower > 0 guaranteed here).
-            candidates = pool.stream()
-                    .filter(mv -> !exclude.contains(mv))
-                    .filter(mv -> effectivePower(mv, level) > 0)
-                    .filter(mv -> !isStabSlotIneligible(mv))
-                    .filter(mv -> mv.type == t1 || (t2 != null && mv.type == t2))
-                    .collect(Collectors.toList());
-        }
+        // goodWeakMoves (priority chip/utility, e.g. Aqua Jet) are reserved for coverage/wildcard slots, not a
+        // mon's main STAB, UNLESS that type has no other damaging candidate - evaluated PER TYPE, not across the
+        // whole list: a dual-type mon whose only real (non-goodWeakMoves) move is on its OTHER type must not
+        // suppress this type's goodWeakMoves fallback just because the mon has a STAB option at all (real case:
+        // applyBossDamagingPowerFloor's rescue can hand a dual-type mon one weak-but-real move on type A while
+        // type B's only candidates - e.g. AncientPower/Rock Tomb - are goodWeakMoves-only; a whole-list
+        // non-empty check would silently lock B's better, established fallback out in favour of A's worse pick).
+        Set<Type> typesWithRealAlternative = Arrays.stream(new Type[]{t1, t2})
+                .filter(Objects::nonNull)
+                .filter(t -> typeMatched.stream().anyMatch(mv -> mv.type == t && !GlobalConstants.goodWeakMoves.contains(mv.number)))
+                .collect(Collectors.toSet());
+        List<Move> candidates = typeMatched.stream()
+                .filter(mv -> !GlobalConstants.goodWeakMoves.contains(mv.number) || !typesWithRealAlternative.contains(mv.type))
+                .collect(Collectors.toList());
         // Soft ability anti-synergy applies here too, not just wildcards: a weather/aura mon shouldn't be steered
         // into a STAB its ability undercuts (Drizzle -> Fire, Drought -> Water).
         if (hasAbilities) {
