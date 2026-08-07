@@ -318,7 +318,7 @@ public class SpeciesMovesetWeightTest {
     public void everySlotGetsARole() {
         List<MoveLearnt> moves = learnsetOf(1, 5, 12, 20, 28, 35, 44, 52);
         SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                moves, 0, profileWithStatusShare(0.375), Set.of(), true, new Random(1L));
+                moves, 0, profileWithStatusShare(0.375), Set.of(), true, new Random(1L), new int[]{0, 0, 0});
         for (int i = 0; i < moves.size(); i++) {
             assertNotNull(roles[i], "slot " + i + " was left unassigned");
         }
@@ -332,7 +332,7 @@ public class SpeciesMovesetWeightTest {
             moves.add(new MoveLearnt(1, 5 * (i + 1)));
         }
         SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                moves, 0, profileWithStatusShare(0.5), Set.of(), true, new Random(7L));
+                moves, 0, profileWithStatusShare(0.5), Set.of(), true, new Random(7L), new int[]{0, 0, 0});
         int status = countRole(roles, SpeciesMovesetRandomizer.SlotRole.STATUS);
         assertTrue(status >= 8 && status <= 10, "expected ~10 status slots, got " + status);
     }
@@ -342,7 +342,7 @@ public class SpeciesMovesetWeightTest {
         List<MoveLearnt> moves = learnsetOf(1, 5, 12, 20, 28, 35, 44, 52);
         Set<Integer> forced = Set.of(2, 3, 4);
         SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                moves, 0, profileWithStatusShare(0.9), forced, true, new Random(3L));
+                moves, 0, profileWithStatusShare(0.9), forced, true, new Random(3L), new int[]{0, 0, 0});
         for (int i : forced) {
             assertTrue(roles[i] != SpeciesMovesetRandomizer.SlotRole.STATUS,
                     "forced-damaging slot " + i + " was made STATUS");
@@ -356,7 +356,7 @@ public class SpeciesMovesetWeightTest {
             moves.add(new MoveLearnt(1, 5 * (i + 1)));
         }
         SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                moves, 0, profileWithStatusShare(0.375), Set.of(), true, new Random(11L));
+                moves, 0, profileWithStatusShare(0.375), Set.of(), true, new Random(11L), new int[]{0, 0, 0});
         assertTrue(countRole(roles, SpeciesMovesetRandomizer.SlotRole.WILDCARD) > 0,
                 "the surprise valve should reserve at least one slot on a 20-slot learnset");
     }
@@ -370,7 +370,7 @@ public class SpeciesMovesetWeightTest {
         for (long seed = 0; seed < trials; seed++) {
             List<MoveLearnt> moves = learnsetOf(1, 5, 12, 20, 28, 35, 44, 52);
             SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                    moves, 0, profileWithStatusShare(0.375), Set.of(), true, new Random(seed));
+                    moves, 0, profileWithStatusShare(0.375), Set.of(), true, new Random(seed), new int[]{0, 0, 0});
             SpeciesMovesetRandomizer.SlotRole opener = null;
             for (SpeciesMovesetRandomizer.SlotRole role : roles) {
                 if (role != SpeciesMovesetRandomizer.SlotRole.STATUS
@@ -397,7 +397,7 @@ public class SpeciesMovesetWeightTest {
         // type-blind learnsets and must still get them.
         List<MoveLearnt> moves = learnsetOf(1, 5, 12, 20, 28, 35, 44, 52);
         SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                moves, 0, profileWithStatusShare(0.375), Set.of(), false, new Random(5L));
+                moves, 0, profileWithStatusShare(0.375), Set.of(), false, new Random(5L), new int[]{0, 0, 0});
         assertEquals(0, countRole(roles, SpeciesMovesetRandomizer.SlotRole.STAB));
         assertEquals(0, countRole(roles, SpeciesMovesetRandomizer.SlotRole.COVERAGE));
         assertTrue(countRole(roles, SpeciesMovesetRandomizer.SlotRole.ATTACK) > 0);
@@ -407,7 +407,7 @@ public class SpeciesMovesetWeightTest {
     public void followEvolutionsTailLeavesInheritedSlotsAlone() {
         List<MoveLearnt> moves = learnsetOf(1, 5, 12, 20, 28, 35, 44, 52);
         SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                moves, 5, profileWithStatusShare(0.375), Set.of(), true, new Random(9L));
+                moves, 5, profileWithStatusShare(0.375), Set.of(), true, new Random(9L), new int[]{0, 0, 0});
         for (int i = 0; i < 5; i++) {
             assertNull(roles[i], "inherited slot " + i + " should not be re-roled");
         }

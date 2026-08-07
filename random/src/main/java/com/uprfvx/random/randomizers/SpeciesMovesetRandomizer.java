@@ -244,8 +244,11 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         SpeciesLearnsetProfile profile = sensibleMovesets
                 ? SpeciesLearnsetProfile.of(pkmn, allTypes, romHandler.generationOfPokemon(), random)
                 : null;
+        // No vanilla-shape measurement wired in yet (next commit) - an all-zero reserve preserves
+        // today's behavior exactly.
         SlotRole[] roles = sensibleMovesets
-                ? assignSlotRoles(moves, startIndex, profile, damagingSlotIndices, typeStructured, random)
+                ? assignSlotRoles(moves, startIndex, profile, damagingSlotIndices, typeStructured, random,
+                        new int[]{0, 0, 0})
                 : null;
 
         // Replace moves as needed
@@ -551,7 +554,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
      */
     static SlotRole[] assignSlotRoles(List<MoveLearnt> moves, int startIndex, SpeciesLearnsetProfile profile,
                                       Set<Integer> forcedDamagingSlots, boolean typeStructured,
-                                      Random random) {
+                                      Random random, int[] vanillaThirdAttackCounts) {
         int n = moves.size();
         SlotRole[] roles = new SlotRole[n];
         List<Integer> unassigned = new ArrayList<>();
@@ -569,18 +572,68 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         List<Integer> statusEligible = new ArrayList<>(unassigned.subList(
                 Math.min(wildcardCount, unassigned.size()), unassigned.size()));
 
-        // Measured against every slot, not just the eligible ones - wildcards and Force Good Damaging's
-        // reservations still count toward the species' target share, so excluding them from the denominator
-        // would systematically undershoot it. Capped short of statusEligible's full size so a small
-        // learnset can never lose every non-wildcard slot to status (Togekiss, real-Pearl finding:
-        // species-moveset-pearl-real-rom-comparison-report.md) - at least SPECIES_MIN_ATTACKING_SLOTS
-        // always survives to carry an attacking move.
+        // Partition statusEligible into the same three learnset thirds vanillaThirdAttackCounts was
+        // measured against, so a third vanilla filled with real attacking moves can't be swept entirely
+        // to STATUS by an unlucky statusShare roll (Cresselia, real-Pearl finding:
+        // species-movesets-shape-and-stab-guarantee-design.md Fix A).
+        List<List<Integer>> thirdEligible = new ArrayList<>();
+        thirdEligible.add(new ArrayList<>());
+        thirdEligible.add(new ArrayList<>());
+        thirdEligible.add(new ArrayList<>());
+        for (int idx : statusEligible) {
+            thirdEligible.get(thirdIndexFor(idx, startIndex, n)).add(idx);
+        }
+        int[] capacity = new int[3];
+        int totalCapacity = 0;
+        for (int t = 0; t < 3; t++) {
+            int reserve = Math.min(vanillaThirdAttackCounts[t], thirdEligible.get(t).size());
+            capacity[t] = thirdEligible.get(t).size() - reserve;
+            totalCapacity += capacity[t];
+        }
+
+        // The flat SPECIES_MIN_ATTACKING_SLOTS floor stays on top of the new per-third reserve as a
+        // last-resort backstop for the rare species whose vanilla learnset has zero attacking moves in
+        // every third. Trimmed directly out of capacity[] (not just the aggregate totalCapacity) so the
+        // proportional distribution below never divides by a total smaller than the sum of the per-third
+        // numerators it's weighting - that mismatch was rounding one third's share up far more than
+        // intended, starving early-game thirds of attacking slots and making ensureEarlyStabFloor
+        // re-promote the opener much more often than its documented ~45% rate.
         int minAttackingReserve = Math.min(SPECIES_MIN_ATTACKING_SLOTS, statusEligible.size());
-        int statusCount = Math.min((int) Math.round(profile.statusShare() * (n - startIndex)),
-                statusEligible.size() - minAttackingReserve);
-        for (int s = 0; s < statusCount && !statusEligible.isEmpty(); s++) {
-            int chosen = pickStatusSlot(statusEligible, moves, random);
-            roles[statusEligible.remove(chosen)] = SlotRole.STATUS;
+        int extraReserveNeeded = Math.max(0, minAttackingReserve - (statusEligible.size() - totalCapacity));
+        while (extraReserveNeeded > 0) {
+            int largest = 0;
+            for (int t = 1; t < 3; t++) {
+                if (capacity[t] > capacity[largest]) {
+                    largest = t;
+                }
+            }
+            if (capacity[largest] <= 0) {
+                break;
+            }
+            capacity[largest]--;
+            totalCapacity--;
+            extraReserveNeeded--;
+        }
+        int statusCount = Math.min((int) Math.round(profile.statusShare() * (n - startIndex)), totalCapacity);
+
+        // Distribute the sampled statusCount budget across the three thirds proportionally to each
+        // third's own capacity, then run the existing level-band-weighted pickStatusSlot selection
+        // independently within each third's own remaining budget.
+        int remainingBudget = statusCount;
+        for (int t = 0; t < 3 && remainingBudget > 0; t++) {
+            List<Integer> pool = thirdEligible.get(t);
+            if (capacity[t] <= 0 || pool.isEmpty()) {
+                continue;
+            }
+            int share = t == 2
+                    ? remainingBudget
+                    : (int) Math.round(statusCount * (capacity[t] / (double) totalCapacity));
+            share = Math.min(share, Math.min(capacity[t], remainingBudget));
+            for (int s = 0; s < share && !pool.isEmpty(); s++) {
+                int chosen = pickStatusSlot(pool, moves, random);
+                roles[pool.remove(chosen)] = SlotRole.STATUS;
+                remainingBudget--;
+            }
         }
 
         for (int i = startIndex; i < n; i++) {

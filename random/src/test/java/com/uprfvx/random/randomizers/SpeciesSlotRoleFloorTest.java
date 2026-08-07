@@ -41,7 +41,7 @@ public class SpeciesSlotRoleFloorTest {
             List<MoveLearnt> moves = fourLevelOneSlots();
             SpeciesLearnsetProfile profile = profileWithStatusShare(Randomizer.SPECIES_STATUS_SHARE_MAX);
             SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                    moves, 0, profile, Set.of(), true, new Random(seed));
+                    moves, 0, profile, Set.of(), true, new Random(seed), new int[]{0, 0, 0});
 
             boolean hasAttackingRole = false;
             for (SpeciesMovesetRandomizer.SlotRole role : roles) {
@@ -70,7 +70,7 @@ public class SpeciesSlotRoleFloorTest {
             }
             SpeciesLearnsetProfile profile = profileWithStatusShare(Randomizer.SPECIES_STATUS_SHARE_MIN);
             SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                    moves, 0, profile, Set.of(), true, new Random(seed));
+                    moves, 0, profile, Set.of(), true, new Random(seed), new int[]{0, 0, 0});
 
             boolean hasEarlyStab = false;
             for (int i = 0; i < roles.length; i++) {
@@ -92,7 +92,7 @@ public class SpeciesSlotRoleFloorTest {
         List<MoveLearnt> moves = fourLevelOneSlots();
         SpeciesLearnsetProfile profile = profileWithStatusShare(Randomizer.SPECIES_STATUS_SHARE_MIN);
         SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
-                moves, 0, profile, Set.of(), false, new Random(0));
+                moves, 0, profile, Set.of(), false, new Random(0), new int[]{0, 0, 0});
 
         for (SpeciesMovesetRandomizer.SlotRole role : roles) {
             assertTrue(role == SpeciesMovesetRandomizer.SlotRole.ATTACK
@@ -107,6 +107,40 @@ public class SpeciesSlotRoleFloorTest {
             moves.add(new MoveLearnt(0, 1));
         }
         return moves;
+    }
+
+    // --- Floor 3 (Fix A): a learnset third with real vanilla attacking moves keeps at least one ---
+
+    @Test
+    public void thirdWithVanillaAttackingMovesKeepsAtLeastOneAttackingSlot() {
+        // Cresselia-shaped: 12 slots, levels 1-93, vanilla had 2 attacking moves in each of the three
+        // learnset thirds (6 total) - real-Pearl found a legal statusShare+pick combination could sweep
+        // an entire third to STATUS even though vanilla had real attacking moves there
+        // (species-movesets-shape-and-stab-guarantee-design.md Fix A background).
+        int[] levels = {1, 5, 11, 20, 29, 38, 46, 52, 57, 66, 78, 93};
+        int[] vanillaThirdAttackCounts = {2, 2, 2};
+        for (long seed = 0; seed < SEED_COUNT; seed++) {
+            List<MoveLearnt> moves = new ArrayList<>();
+            for (int level : levels) {
+                moves.add(new MoveLearnt(0, level));
+            }
+            // statusShare pinned at the sampled max - the same stress condition the real bug needed.
+            SpeciesLearnsetProfile profile = profileWithStatusShare(Randomizer.SPECIES_STATUS_SHARE_MAX);
+            SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
+                    moves, 0, profile, Set.of(), true, new Random(seed), vanillaThirdAttackCounts);
+
+            int[] attackingPerThird = new int[3];
+            for (int i = 0; i < roles.length; i++) {
+                if (roles[i] != SpeciesMovesetRandomizer.SlotRole.STATUS
+                        && roles[i] != SpeciesMovesetRandomizer.SlotRole.WILDCARD) {
+                    attackingPerThird[i < 4 ? 0 : i < 8 ? 1 : 2]++;
+                }
+            }
+            for (int t = 0; t < 3; t++) {
+                assertTrue(attackingPerThird[t] > 0, "seed " + seed + " third " + t
+                        + " lost every attacking-eligible slot despite vanilla having attacking moves there");
+            }
+        }
     }
 
     // --- vanillaThirdAttackCounts / vanillaStatusRatio ---
