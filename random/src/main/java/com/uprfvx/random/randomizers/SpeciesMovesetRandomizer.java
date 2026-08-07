@@ -51,6 +51,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         // centerPower at low levels and the curve is starved - see species-power-curve-structural-flaw.md.
         MovePools pools = createSetsOfMoves(noBroken, sensibleMovesets);
         List<Type> allTypes = new ArrayList<>(pools.typeDamaging().keySet());
+        List<Move> allMoves = romHandler.getMoves();
 
         if (movesetsFollowEvolutions) {
             // Basic species are randomized exactly like the plain (non-follow) path below - only evolved
@@ -65,7 +66,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                     return;
                 }
                 randomizeMovesLearntForSpecies(pkmn, moves, 0, typeThemed, sensibleMovesets, goodDamagingPercentage,
-                        pools, allTypes, vanillaMoveIdsBySpecies);
+                        pools, allTypes, allMoves, vanillaMoveIdsBySpecies);
             };
 
             // An evolved species inherits its pre-evolution's already-finalized picks, earliest-learned first,
@@ -90,7 +91,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 }
                 if (copyCount < toMoves.size()) {
                     randomizeMovesLearntForSpecies(evTo, toMoves, copyCount, typeThemed, sensibleMovesets,
-                            goodDamagingPercentage, pools, allTypes, vanillaMoveIdsBySpecies);
+                            goodDamagingPercentage, pools, allTypes, allMoves, vanillaMoveIdsBySpecies);
                 }
             };
 
@@ -114,7 +115,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                     continue;
                 }
                 randomizeMovesLearntForSpecies(pkmn, moves, 0, typeThemed, sensibleMovesets, goodDamagingPercentage,
-                        pools, allTypes, vanillaMoveIdsBySpecies);
+                        pools, allTypes, allMoves, vanillaMoveIdsBySpecies);
             }
         }
 
@@ -173,7 +174,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
     private void randomizeMovesLearntForSpecies(Species pkmn, List<MoveLearnt> moves, int startIndex,
                                                 boolean typeThemed, boolean sensibleMovesets,
                                                 double goodDamagingPercentage, MovePools pools,
-                                                List<Type> allTypes,
+                                                List<Type> allTypes, List<Move> allMoves,
                                                 Map<Integer, Set<Integer>> vanillaMoveIdsBySpecies) {
         List<Move> validMoves = pools.all();
         List<Move> validDamagingMoves = pools.damaging();
@@ -240,15 +241,17 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         // how much STAB, how wide the coverage palette) is a property of the species rather than an
         // accident of what each independent draw happened to return. Type structure is gated on Prefer Same
         // Type: plain Random means the player asked for type-blind learnsets.
+        int[] vanillaThirdAttackCounts = sensibleMovesets
+                ? vanillaThirdAttackCounts(moves, startIndex, allMoves)
+                : new int[3];
         boolean typeStructured = sensibleMovesets && typeThemed;
         SpeciesLearnsetProfile profile = sensibleMovesets
-                ? SpeciesLearnsetProfile.of(pkmn, allTypes, romHandler.generationOfPokemon(), random)
+                ? SpeciesLearnsetProfile.of(pkmn, allTypes, romHandler.generationOfPokemon(), random,
+                        vanillaStatusRatio(vanillaThirdAttackCounts, moves.size() - startIndex))
                 : null;
-        // No vanilla-shape measurement wired in yet (next commit) - an all-zero reserve preserves
-        // today's behavior exactly.
         SlotRole[] roles = sensibleMovesets
                 ? assignSlotRoles(moves, startIndex, profile, damagingSlotIndices, typeStructured, random,
-                        new int[]{0, 0, 0})
+                        vanillaThirdAttackCounts)
                 : null;
 
         // Replace moves as needed
