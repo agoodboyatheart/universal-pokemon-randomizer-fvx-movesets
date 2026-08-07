@@ -524,6 +524,18 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 .collect(Collectors.toList());
     }
 
+    // STAB gets an extra fallback rung ahead of the shared ceiling logic: relax the ceiling within the
+    // species' own type before ever widening off-type, since STAB's entire purpose is the type match
+    // (species-movesets-shape-and-stab-guarantee-design.md Fix B). available here is already the
+    // species' own on-type STAB pool (stabCandidates/candidatesForRole already resolved which type, and
+    // already widened off-type if - and only if - both of the species' own types were exhausted), so the
+    // relaxed fallback rung is simply that same pool, unfiltered by ceiling.
+    static List<Move> applySpeciesStabPowerCeiling(List<Move> available, int level, double speciesPowerScale) {
+        double ceiling = speciesPowerCeiling(level, speciesPowerScale);
+        List<Move> capped = filterUnderCeiling(available, ceiling);
+        return capped.isEmpty() ? available : capped;
+    }
+
     // Soft sliding floor (pick stage): demotes, never removes, moves weaker than the slot's level
     // warrants, using the same Regular-tier falloff exponent Better Movesets applies to its Regular
     // trainers.
@@ -862,14 +874,18 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                                   MovePools pools) {
         int slotLevel = backfillEffectiveLevels.getOrDefault(slotIndex, moves.get(slotIndex).level);
         List<Move> available = candidatesForRole(role, slotLevel, profile, learnt, pools);
-        List<Move> wider = unused(
-                role == SlotRole.STATUS || role == SlotRole.WILDCARD ? pools.all() : pools.damaging(), learnt);
 
         // Coverage is the weaker half of a vanilla learnset, so only its ceiling tightens - pulling the
         // floor down too would push coverage moves toward junk from both directions.
         double ceilingScale = role == SlotRole.COVERAGE
                 ? powerScale * SPECIES_COVERAGE_CEILING_FACTOR : powerScale;
-        available = applySpeciesPowerCeiling(available, wider, slotLevel, ceilingScale);
+        if (role == SlotRole.STAB) {
+            available = applySpeciesStabPowerCeiling(available, slotLevel, ceilingScale);
+        } else {
+            List<Move> wider = unused(
+                    role == SlotRole.STATUS || role == SlotRole.WILDCARD ? pools.all() : pools.damaging(), learnt);
+            available = applySpeciesPowerCeiling(available, wider, slotLevel, ceilingScale);
+        }
 
         MoveCategory preferredCategory = random.nextDouble() < profile.categoryLean()
                 ? MoveCategory.PHYSICAL : MoveCategory.SPECIAL;

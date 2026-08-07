@@ -79,4 +79,28 @@ public class SpeciesStabFallbackTest {
         List<Move> candidates = SpeciesMovesetRandomizer.stabCandidates(profile, List.of(), pools, new Random(0));
         assertEquals(List.of(fireMove), candidates);
     }
+
+    @Test
+    public void stabPowerCeilingRelaxesWithinOwnTypeInsteadOfReturningEmpty() {
+        // Every candidate is far above any level-1 ceiling - the ceiling must relax within this same
+        // (already on-type) pool rather than signal "widen off-type".
+        Move strongBugMove = moveOf(1, Type.BUG, 150);
+        List<Move> available = List.of(strongBugMove);
+
+        List<Move> result = SpeciesMovesetRandomizer.applySpeciesStabPowerCeiling(available, 1, 1.0);
+
+        assertEquals(available, result, "STAB ceiling widened away from the species' own on-type pool "
+                + "instead of relaxing the ceiling within it");
+    }
+
+    @Test
+    public void stabPowerCeilingStillPrefersTheCappedPoolWhenOneExists() {
+        Move weakBugMove = moveOf(1, Type.BUG, 40);
+        Move strongBugMove = moveOf(2, Type.BUG, 150);
+        List<Move> available = List.of(weakBugMove, strongBugMove);
+
+        List<Move> result = SpeciesMovesetRandomizer.applySpeciesStabPowerCeiling(available, 1, 1.0);
+
+        assertEquals(List.of(weakBugMove), result);
+    }
 }
