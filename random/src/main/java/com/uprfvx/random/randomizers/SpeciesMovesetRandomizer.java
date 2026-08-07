@@ -891,6 +891,30 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         return mv.priority > 0 ? profile.priorityBonus() : 1.0;
     }
 
+    // STAB's own fallback order: try the type stabTypeFor would pick for this slot, then the species'
+    // other own type if dual-typed, before ever widening off-type. Closes the Scizor zero-STAB gap where
+    // the on-type pool for whichever single type stabTypeFor rolled happened to be exhausted even though
+    // the species' OTHER type still had legal moves left
+    // (species-movesets-shape-and-stab-guarantee-design.md Fix B). Package-private static so it's
+    // directly unit-testable without a RomHandler.
+    static List<Move> stabCandidates(SpeciesLearnsetProfile profile, List<Integer> learnt, MovePools pools,
+                                     Random random) {
+        Type first = profile.stabTypeFor(random);
+        List<Move> candidates = unused(pools.byType(first), learnt);
+        if (!candidates.isEmpty()) {
+            return candidates;
+        }
+        for (Type type : profile.stabTypes()) {
+            if (type != first) {
+                List<Move> fallback = unused(pools.byType(type), learnt);
+                if (!fallback.isEmpty()) {
+                    return fallback;
+                }
+            }
+        }
+        return candidates;
+    }
+
     /**
      * The candidate pool for one role, narrowest first, widening until something is usable. Returns the
      * unused-move-filtered list; never empty unless the whole movepool is exhausted.
@@ -899,7 +923,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                                          List<Integer> learnt, MovePools pools) {
         List<Move> candidates = switch (role) {
             case STATUS -> unused(pools.status(), learnt);
-            case STAB -> unused(pools.byType(profile.stabTypeFor(random)), learnt);
+            case STAB -> stabCandidates(profile, learnt, pools, random);
             case COVERAGE -> unused(pools.byType(coverageTypeFor(level, profile)), learnt);
             case FILLER -> unused(pools.byType(Type.NORMAL), learnt);
             case ATTACK, WILDCARD -> List.of();
