@@ -163,6 +163,35 @@ public class SpeciesLearnsetProfileRandomizerTest {
             p.speciesStatusShare.add((double) statusCount / total);
             p.speciesDistinctTypes.add(attackingTypes.size());
 
+            // First-STAB / first-attack level per species (species-moveset-pearl-real-rom-comparison-
+            // report.md's headline tail measurement - a mean/percentile table over aggregate slots can't
+            // see a species with a starved learnset, since one Togekiss disappears into a 40%+ status-
+            // share average). Computed by level, not list order, and independent of the band tally above.
+            // A level-0 (evolution move) slot is a valid candidate "first" move, reported as level 1.
+            int minAttackLevel = Integer.MAX_VALUE;
+            int minStabLevel = Integer.MAX_VALUE;
+            for (MoveLearnt ml : moves) {
+                Move mv2 = allMoves.get(ml.move);
+                if (mv2 == null || mv2.category == MoveCategory.STATUS) {
+                    continue;
+                }
+                int lvl = Math.max(1, ml.level);
+                minAttackLevel = Math.min(minAttackLevel, lvl);
+                if (mv2.type != null && (mv2.type == primary || mv2.type == secondary)) {
+                    minStabLevel = Math.min(minStabLevel, lvl);
+                }
+            }
+            if (minAttackLevel == Integer.MAX_VALUE) {
+                p.zeroAttackCount++;
+            } else {
+                p.firstAttackLevel.add((double) minAttackLevel);
+            }
+            if (minStabLevel == Integer.MAX_VALUE) {
+                p.zeroStabCount++;
+            } else {
+                p.firstStabLevel.add((double) minStabLevel);
+            }
+
             if (attackCount > 0) {
                 p.bucketPhysical(sp.getBaseStats().getAttack() - sp.getBaseStats().getSpatk(),
                         physicalCount, attackCount);
@@ -202,6 +231,11 @@ public class SpeciesLearnsetProfileRandomizerTest {
 
         final List<Double> speciesStatusShare = new ArrayList<>();
         final List<Integer> speciesDistinctTypes = new ArrayList<>();
+
+        final List<Double> firstAttackLevel = new ArrayList<>();
+        final List<Double> firstStabLevel = new ArrayList<>();
+        int zeroAttackCount = 0;
+        int zeroStabCount = 0;
 
         final int[] atkSpaPhysical = new int[ATK_SPA_BUCKETS.length];
         final int[] atkSpaTotal = new int[ATK_SPA_BUCKETS.length];
@@ -268,6 +302,33 @@ public class SpeciesLearnsetProfileRandomizerTest {
             return values.stream().mapToDouble(Double::doubleValue).average().orElse(0);
         }
 
+        private static double max(List<Double> sorted) {
+            return sorted.isEmpty() ? 0 : sorted.get(sorted.size() - 1);
+        }
+
+        // zeroCount species are excluded from mean/median/p90/max (there's no "level" to average in) and
+        // reported as their own rate instead - mirroring how the report separates "20 species have zero
+        // STAB ever" from "the tail among species that do get one runs to level 78".
+        private static void printFirstMoveTable(String label, List<Double> vLevels, int vZero,
+                                                List<Double> rLevels, int rZero, String zeroLabel) {
+            List<Double> vs = new ArrayList<>(vLevels);
+            List<Double> rs = new ArrayList<>(rLevels);
+            Collections.sort(vs);
+            Collections.sort(rs);
+            int vTotal = vs.size() + vZero;
+            int rTotal = rs.size() + rZero;
+
+            System.out.printf("  %-16s %10s %10s%n", "", "vanilla", "randomized");
+            System.out.printf("  %-16s %9.1f%% %9.1f%%%n", zeroLabel + " rate",
+                    100 * share(vZero, vTotal), 100 * share(rZero, rTotal));
+            System.out.printf("  %-16s %10.1f %10.1f%n", label + " mean", mean(vs), mean(rs));
+            System.out.printf("  %-16s %10.1f %10.1f%n", label + " median", percentile(vs, 0.50),
+                    percentile(rs, 0.50));
+            System.out.printf("  %-16s %10.1f %10.1f%n", label + " p90", percentile(vs, 0.90),
+                    percentile(rs, 0.90));
+            System.out.printf("  %-16s %10.1f %10.1f%n", label + " max", max(vs), max(rs));
+        }
+
         static void printComparison(Profile v, Profile r) {
             List<Double> vs = new ArrayList<>(v.speciesStatusShare);
             List<Double> rs = new ArrayList<>(r.speciesStatusShare);
@@ -284,6 +345,14 @@ public class SpeciesLearnsetProfileRandomizerTest {
                     100 * percentile(rs, 0.50));
             System.out.printf("  %-12s %9.1f%% %9.1f%%%n", "p90", 100 * percentile(vs, 0.90),
                     100 * percentile(rs, 0.90));
+
+            System.out.println();
+            System.out.println("-- first-STAB / first-attack level (species-moveset-pearl-real-rom-"
+                    + "comparison-report.md headline tail metric) --");
+            printFirstMoveTable("first-STAB level", v.firstStabLevel, v.zeroStabCount, r.firstStabLevel,
+                    r.zeroStabCount, "zero-STAB");
+            printFirstMoveTable("first-attack level", v.firstAttackLevel, v.zeroAttackCount,
+                    r.firstAttackLevel, r.zeroAttackCount, "zero-attack");
 
             System.out.println();
             System.out.println("-- attacking share by level band (report: 61.4/51.5/64.8/63.1/60.2/66.6/69.8) --");

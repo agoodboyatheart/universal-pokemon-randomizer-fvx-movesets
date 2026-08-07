@@ -144,6 +144,11 @@ public abstract class Randomizer {
     protected static double SPECIES_STATUS_SHARE_MIN = 0.08;
     protected static double SPECIES_STATUS_SHARE_MAX = 0.72;
 
+    // A small learnset (e.g. 4 slots) can otherwise have every non-wildcard slot claimed by a high
+    // statusShare roll, leaving zero slots able to hold an attacking move at all (Togekiss, real-Pearl
+    // finding: species-moveset-pearl-real-rom-comparison-report.md).
+    protected static int SPECIES_MIN_ATTACKING_SLOTS = 1;
+
     // Status is densest at levels 2-10 and thinnest above 50 - vanilla stops handing out utility at the top
     // of a learnset and just gives weapons. Indexed by SPECIES_LEVEL_BANDS.
     protected static final int[] SPECIES_LEVEL_BAND_EDGES = {1, 10, 20, 30, 40, 50, Integer.MAX_VALUE};
@@ -185,6 +190,11 @@ public abstract class Randomizer {
 
     // Vanilla opens about half its species on their own type and the rest on Normal filler.
     protected static double SPECIES_FIRST_SLOT_STAB_CHANCE = 0.45;
+
+    // The opener roll above, plus every later slot's own independent STAB-vs-COVERAGE roll, can all miss -
+    // real Pearl data found species with no STAB move until level 70-78 (Dialga, Raikou) this way. This is
+    // a backstop, not a replacement: it only promotes a slot to STAB if none already landed on time.
+    protected static int SPECIES_STAB_FLOOR_LEVEL = 30;
 
     protected static double speciesCenterPower(int level) {
         if (level <= SPECIES_LATE_GAME_LEVEL) {

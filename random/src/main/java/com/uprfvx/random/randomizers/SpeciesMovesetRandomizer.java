@@ -571,9 +571,13 @@ public class SpeciesMovesetRandomizer extends Randomizer {
 
         // Measured against every slot, not just the eligible ones - wildcards and Force Good Damaging's
         // reservations still count toward the species' target share, so excluding them from the denominator
-        // would systematically undershoot it.
+        // would systematically undershoot it. Capped short of statusEligible's full size so a small
+        // learnset can never lose every non-wildcard slot to status (Togekiss, real-Pearl finding:
+        // species-moveset-pearl-real-rom-comparison-report.md) - at least SPECIES_MIN_ATTACKING_SLOTS
+        // always survives to carry an attacking move.
+        int minAttackingReserve = Math.min(SPECIES_MIN_ATTACKING_SLOTS, statusEligible.size());
         int statusCount = Math.min((int) Math.round(profile.statusShare() * (n - startIndex)),
-                statusEligible.size());
+                statusEligible.size() - minAttackingReserve);
         for (int s = 0; s < statusCount && !statusEligible.isEmpty(); s++) {
             int chosen = pickStatusSlot(statusEligible, moves, random);
             roles[statusEligible.remove(chosen)] = SlotRole.STATUS;
@@ -586,8 +590,62 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         }
         if (typeStructured) {
             setFirstAttackerRole(roles, startIndex, n, random);
+            ensureEarlyStabFloor(roles, moves, startIndex, n);
         }
         return roles;
+    }
+
+    /**
+     * Backstop for the opener roll above: the opener, and every later slot's own independent
+     * STAB-vs-COVERAGE roll ({@code attackingRoleFor}), can all miss - real Pearl data found species with
+     * no STAB move until level 70-78 this way (Dialga, Raikou;
+     * species-moveset-pearl-real-rom-comparison-report.md). If nothing has landed STAB by
+     * {@code SPECIES_STAB_FLOOR_LEVEL}, promote the earliest eligible slot at or before it - preferring
+     * any slot other than the opener first, so this backstop doesn't quietly re-flip
+     * {@code setFirstAttackerRole}'s documented ~45%/55% STAB/Normal-filler split back to STAB every time
+     * it fires. Only reaches past the floor level, or touches the opener, if the species has no other
+     * attacking-role slot that early at all (rare, since assignSlotRoles' status cap already reserves one)
+     * - guaranteeing STAB exists eventually rather than never, same as vanilla's own worst-case stragglers
+     * (e.g. Mawile, lv56).
+     */
+    private static void ensureEarlyStabFloor(SlotRole[] roles, List<MoveLearnt> moves, int startIndex, int n) {
+        int openerIndex = -1;
+        for (int i = startIndex; i < n; i++) {
+            SlotRole role = roles[i];
+            if (role != SlotRole.STAB && role != SlotRole.COVERAGE && role != SlotRole.FILLER) {
+                continue;
+            }
+            if (openerIndex == -1) {
+                openerIndex = i;
+            }
+            if (role == SlotRole.STAB && moves.get(i).level <= SPECIES_STAB_FLOOR_LEVEL) {
+                return;
+            }
+        }
+        if (promoteEarliestEligible(roles, moves, startIndex, n, openerIndex, true)) {
+            return;
+        }
+        if (promoteEarliestEligible(roles, moves, startIndex, n, -1, true)) {
+            return;
+        }
+        promoteEarliestEligible(roles, moves, startIndex, n, -1, false);
+    }
+
+    // withinFloorLevel restricts the search to slots at or before SPECIES_STAB_FLOOR_LEVEL; pass -1 for
+    // skipIndex to allow every slot, including the opener.
+    private static boolean promoteEarliestEligible(SlotRole[] roles, List<MoveLearnt> moves, int startIndex,
+                                                    int n, int skipIndex, boolean withinFloorLevel) {
+        for (int i = startIndex; i < n; i++) {
+            if (i == skipIndex || (roles[i] != SlotRole.COVERAGE && roles[i] != SlotRole.FILLER)) {
+                continue;
+            }
+            if (withinFloorLevel && moves.get(i).level > SPECIES_STAB_FLOOR_LEVEL) {
+                continue;
+            }
+            roles[i] = SlotRole.STAB;
+            return true;
+        }
+        return false;
     }
 
     // Weighted by the level band's status density, so utility clusters where vanilla puts it rather than
