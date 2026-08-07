@@ -608,10 +608,35 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         for (int idx : statusEligible) {
             thirdEligible.get(thirdIndexFor(idx, startIndex, n)).add(idx);
         }
+        // WILDCARD and forced-damaging slots were already taken out of statusEligible above, and they are
+        // already not STATUS - so they meet part of vanilla's own attacking count for their third and must
+        // not be reserved for a second time. Without this credit the reserve is measured against the whole
+        // span (~60% of slots attacking in vanilla) but subtracted from an eligible pool that is only ~85%
+        // of it, leaving ~25% capacity against a statusShare target of ~40%: the clamp below then bit on
+        // nearly every species and deleted status slots rather than repositioning them, which is what drove
+        // the measured status share down to 33.1% against vanilla's 40.7%
+        // (species-moveset-pearl-fix-ab-verification-report.md).
+        int[] alreadyAttacking = new int[3];
+        int[] guaranteedAttacking = new int[3];
+        for (int i = startIndex; i < n; i++) {
+            int t = thirdIndexFor(i, startIndex, n);
+            if (forcedDamagingSlots.contains(i)) {
+                alreadyAttacking[t]++;
+                guaranteedAttacking[t]++;
+            } else if (roles[i] == SlotRole.WILDCARD) {
+                alreadyAttacking[t]++;
+            }
+        }
         int[] capacity = new int[3];
         int totalCapacity = 0;
         for (int t = 0; t < 3; t++) {
-            int reserve = Math.min(vanillaThirdAttackCounts[t], thirdEligible.get(t).size());
+            // A WILDCARD slot draws from the whole movepool, so it counts toward vanilla's attacking
+            // count only on average - a third left holding nothing but wildcards has no attacking move
+            // guaranteed at all. Keep one genuine attacking-role slot reserved wherever vanilla had any,
+            // unless a forced-damaging slot is already carrying that guarantee.
+            int floor = vanillaThirdAttackCounts[t] > 0 && guaranteedAttacking[t] == 0 ? 1 : 0;
+            int reserve = Math.min(thirdEligible.get(t).size(),
+                    Math.max(vanillaThirdAttackCounts[t] - alreadyAttacking[t], floor));
             capacity[t] = thirdEligible.get(t).size() - reserve;
             totalCapacity += capacity[t];
         }
@@ -645,6 +670,7 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         // third's own capacity, then run the existing level-band-weighted pickStatusSlot selection
         // independently within each third's own remaining budget.
         int remainingBudget = statusCount;
+        int[] spent = new int[3];
         for (int t = 0; t < 3 && remainingBudget > 0; t++) {
             List<Integer> pool = thirdEligible.get(t);
             if (capacity[t] <= 0 || pool.isEmpty()) {
@@ -657,6 +683,22 @@ public class SpeciesMovesetRandomizer extends Randomizer {
             for (int s = 0; s < share && !pool.isEmpty(); s++) {
                 int chosen = pickStatusSlot(pool, moves, random);
                 roles[pool.remove(chosen)] = SlotRole.STATUS;
+                spent[t]++;
+                remainingBudget--;
+            }
+        }
+
+        // A third whose rounded share landed under its own capacity leaves budget unspent, and an early
+        // third running out of pool strands the rest - either way the species ends up below its sampled
+        // status share for a rounding reason rather than a structural one. Hand the remainder to whichever
+        // thirds still have room; each third's capacity cap still holds, so the attacking reserve above is
+        // never spent into.
+        for (int t = 0; t < 3 && remainingBudget > 0; t++) {
+            List<Integer> pool = thirdEligible.get(t);
+            while (remainingBudget > 0 && spent[t] < capacity[t] && !pool.isEmpty()) {
+                int chosen = pickStatusSlot(pool, moves, random);
+                roles[pool.remove(chosen)] = SlotRole.STATUS;
+                spent[t]++;
                 remainingBudget--;
             }
         }
