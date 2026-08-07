@@ -1,5 +1,7 @@
 package com.uprfvx.random.randomizers;
 
+import com.uprfvx.romio.gamedata.Move;
+import com.uprfvx.romio.gamedata.MoveCategory;
 import com.uprfvx.romio.gamedata.MoveLearnt;
 import com.uprfvx.romio.gamedata.Type;
 import org.junit.jupiter.api.Test;
@@ -9,6 +11,8 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -103,5 +107,44 @@ public class SpeciesSlotRoleFloorTest {
             moves.add(new MoveLearnt(0, 1));
         }
         return moves;
+    }
+
+    // --- vanillaThirdAttackCounts / vanillaStatusRatio ---
+
+    @Test
+    public void vanillaThirdAttackCountsSplitsIntoThreeNearEqualThirds() {
+        // 12 vanilla slots split into exactly 4/4/4 thirds, alternating attack/status - 2 attacking per
+        // third, 6 total.
+        Move attackMove = new Move();
+        attackMove.number = 1;
+        attackMove.category = MoveCategory.PHYSICAL;
+        Move statusMove = new Move();
+        statusMove.number = 2;
+        statusMove.category = MoveCategory.STATUS;
+        List<Move> allMoves = new ArrayList<>();
+        allMoves.add(null); // move ID 0 is unused/none
+        allMoves.add(attackMove); // ID 1
+        allMoves.add(statusMove); // ID 2
+
+        int[] pattern = {1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2};
+        List<MoveLearnt> moves = new ArrayList<>();
+        for (int moveId : pattern) {
+            moves.add(new MoveLearnt(moveId, 1));
+        }
+
+        int[] counts = SpeciesMovesetRandomizer.vanillaThirdAttackCounts(moves, 0, allMoves);
+        assertArrayEquals(new int[]{2, 2, 2}, counts);
+    }
+
+    @Test
+    public void vanillaStatusRatioReflectsFractionOfNonAttackingSlots() {
+        double ratio = SpeciesMovesetRandomizer.vanillaStatusRatio(new int[]{2, 2, 2}, 12);
+        assertEquals(0.5, ratio, 1e-9);
+    }
+
+    @Test
+    public void vanillaStatusRatioFallsBackToGlobalMeanWhenNothingToMeasure() {
+        double ratio = SpeciesMovesetRandomizer.vanillaStatusRatio(new int[]{0, 0, 0}, 0);
+        assertEquals(Randomizer.SPECIES_STATUS_SHARE_MEAN, ratio, 1e-9);
     }
 }

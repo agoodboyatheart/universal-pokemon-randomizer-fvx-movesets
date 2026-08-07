@@ -749,6 +749,53 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         return effectiveLevels;
     }
 
+    // Splits [startIndex, n) into three near-equal contiguous thirds and returns which third slot i falls
+    // into (0, 1, or 2) - the same partition vanillaThirdAttackCounts is measured against, so
+    // assignSlotRoles' per-third reservation lines up with the vanilla shape it targets.
+    private static int thirdIndexFor(int i, int startIndex, int n) {
+        int span = n - startIndex;
+        if (span <= 0) {
+            return 0;
+        }
+        int offset = i - startIndex;
+        int firstBoundary = (int) Math.round(span / 3.0);
+        int secondBoundary = (int) Math.round(span * 2.0 / 3.0);
+        if (offset < firstBoundary) {
+            return 0;
+        }
+        return offset < secondBoundary ? 1 : 2;
+    }
+
+    // How many of a species' vanilla (pre-randomization) slots in [startIndex, n) were non-STATUS, per
+    // learnset third. moves.get(i).move is still the untouched vanilla move ID here - nothing is
+    // overwritten until randomizeMovesLearntForSpecies' final write-back loop runs
+    // (species-movesets-shape-and-stab-guarantee-design.md Fix A).
+    static int[] vanillaThirdAttackCounts(List<MoveLearnt> moves, int startIndex, List<Move> allMoves) {
+        int n = moves.size();
+        int[] counts = new int[3];
+        for (int i = startIndex; i < n; i++) {
+            int moveId = moves.get(i).move;
+            if (moveId <= 0 || moveId >= allMoves.size()) {
+                continue;
+            }
+            Move mv = allMoves.get(moveId);
+            if (mv != null && mv.category != MoveCategory.STATUS) {
+                counts[thirdIndexFor(i, startIndex, n)]++;
+            }
+        }
+        return counts;
+    }
+
+    // Centers SpeciesLearnsetProfile.of's statusShare sample on this species' own vanilla ratio instead
+    // of the fixed global mean. Falls back to the global mean when there's nothing to measure.
+    static double vanillaStatusRatio(int[] thirdAttackCounts, int slotCount) {
+        if (slotCount <= 0) {
+            return SPECIES_STATUS_SHARE_MEAN;
+        }
+        int attacking = thirdAttackCounts[0] + thirdAttackCounts[1] + thirdAttackCounts[2];
+        return Math.clamp(1.0 - (double) attacking / slotCount, 0.0, 1.0);
+    }
+
     /**
      * Fills one slot under Sensible Movesets: role-scoped pool, hard level/quality ceiling, then a
      * weighted pick over the soft power floor and the species' physical/special lean.
