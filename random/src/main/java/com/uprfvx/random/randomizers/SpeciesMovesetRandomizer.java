@@ -85,6 +85,12 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 if (copyCosmeticMovesetIfNeeded(evTo, toMoves, movesets)) {
                     return;
                 }
+                // Measured while toMoves still holds vanilla move IDs. After the copy below they are the
+                // pre-evolution's randomized picks, so the "is this slot a relisted prevo move" test would
+                // compare randomized content against vanilla IDs and mean nothing.
+                Map<Integer, Integer> backfillLevels = sensibleMovesets
+                        ? computeBackfillEffectiveLevels(evTo, toMoves, 0, vanillaMoveIdsBySpecies)
+                        : Collections.emptyMap();
                 int copyCount = Math.min(toMoves.size(), fromMoves.size());
                 for (int i = 0; i < copyCount; i++) {
                     toMoves.get(i).move = fromMoves.get(i).move;
@@ -92,6 +98,10 @@ public class SpeciesMovesetRandomizer extends Randomizer {
                 if (copyCount < toMoves.size()) {
                     randomizeMovesLearntForSpecies(evTo, toMoves, copyCount, typeThemed, sensibleMovesets,
                             goodDamagingPercentage, pools, allTypes, allMoves, vanillaMoveIdsBySpecies);
+                }
+                if (sensibleMovesets) {
+                    repairInheritedMoveset(evTo, toMoves, copyCount, backfillLevels, typeThemed, pools,
+                            allTypes, allMoves);
                 }
             };
 
@@ -815,6 +825,111 @@ public class SpeciesMovesetRandomizer extends Randomizer {
             }
         }
         return effectiveLevels;
+    }
+
+    /**
+     * Re-checks the STAB and attacking guarantees against an evolved species' OWN types after it has
+     * inherited its pre-evolution's picks, overwriting the single earliest slot that can carry them.
+     * <p>
+     * An evolved species whose slot count is at most its pre-evolution's is a pure copy - the Follow
+     * Evolutions path never calls {@code randomizeMovesLearntForSpecies} for it, so
+     * {@code assignSlotRoles} and {@code ensureEarlyStabFloor} never evaluate against its own typing at
+     * all. Two ways that breaks: a type change across the evolution (Scyther is Bug/Flying, Scizor is
+     * Bug/Steel, so a Scyther that drew Flying STAB hands Scizor a learnset with no on-type move
+     * anywhere), and truncation (a 4-slot Togekiss takes Togepi's first four, one slot short of its only
+     * attacker). Neither can be fixed by choosing a different slice of the pre-evolution's learnset -
+     * Scizor's slice is the whole thing - so the invariant is repaired here instead, on the inherited
+     * slots, under the evolved species' own types.
+     */
+    private void repairInheritedMoveset(Species pkmn, List<MoveLearnt> moves, int inheritedCount,
+                                        Map<Integer, Integer> backfillLevels, boolean typeThemed,
+                                        MovePools pools, List<Type> allTypes, List<Move> allMoves) {
+        // Type structure is gated on Prefer Same Type exactly as the main path is: under plain Random the
+        // player asked for type-blind learnsets, so only the "has an attacking move at all" half applies.
+        boolean typeStructured = typeThemed;
+        SpeciesLearnsetProfile profile =
+                SpeciesLearnsetProfile.of(pkmn, allTypes, romHandler.generationOfPokemon(), random);
+        if (satisfiesInheritedInvariant(moves, profile, typeStructured, allMoves)) {
+            return;
+        }
+        int slot = inheritedRepairSlot(moves, inheritedCount, allMoves);
+        if (slot < 0) {
+            return;
+        }
+        // Everything except the slot being replaced, so its own outgoing move can't block its re-pick.
+        List<Integer> learnt = new ArrayList<>();
+        for (int i = 0; i < moves.size(); i++) {
+            if (i != slot) {
+                learnt.add(moves.get(i).move);
+            }
+        }
+        // Routed through pickComposedMove so the replacement gets the same power ceiling, soft power
+        // floor, category lean, ability affinity and priority weighting as every other slot.
+        moves.get(slot).move = pickComposedMove(typeStructured ? SlotRole.STAB : SlotRole.ATTACK, slot,
+                moves, backfillLevels, profile, profile.powerScale(), learnt, pools).number;
+    }
+
+    // The invariant the self-randomized path already guarantees, restated over a finished learnset: a
+    // damaging move of one of the species' own types at or before SPECIES_STAB_FLOOR_LEVEL (the same
+    // floor ensureEarlyStabFloor enforces), or - with type structure off - simply a damaging move.
+    static boolean satisfiesInheritedInvariant(List<MoveLearnt> moves, SpeciesLearnsetProfile profile,
+                                               boolean typeStructured, List<Move> allMoves) {
+        for (MoveLearnt ml : moves) {
+            Move mv = moveById(ml.move, allMoves);
+            if (mv == null || mv.category == MoveCategory.STATUS) {
+                continue;
+            }
+            if (!typeStructured) {
+                return true;
+            }
+            if (ml.level <= SPECIES_STAB_FLOOR_LEVEL && profile.stabTypes().contains(mv.type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Which inherited slot to sacrifice. Only slots below {@code inheritedCount} are candidates - a
+     * longer evolved species' leftover tail was randomized independently and already ran its own
+     * guarantees. Within the floor band, an off-type damaging move goes first (a pure re-type, leaving
+     * the species' status share untouched), then a status move; a species with nothing in the band at all
+     * falls back to its earliest real slot, mirroring ensureEarlyStabFloor's own last resort of placing
+     * STAB late rather than never. Evolution-move slots (level 0) are skipped - the composed path never
+     * fills them. Returns -1 when there is nothing to repair.
+     */
+    static int inheritedRepairSlot(List<MoveLearnt> moves, int inheritedCount, List<Move> allMoves) {
+        int earliestReal = -1;
+        int earliestStatus = -1;
+        for (int i = 0; i < Math.min(inheritedCount, moves.size()); i++) {
+            MoveLearnt ml = moves.get(i);
+            if (ml.level <= 0) {
+                continue;
+            }
+            if (earliestReal == -1) {
+                earliestReal = i;
+            }
+            if (ml.level > SPECIES_STAB_FLOOR_LEVEL) {
+                continue;
+            }
+            Move mv = moveById(ml.move, allMoves);
+            if (mv == null) {
+                continue;
+            }
+            // Reaching here means the invariant failed, so any damaging move in the band is off-type.
+            if (mv.category != MoveCategory.STATUS) {
+                return i;
+            }
+            if (earliestStatus == -1) {
+                earliestStatus = i;
+            }
+        }
+        return earliestStatus != -1 ? earliestStatus : earliestReal;
+    }
+
+    // Padded-but-unfilled slots carry move ID 0, and a corrupt ID would throw rather than being ignored.
+    private static Move moveById(int moveId, List<Move> allMoves) {
+        return moveId <= 0 || moveId >= allMoves.size() ? null : allMoves.get(moveId);
     }
 
     // Splits [startIndex, n) into three near-equal contiguous thirds and returns which third slot i falls
