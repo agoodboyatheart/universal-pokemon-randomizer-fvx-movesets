@@ -76,9 +76,15 @@ public record SpeciesLearnsetProfile(
             Map.entry(AbilityIDs.solarPower, mv -> mv.number == MoveIDs.sunnyDay || mv.number == MoveIDs.solarBeam));
 
     static SpeciesLearnsetProfile of(Species pkmn, List<Type> allTypes, int generation, Random random) {
-        double statusShare = Math.clamp(
-                Randomizer.SPECIES_STATUS_SHARE_MEAN + random.nextGaussian() * Randomizer.SPECIES_STATUS_SHARE_SIGMA,
-                Randomizer.SPECIES_STATUS_SHARE_MIN, Randomizer.SPECIES_STATUS_SHARE_MAX);
+        return of(pkmn, allTypes, generation, random, Randomizer.SPECIES_STATUS_SHARE_MEAN);
+    }
+
+    // vanillaStatusRatio centers the sample on this species' OWN vanilla status fraction instead of a
+    // fixed global mean - Cresselia's real vanilla learnset is ~50% status, so its sample should center
+    // there, not on the dex-wide 37.5% (species-movesets-shape-and-stab-guarantee-design.md Fix A).
+    static SpeciesLearnsetProfile of(Species pkmn, List<Type> allTypes, int generation, Random random,
+                                     double vanillaStatusRatio) {
+        double statusShare = sampleStatusShare(vanillaStatusRatio, random);
 
         List<Type> stabTypes = new ArrayList<>();
         Type primary = pkmn.getPrimaryType(false);
@@ -96,6 +102,11 @@ public record SpeciesLearnsetProfile(
                 SpeciesMovesetRandomizer.speciesCategoryLean(pkmn.getBaseStats().getAttackSpecialAttackRatio()),
                 abilityAffinityFor(pkmn, generation),
                 priorityBonusFor(pkmn));
+    }
+
+    static double sampleStatusShare(double center, Random random) {
+        return Math.clamp(center + random.nextGaussian() * Randomizer.SPECIES_STATUS_SHARE_SIGMA,
+                Randomizer.SPECIES_STATUS_SHARE_MIN, Randomizer.SPECIES_STATUS_SHARE_MAX);
     }
 
     // Gen 1-2 have no abilities at all.
