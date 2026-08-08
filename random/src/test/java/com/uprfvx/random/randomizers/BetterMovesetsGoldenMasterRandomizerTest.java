@@ -155,7 +155,7 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
         BOSS L58 ARCANINE (FIRE): 126,225,219,34
         IMP  L12 GASTLY (GHOST/POISON): 122,202,174,203
         IMP  L12 GASTLY (GHOST/POISON): 122,202,95,149
-        IMP  L20 HAUNTER (GHOST/POISON): 122,202,114,168
+        IMP  L20 HAUNTER (GHOST/POISON): 122,168,156,149
         IMP  L20 ZUBAT (POISON/FLYING): 16,211,18,98
         IMP  L32 MEGANIUM (GRASS): 202,246,73,34
         IMP  L28 MAGNEMITE (ELECTRIC/STEEL): 85,129,86,199
@@ -179,8 +179,8 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
         REG  L28 POLIWHIRL (WATER): 61,3,218,203
         REG  L32 ONIX (ROCK/GROUND): 157,89,203,104
         REG  L6 VOLTORB (ELECTRIC): 33,205,148,129
-        REG  L31 FURRET (NORMAL): 163,91,213,247
-        REG  L42 GOLDUCK (WATER): 57,10,238,237
+        REG  L31 FURRET (NORMAL): 163,247,179,9
+        REG  L42 GOLDUCK (WATER): 57,60,103,154
         REG  L23 PIKACHU (ELECTRIC): 84,205,70,86
         REG  L25 ELECTRODE (ELECTRIC): 33,205,207,104
         """);
@@ -287,46 +287,46 @@ public class BetterMovesetsGoldenMasterRandomizerTest {
         BOSS L72 Lucario (FIGHTING/STEEL): 396,299,334,501
         BOSS L28 Flaaffy (ELECTRIC): 528,34,178,7
         BOSS L48 Haxorus (DRAGON): 337,276,184,421
-        BOSS L50 Cofagrigus (GHOST): 247,496,334,277
-        BOSS L67 Simipour (WATER): 127,343,269,91
-        BOSS L76 Clefable (NORMAL): 70,309,526,358
-        BOSS L28 Emolga (ELECTRIC/FLYING): 85,512,269,268
-        BOSS L49 Carracosta (WATER/ROCK): 127,442,446,276
-        BOSS L56 Lucario (FIGHTING/STEEL): 430,299,97,410
-        BOSS L73 Golurk (GROUND/GHOST): 89,490,397,67
-        BOSS L73 Gallade (PSYCHIC/FIGHTING): 370,530,204,216
-        BOSS L75 Arcanine (FIRE): 53,370,219,38
-        BOSS L75 Glaceon (ICE): 59,401,281,376
+        BOSS L50 Cofagrigus (GHOST): 247,412,220,168
+        BOSS L67 Simipour (WATER): 56,512,392,270
+        BOSS L76 Clefable (NORMAL): 304,53,526,340
+        BOSS L28 Emolga (ELECTRIC/FLYING): 351,512,366,237
+        BOSS L49 Carracosta (WATER/ROCK): 444,523,182,175
+        BOSS L56 Lucario (FIGHTING/STEEL): 238,430,334,9
+        BOSS L73 Golurk (GROUND/GHOST): 89,19,156,317
+        BOSS L73 Gallade (PSYCHIC/FIGHTING): 370,530,50,425
+        BOSS L75 Arcanine (FIRE): 315,406,370,70
+        BOSS L75 Glaceon (ICE): 59,324,401,376
         IMP  L8 Tepig (FIRE): 488,317,261,343
-        IMP  L48 Cryogonal (ICE): 58,496,277,258
-        IMP  L23 Pansage (GRASS): 412,512,320,282
-        IMP  L31 Tranquill (NORMAL/FLYING): 253,211,95,19
-        IMP  L39 Unfezant (NORMAL/FLYING): 19,369,366,257
-        IMP  L46 Cryogonal (ICE): 58,430,277,216
-        IMP  L55 Unfezant (NORMAL/FLYING): 416,211,297,234
-        IMP  L55 Simisear (FIRE): 315,157,269,490
-        IMP  L62 Unfezant (NORMAL/FLYING): 19,257,197,211
-        IMP  L62 Flygon (GROUND/DRAGON): 91,444,450,7
-        IMP  L65 Unfezant (NORMAL/FLYING): 19,211,297,98
-        IMP  L65 Eelektross (ELECTRIC): 9,202,156,409
-        IMP  L41 Simisear (FIRE): 126,276,92,343
-        IMP  L48 Unfezant (NORMAL/FLYING): 143,211,156,381
-        IMP  L74 Klinklang (STEEL): 544,528,86,199
+        IMP  L48 Cryogonal (ICE): 58,430,258,114
+        IMP  L23 Pansage (GRASS): 402,44,73,272
+        IMP  L31 Tranquill (NORMAL/FLYING): 19,98,95,211
+        IMP  L39 Unfezant (NORMAL/FLYING): 19,211,95,98
+        IMP  L46 Cryogonal (ICE): 58,430,115,324
+        IMP  L55 Unfezant (NORMAL/FLYING): 19,211,273,95
+        IMP  L55 Simisear (FIRE): 257,276,182,512
+        IMP  L62 Unfezant (NORMAL/FLYING): 416,211,182,516
+        IMP  L62 Flygon (GROUND/DRAGON): 89,185,19,225
+        IMP  L65 Unfezant (NORMAL/FLYING): 143,257,355,45
+        IMP  L65 Eelektross (ELECTRIC): 435,401,86,525
+        IMP  L41 Simisear (FIRE): 481,441,44,263
+        IMP  L48 Unfezant (NORMAL/FLYING): 19,211,526,98
+        IMP  L74 Klinklang (STEEL): 544,528,86,324
         REG  L26 Blitzle (ELECTRIC): 351,324,24,213
         REG  L63 Hitmonlee (FIGHTING): 249,398,526,418
         REG  L63 Hitmonchan (FIGHTING): 327,5,197,523
-        REG  L56 Unfezant (NORMAL/FLYING): 19,211,381,164
-        REG  L47 Boldore (ROCK): 408,70,104,106
-        REG  L45 Swinub (ICE/GROUND): 556,317,207,203
-        REG  L32 Scolipede (BUG/POISON): 41,91,111,188
-        REG  L65 Hitmontop (FIGHTING): 167,168,339,237
-        REG  L52 Amoonguss (GRASS/POISON): 412,310,185,147
-        REG  L64 Archeops (ROCK/FLYING): 457,283,225,17
-        REG  L54 Metang (STEEL/PSYCHIC): 309,428,447,332
-        REG  L60 Wooper (WATER/GROUND): 91,246,263,114
-        REG  L67 Emboar (FIRE/FIGHTING): 292,205,67,174
-        REG  L47 Krookodile (GROUND/DARK): 328,280,422,92
-        REG  L25 Litwick (GHOST/FIRE): 83,101,151,164
+        REG  L56 Unfezant (NORMAL/FLYING): 13,365,257,213
+        REG  L47 Boldore (ROCK): 444,36,199,222
+        REG  L45 Swinub (ICE/GROUND): 556,157,203,426
+        REG  L32 Scolipede (BUG/POISON): 342,89,70,111
+        REG  L65 Hitmontop (FIGHTING): 280,529,197,168
+        REG  L52 Amoonguss (GRASS/POISON): 402,492,74,34
+        REG  L64 Archeops (ROCK/FLYING): 365,525,446,184
+        REG  L54 Metang (STEEL/PSYCHIC): 428,280,418,357
+        REG  L60 Wooper (WATER/GROUND): 89,291,148,133
+        REG  L67 Emboar (FIRE/FIGHTING): 52,444,89,411
+        REG  L47 Krookodile (GROUND/DARK): 44,444,38,104
+        REG  L25 Litwick (GHOST/FIRE): 83,247,477,220
         """);
 
         EXPECTED.put("Alpha Sapphire", """

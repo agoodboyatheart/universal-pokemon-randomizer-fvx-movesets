@@ -1395,6 +1395,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // backfill here silently erases the mon's only same-type attack (Batch 12 TODO 1 - e.g. Espeon losing Dream
     // Eater to off-type Bite). So slot 0's backfill prefers a same-type damaging replacement when one exists,
     // falling back to the normal any-type pool only if the mon has no other own-type damaging move at all.
+    // When even that same-type pool has no damaging move to give - every damaging candidate being itself
+    // enabler-dependent - the slot falls back to a usable status move before it is given up as a removal.
+    // Removing would break both guarantees above at once: the mon drops to three moves, and for slot 0 the move
+    // from slot 1 slides up into the STAB slot, which is the very promotion the in-place writes prevent. A status
+    // move is a worse move than a real attack but a better outcome than an empty slot or a dead dependent.
     private void enforceEnablerDependencies(List<Move> picked, List<Move> distinctPool, int level, int ability,
                                             boolean bossTier, Species pk) {
         Set<Integer> pickedNumbers = new HashSet<>();
@@ -1423,6 +1428,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
             int idx = unmetIndices.get(i);
             List<Move> pool = idx == 0 && !ownTypeBackfillPool.isEmpty() ? ownTypeBackfillPool : backfillPool;
             Move fill = pickBestDamaging(pool, picked, level, ability, bossTier);
+            if (fill == null) {
+                // Last resort before vacating the slot - see the note above the signature. pickStatusMove's own
+                // filters apply, so this can only ever be a goodStatusMoves entry that isn't redundant here.
+                fill = pickStatusMove(pk, ability, backfillPool, picked, level);
+            }
             if (fill != null) {
                 picked.set(idx, fill);
             } else {
