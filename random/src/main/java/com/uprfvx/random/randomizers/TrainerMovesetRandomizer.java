@@ -26,6 +26,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private TypeTable typeTable;
     // Move numbers that raise one of the user's own stats - the enabler set for the Baton Pass dependency.
     private Set<Integer> statBoostMoveNumbers;
+    // Move numbers a trainer Smeargle may not Sketch. Built on first use rather than in
+    // ensureMoveSourceCaches, so a cast with no Smeargle never pays for it and one with several pays once.
+    private Set<Integer> smeargleBannedMoves;
 
     private final boolean hasAbilities;
 
@@ -159,6 +162,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 int level = tp.getLevel();
                 AttackerProfile profile = classifyAttacker(pk, ability);
 
+                // trimMoveList returns a non-empty list only when it declined its own <=4 shortcut, and the pool
+                // has been distinct since getMoveSelectionPoolAtLevel (every filter in between is subset-only),
+                // so this copy is currently a no-op and the <=4 branch below is currently unreachable. Both are
+                // kept rather than deleted: nothing structurally stops a future pool source from handing over
+                // duplicates, and that branch is the only thing standing between duplicates and a choosy slot
+                // picking from a pool it should have taken wholesale.
                 List<Move> distinctPool = movesAtLevel.stream().distinct().collect(Collectors.toList());
                 List<Move> picked = new ArrayList<>();
                 // Boss/Important only: bars sub-60 BP damaging moves from every attacking slot below, including
@@ -172,7 +181,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 } else {
                     // Slot 1: a STAB attacking move, base power scaled to the Pokemon's level.
                     Move stab = pickStabMove(pk, ability, slotPool, level, profile, picked, isBossTier);
-                    if (stab == null) {
+                    if (stab == null && isBossTier) {
+                        // Boss/Important only: for Regular trainers slotPool IS distinctPool, so a null first
+                        // result means this retry would re-filter the same list into the same empty candidate
+                        // set and return null again.
                         // The boss floor can strip a mon's only same-type attack while leaving the pool healthy
                         // overall, which used to drop the guaranteed-STAB slot straight through to the type-blind
                         // pickBestDamaging below - so a weaker same-type move sitting unused in the unfloored pool
@@ -216,13 +228,12 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     }
 
                     // Remaining slots: wildcard picks reusing the existing synergy-weighted logic.
-                    fillWildcardMoves(tp, pk, ability, slotPool, picked, doubles, level, isBossTier);
+                    fillWildcardMoves(pk, ability, slotPool, picked, doubles, level, isBossTier);
                 }
 
                 // Drop any dependent whose enabler didn't make the final set, then backfill with the next-best
                 // damaging move.
-                enforceEnablerDependencies(picked, slotPool, level, ability, isBossTier,
-                        pk.getPrimaryType(false), pk.getSecondaryType(false));
+                enforceEnablerDependencies(picked, slotPool, level, ability, isBossTier, pk);
 
                 writeMoves(tp, picked);
 
@@ -412,13 +423,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // are spared (ties kept, so equal-power alternatives still vary).
         Map<Type, Double> stabTypeRescuePower = new EnumMap<>(Type.class);
         if (bossTier) {
-            for (Type stabType : new Type[]{pk.getPrimaryType(false), pk.getSecondaryType(false)}) {
-                if (stabType == null) {
-                    continue;
-                }
-                boolean anySurvives = pool.stream().anyMatch(mv -> mv.type == stabType
-                        && effectivePower(mv, level) > 0
-                        && (effectivePower(mv, level) <= ceiling || ownLevelUpMoveNumbers.contains(mv.number)));
+            for (Type stabType : stabTypes(pk)) {
+                boolean anySurvives = pool.stream().anyMatch(mv -> {
+                    if (mv.type != stabType) {
+                        return false;
+                    }
+                    double ep = effectivePower(mv, level);
+                    return ep > 0 && (ep <= ceiling || ownLevelUpMoveNumbers.contains(mv.number));
+                });
                 if (anySurvives) {
                     continue;
                 }
@@ -471,10 +483,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private List<Move> applyBossDamagingPowerFloor(List<Move> pool, int level, Species pk) {
         double floor = bossMinDamagingPower(level);
         Set<Type> stabTypesToRescue = EnumSet.noneOf(Type.class);
-        for (Type stabType : new Type[]{pk.getPrimaryType(false), pk.getSecondaryType(false)}) {
-            if (stabType == null) {
-                continue;
-            }
+        for (Type stabType : stabTypes(pk)) {
             // effectivePower > 0 is required: this guard asks "does this type still have a DAMAGING move the floor
             // will keep?", and pickStabMove can only use damaging moves. Counting status moves as survivors (the
             // ep<=0 clause below, which exists so the floor never deletes them) let a single same-type status move
@@ -562,6 +571,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     //  fling        - fails unless the user holds a usable item, which the AI can't guarantee
     //  naturalGift  - fails unless the user holds a Berry, which the AI can't guarantee
     //  lastResort   - unusable until all of the mon's other moves have been used
+    //  falseSwipe   - always leaves the target on 1 HP, i.e. it can never close out a battle
     private static final Set<Integer> AI_UNUSABLE_MOVES = Set.of(
             MoveIDs.feint, MoveIDs.suckerPunch, MoveIDs.counter, MoveIDs.mirrorCoat,
             MoveIDs.metalBurst, MoveIDs.bide, MoveIDs.fling, MoveIDs.naturalGift,
@@ -978,18 +988,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // the practical-value discount, and the no-duplicate-attacking-type guard still apply.
     private Move pickRegularSecondAttack(List<Move> pool, List<Move> exclude, int level, int ability,
                                          AttackerProfile profile) {
+        // isAttackSlotEligible is exactly "non-status with effective power" for a pool move, so there is no
+        // looser "any damaging move" set to relax into when this comes back empty: Move.isDamaging() already
+        // excludes STATUS, and the synthetic-damage moves (Seismic Toss, Super Fang, ...) are never STATUS
+        // either. An unfillable slot falls through to pickBestDamaging at the call site instead.
         List<Move> damaging = pool.stream()
                 .filter(mv -> !exclude.contains(mv))
-                .filter(mv -> effectivePower(mv, level) > 0)
                 .filter(mv -> isAttackSlotEligible(mv, level))
                 .collect(Collectors.toList());
-        if (damaging.isEmpty()) {
-            // No "good" damaging move: relax to any damaging move (mirrors the STAB slot's fallback).
-            damaging = pool.stream()
-                    .filter(mv -> !exclude.contains(mv))
-                    .filter(mv -> effectivePower(mv, level) > 0)
-                    .collect(Collectors.toList());
-        }
         damaging = withoutDuplicateAttackingType(damaging, exclude, level);
         if (hasAbilities) {
             damaging = updateMovesConsideringAbilitySynergies(ability, damaging);
@@ -1082,6 +1088,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // A status move is redundant when its situational payoff cannot apply, or a stat boost it grants is wasted.
     private boolean isRedundantStatusMove(Move mv, Species pk, int ability, List<Move> picked) {
+        return isRedundantStatusMove(mv, pk, ability,
+                hasCategory(picked, MoveCategory.PHYSICAL), hasCategory(picked, MoveCategory.SPECIAL));
+    }
+
+    // As above, with the only two things the rule reads from the picked set passed in directly. The wildcard
+    // fill re-tests every candidate after every soft-anti-synergy removal, so hoisting these two out of that
+    // inner loop drops two list scans per candidate per pass; the verdict per candidate is unchanged.
+    private boolean isRedundantStatusMove(Move mv, Species pk, int ability,
+                                          boolean pickedPhysical, boolean pickedSpecial) {
         if (isSituationalStatusRedundant(mv, pk, ability)) {
             return true;
         }
@@ -1091,10 +1106,10 @@ public class TrainerMovesetRandomizer extends Randomizer {
         boolean boostsAtk = raisesUserAttack(mv);
         boolean boostsSpAtk = raisesUserSpecialAttack(mv);
         if (boostsAtk && !boostsSpAtk) {
-            return !hasCategory(picked, MoveCategory.PHYSICAL) || hasCategory(picked, MoveCategory.SPECIAL);
+            return !pickedPhysical || pickedSpecial;
         }
         if (boostsSpAtk && !boostsAtk) {
-            return !hasCategory(picked, MoveCategory.SPECIAL) || hasCategory(picked, MoveCategory.PHYSICAL);
+            return !pickedSpecial || pickedPhysical;
         }
         return false;
     }
@@ -1113,7 +1128,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // Remaining slots: reuse the existing synergy-weighted pick + anti-synergy removal, but never pick a
     // redundant status move (so e.g. Spinarak never rolls Sunny Day and powers up the Fire moves it fears).
-    private void fillWildcardMoves(TrainerPokemon tp, Species pk, int ability,
+    private void fillWildcardMoves(Species pk, int ability,
                                    List<Move> pool, List<Move> picked, boolean doubles, int level,
                                    boolean isBossTier) {
         if (picked.size() >= 4) {
@@ -1130,11 +1145,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
         }
 
         List<Move> working = new ArrayList<>();
+        boolean pickedPhysical = hasCategory(picked, MoveCategory.PHYSICAL);
+        boolean pickedSpecial = hasCategory(picked, MoveCategory.SPECIAL);
         for (Move mv : pool) {
             if (picked.contains(mv)) {
                 continue;
             }
-            if (mv.category == MoveCategory.STATUS && isRedundantStatusMove(mv, pk, ability, picked)) {
+            if (mv.category == MoveCategory.STATUS
+                    && isRedundantStatusMove(mv, pk, ability, pickedPhysical, pickedSpecial)) {
                 continue;
             }
             working.add(mv);
@@ -1216,9 +1234,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // The distinct, currently-pickable wildcard moves (excludes picked moves, redundant status, and - via the
     // no-duplicate-attacking-type guard - any attack of a type the mon already attacks with).
     private List<Move> eligibleWildcards(List<Move> working, Species pk, int ability, List<Move> picked, int level) {
+        boolean pickedPhysical = hasCategory(picked, MoveCategory.PHYSICAL);
+        boolean pickedSpecial = hasCategory(picked, MoveCategory.SPECIAL);
+        // The .distinct() is a no-op on today's pool (distinct since getMoveSelectionPoolAtLevel) and kept as a
+        // guard for the same reason the caller's distinctPool copy is - see randomizeTrainerMovesets.
         List<Move> distinct = working.stream()
                 .filter(mv -> !picked.contains(mv))
-                .filter(mv -> !(mv.category == MoveCategory.STATUS && isRedundantStatusMove(mv, pk, ability, picked)))
+                .filter(mv -> !(mv.category == MoveCategory.STATUS
+                        && isRedundantStatusMove(mv, pk, ability, pickedPhysical, pickedSpecial)))
                 .distinct()
                 .collect(Collectors.toList());
         return withoutDuplicateAttackingType(distinct, picked, level);
@@ -1230,6 +1253,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private int countEligibleWildcards(List<Move> working, Species pk, int ability, List<Move> picked, int level,
                                        int cap) {
         Set<Type> used = usedAttackingTypes(picked, level);
+        boolean pickedPhysical = hasCategory(picked, MoveCategory.PHYSICAL);
+        boolean pickedSpecial = hasCategory(picked, MoveCategory.SPECIAL);
+        // `seen` mirrors eligibleWildcards' .distinct() and, like it, is a no-op guard on today's pool.
         Set<Move> seen = new HashSet<>();
         int distinctCount = 0;
         int filteredCount = 0;
@@ -1237,7 +1263,8 @@ public class TrainerMovesetRandomizer extends Randomizer {
             if (picked.contains(mv)) {
                 continue;
             }
-            if (mv.category == MoveCategory.STATUS && isRedundantStatusMove(mv, pk, ability, picked)) {
+            if (mv.category == MoveCategory.STATUS
+                    && isRedundantStatusMove(mv, pk, ability, pickedPhysical, pickedSpecial)) {
                 continue;
             }
             if (!seen.add(mv)) {
@@ -1263,7 +1290,9 @@ public class TrainerMovesetRandomizer extends Randomizer {
     private Set<Type> usedAttackingTypes(List<Move> picked, int level) {
         Set<Type> types = new HashSet<>();
         for (Move mv : picked) {
-            if (effectivePower(mv, level) > 0 && !isSyntheticDamageMove(mv)) {
+            // The null-type check keeps a hypothetical typeless damaging move from adding null to the set, which
+            // would then read as "this type is taken" for every other typeless damaging candidate.
+            if (mv.type != null && effectivePower(mv, level) > 0 && !isSyntheticDamageMove(mv)) {
                 types.add(mv.type);
             }
         }
@@ -1286,6 +1315,14 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     private static boolean hasType(Species pk, Type type) {
         return pk.getPrimaryType(false) == type || pk.getSecondaryType(false) == type;
+    }
+
+    // The Pokemon's own attacking types - i.e. the types it gets STAB on - primary first, absent secondary
+    // dropped. Deliberately NOT deduplicated: a species whose two type slots hold the same type yields it twice,
+    // matching what the callers' hand-rolled two-element loops did.
+    private static List<Type> stabTypes(Species pk) {
+        Type t2 = pk.getSecondaryType(false);
+        return t2 == null ? List.of(pk.getPrimaryType(false)) : List.of(pk.getPrimaryType(false), t2);
     }
 
     // Whether this trainer fights in a format with an ally on the field (Double/Triple/Multi, not Single or
@@ -1359,7 +1396,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // Eater to off-type Bite). So slot 0's backfill prefers a same-type damaging replacement when one exists,
     // falling back to the normal any-type pool only if the mon has no other own-type damaging move at all.
     private void enforceEnablerDependencies(List<Move> picked, List<Move> distinctPool, int level, int ability,
-                                            boolean bossTier, Type t1, Type t2) {
+                                            boolean bossTier, Species pk) {
         Set<Integer> pickedNumbers = new HashSet<>();
         for (Move mv : picked) {
             pickedNumbers.add(mv.number);
@@ -1376,8 +1413,11 @@ public class TrainerMovesetRandomizer extends Randomizer {
         List<Move> backfillPool = distinctPool.stream()
                 .filter(mv -> !isEnablerDependent(mv.number))
                 .collect(Collectors.toList());
+        List<Type> ownTypes = stabTypes(pk);
+        // The explicit null check is required, not defensive: pools really do carry typeless moves, and
+        // stabTypes returns an immutable list, whose contains(null) throws rather than returning false.
         List<Move> ownTypeBackfillPool = backfillPool.stream()
-                .filter(mv -> mv.type == t1 || (t2 != null && mv.type == t2))
+                .filter(mv -> mv.type != null && ownTypes.contains(mv.type))
                 .collect(Collectors.toList());
         for (int i = unmetIndices.size() - 1; i >= 0; i--) {
             int idx = unmetIndices.get(i);
@@ -1478,23 +1518,23 @@ public class TrainerMovesetRandomizer extends Randomizer {
         int spatk = pk.getBaseStats() instanceof Gen1BaseStats gen1BaseStats ?
                 gen1BaseStats.getSpecial() : pk.getBaseStats().getSpatk();
         double atkSpatkRatio = (double) pk.getBaseStats().getAttack() / (double) spatk;
-        if (hasAbilities) {
-            switch (ability) {
-                case AbilityIDs.hugePower:
-                case AbilityIDs.purePower:
-                    atkSpatkRatio *= 2;
-                    break;
-                case AbilityIDs.hustle:
-                case AbilityIDs.gorillaTactics:
-                    atkSpatkRatio *= 1.5;
-                    break;
-                case AbilityIDs.moxie:
-                    atkSpatkRatio *= 1.1;
-                    break;
-                case AbilityIDs.soulHeart:
-                    atkSpatkRatio *= 0.9;
-                    break;
-            }
+        // No hasAbilities guard needed: the sole caller passes ability 0 on an abilityless ROM, which matches
+        // no case below.
+        switch (ability) {
+            case AbilityIDs.hugePower:
+            case AbilityIDs.purePower:
+                atkSpatkRatio *= 2;
+                break;
+            case AbilityIDs.hustle:
+            case AbilityIDs.gorillaTactics:
+                atkSpatkRatio *= 1.5;
+                break;
+            case AbilityIDs.moxie:
+                atkSpatkRatio *= 1.1;
+                break;
+            case AbilityIDs.soulHeart:
+                atkSpatkRatio *= 0.9;
+                break;
         }
         return atkSpatkRatio;
     }
@@ -1799,13 +1839,18 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // banned moves, run through the same power-band ceiling as every other mon's pool. None of these are "own
     // level-up" moves, so everything downstream (trimMoveList, role slots) treats Smeargle identically.
     private List<Move> buildSmeargleSketchPool(TrainerPokemon tp, boolean isBossTier) {
-        Set<Integer> banned = new HashSet<>();
-        banned.addAll(romHandler.getGameBreakingMoves());
-        banned.addAll(romHandler.getIllegalMoves());
-        banned.addAll(romHandler.getMovesBannedFromLevelup());
-        // Struggle is not a selectable move; a trainer Smeargle re-Sketching Sketch is pointless.
-        banned.add(MoveIDs.struggle);
-        banned.add(MoveIDs.sketch);
+        if (smeargleBannedMoves == null) {
+            // The three getters below rebuild their lists on every call, so cache the union like the move
+            // sources and the type chart are cached - a trainer can field more than one Smeargle.
+            Set<Integer> banned = new HashSet<>();
+            banned.addAll(romHandler.getGameBreakingMoves());
+            banned.addAll(romHandler.getIllegalMoves());
+            banned.addAll(romHandler.getMovesBannedFromLevelup());
+            // Struggle is not a selectable move; a trainer Smeargle re-Sketching Sketch is pointless.
+            banned.add(MoveIDs.struggle);
+            banned.add(MoveIDs.sketch);
+            smeargleBannedMoves = banned;
+        }
 
         List<Move> pool = new ArrayList<>();
         for (Move mv : romHandler.getMoves()) {
@@ -1813,7 +1858,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 // The move list is indexed by number; index 0 is blank.
                 continue;
             }
-            if (banned.contains(mv.number)) {
+            if (smeargleBannedMoves.contains(mv.number)) {
                 continue;
             }
             pool.add(mv);
