@@ -62,7 +62,6 @@ public class TrainerPokemonRandomizer extends Randomizer {
         boolean abilitiesAreRandomized = settings.getAbilitiesMod() == Settings.AbilitiesMod.RANDOMIZE;
         int eliteFourUniquePokemonNumber = settings.getEliteFourUniquePokemonNumber();
         boolean evolveAsFarAsLegal = settings.isTrainersEvolveTheirPokemon();
-        int percentageEvoLvlModifier = settings.getTrainersEvolutionLevelModifier();
         boolean forceChallengeMode = (settings.getCurrentMiscTweaks() & MiscTweak.FORCE_CHALLENGE_MODE.getValue()) > 0;
         boolean rivalCarriesStarter = settings.isRivalCarriesStarterThroughout();
         boolean bossDiversity = settings.isDiverseTypesForBossTrainers();
@@ -134,9 +133,16 @@ public class TrainerPokemonRandomizer extends Randomizer {
         List<Integer> eliteFourIndices = romHandler.getEliteFourTrainers(forceChallengeMode);
         SpeciesSet eliteFourExceptions = null;
         if (eliteFourUniquePokemon) {
+            // Keyed on position within currentTrainers, which is not the same as Trainer.getIndex()
+            Map<Trainer, Integer> trainerPositions = new HashMap<>();
+            for (int i = 0; i < currentTrainers.size(); i++) {
+                trainerPositions.putIfAbsent(currentTrainers.get(i), i);
+            }
+            Set<Integer> eliteFourIndexSet = new HashSet<>(eliteFourIndices);
             // Sort Elite Four Trainers to the start of the list
             scrambledTrainers.sort((t1, t2) ->
-                    Boolean.compare(eliteFourIndices.contains(currentTrainers.indexOf(t2) + 1), eliteFourIndices.contains(currentTrainers.indexOf(t1) + 1)));
+                    Boolean.compare(eliteFourIndexSet.contains(trainerPositions.getOrDefault(t2, -1) + 1),
+                            eliteFourIndexSet.contains(trainerPositions.getOrDefault(t1, -1) + 1)));
             if (rivalCarriesStarter) {
                 List<Species> starterList = romHandler.getStarters().subList(0, 3);
                 for (Species starter : starterList) {
@@ -155,7 +161,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
         }
         //TODO: figure out what's causing that bug with Elite 4 Unique in RBY
 
-        List<Integer> mainPlaythroughTrainers = romHandler.getMainPlaythroughTrainers();
+        Set<Integer> mainPlaythroughTrainers = new HashSet<>(romHandler.getMainPlaythroughTrainers());
 
         // Randomize Trainer Pokemon
         for (Trainer t : scrambledTrainers) {
@@ -194,7 +200,9 @@ public class TrainerPokemonRandomizer extends Randomizer {
 
             final boolean forceTypeDiverse = (t.isBoss() && bossDiversity) ||
                     (t.isImportant() && importantDiversity) ||
-                    (!t.isBoss() && !t.isImportant() && regularDiversity);
+                    (t.isRegular() && regularDiversity);
+            final boolean usePlacementHistory = distributionSetting
+                    || (mainPlaythroughSetting && mainPlaythroughTrainers.contains(t.getIndex()));
             Set<Type> usedTypes = EnumSet.noneOf(Type.class);
 
             SpeciesSet alreadyPlaced = new SpeciesSet(); // Must stay empty throughout if avoidDuplicates == false
@@ -222,14 +230,13 @@ public class TrainerPokemonRandomizer extends Randomizer {
 
                 Species newSp;
                 int tpLevel = tp.getLevel();
-                double evoLvlModifier = 1 + percentageEvoLvlModifier / 100.0;
                 if(skipStarter) {
                     newSp = oldSp; //We've already set this to what we want it to be
                     skipStarter = false; //We don't want to skip the rival's other Pokemon
                 } else if (skipOriginalTeamMembers && !tp.isAddedTeamMember()) {
                     // We do not want to randomize Pkmn that were not added to the team
                     if (evolveAsFarAsLegal) {
-                        newSp = evolveAsFarAsLegal(oldSp, tpLevel, evoLvlModifier);
+                        newSp = evolveAsFarAsLegal(oldSp, tpLevel, getEvoLevelModifier());
                         tp.getSpeciesHolder().setSpecies(newSp);
                         randomizeCosmeticForme(tp);
                         tp.setAbilitySlot(getValidAbilitySlotFromOriginal(newSp, tp.getAbilitySlot()));
@@ -259,7 +266,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
                             alreadyPlaced,
                             doNotUsePrematureEvos,
                             (keepThemeOrPrimaryTypes && typeForTrainer == null ? oldSp.getPrimaryType(true) : typeForTrainer),
-                            distributionSetting || (mainPlaythroughSetting && mainPlaythroughTrainers.contains(t.getIndex())),
+                            usePlacementHistory,
                             swapThisMegaEvo,
                             cacheReplacement,
                             evolveAsFarAsLegal,
@@ -275,7 +282,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
 
                 // Now, do all the bookkeeping we need for later choices
 
-                if (distributionSetting || (mainPlaythroughSetting && mainPlaythroughTrainers.contains(t.getIndex()))) {
+                if (usePlacementHistory) {
                     setPlacementHistory(newSp);
                 }
 
@@ -310,6 +317,14 @@ public class TrainerPokemonRandomizer extends Randomizer {
 
         // Save it all up
         changesMade = true;
+    }
+
+    /**
+     * The multiplier applied to an evolution's estimated level before it is considered legal,
+     * derived from the "evolution level modifier" percentage setting.
+     */
+    private double getEvoLevelModifier() {
+        return 1 + settings.getTrainersEvolutionLevelModifier() / 100.0;
     }
 
     private static void updateUsedTypes(boolean forceTypeDiverse, Type typeForTrainer, Set<Type> usedTypes, Species sp) {
@@ -500,7 +515,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
             pickFrom = cacheOrReplacement;
         }
 
-        if (type != null && cachedByType != null) {
+        if (type != null) {
             // "Type Themed" settings
             SpeciesSet pokemonOfType;
 
@@ -531,7 +546,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
                             !bannedTypes.contains(sp.getSecondaryType(false))));
         }
 
-        double evoLvlModifier = 1 + settings.getTrainersEvolutionLevelModifier() / 100.0;
+        double evoLvlModifier = getEvoLevelModifier();
         if (doNotUsePrematureEvos) {
             pickFrom = pickFrom.filter(p -> p.isLegalEvolutionAtLevel(level, evoLvlModifier));
         }
@@ -563,7 +578,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
             //see if we can get a non-banned pokemon from the cache
             Species cachePick = pickTrainerPokeReplacement(current, level, usePowerLevels, alreadyPlaced, doNotUsePrematureEvos, type, usePlacementHistory,
                     swapMegaEvos, null, evolveAsFarAsLegal ,bannedTypes, bannedPokemon);
-            if(withoutBannedPokemon.contains(cachePick)) {
+            if(!bannedPokemon.contains(cachePick)) {
                 return cachePick;
             }
             //if we didn't... well, if it's banned anyway, it might as well be from the substitution set
@@ -626,8 +641,10 @@ public class TrainerPokemonRandomizer extends Randomizer {
      */
     private void initTypeWeightings(boolean noLegendaries, boolean allowAltFormes) {
         // Determine weightings
+        // Restrictions can leave a game-legal type with no species at all; the single-argument
+        // sortByType omits those types entirely rather than mapping them to an empty set.
         Map<Type, SpeciesSet> pokemonByType = rSpecService
-                .getSpecies(noLegendaries, allowAltFormes, true).sortByType(false);
+                .getSpecies(noLegendaries, allowAltFormes, true).sortByType(false, typeService.getTypes());
         for (Type t : typeService.getTypes()) {
             SpeciesSet pokemonOfType = pokemonByType.get(t);
             int pkWithTyping = pokemonOfType.size();
@@ -884,7 +901,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
      */
     private NavigableMap<Integer, Species> getEvolutionsByLevel(Species base, int initialLevel, int maxLevel) {
         boolean forceFullyEvolved = settings.isTrainersEvolveTheirPokemon();
-        int fullyEvolvedLevel = (int) Math.ceil((1 + settings.getTrainersEvolutionLevelModifier() / 100.0) * romHandler.getHighestEvoLvl());
+        int fullyEvolvedLevel = (int) Math.ceil(getEvoLevelModifier() * romHandler.getHighestEvoLvl());
 
         NavigableMap<Integer, Species> evolutions = new TreeMap<>();
         evolutions.put(initialLevel, base);
@@ -918,7 +935,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
     }
 
     public void evolveTrainerPokemonAsFarAsLegal() {
-        double evoLvlModifier = 1 + settings.getTrainersEvolutionLevelModifier() / 100.0;
+        double evoLvlModifier = getEvoLevelModifier();
         List<Trainer> currentTrainers = romHandler.getTrainers();
         for (Trainer t : currentTrainers) {
             for (TrainerPokemon tp : t.getPokemon()) {
@@ -1002,6 +1019,7 @@ public class TrainerPokemonRandomizer extends Randomizer {
             // 1. the highest level in the original team if there is more than one Pokemon with that level
             // 2. the highest level in the original team - 1 if there is only one Pokemon of that level (keep the Ace of the trainer)
             int upperLevelBound = duplicateHighest ? highest : highest - 1;
+            int addedCount = 0;
             for (int i = 0; i < additional; i++) {
                 if (t.getPokemon().size() >= maxPokemon) break;
 
@@ -1018,11 +1036,13 @@ public class TrainerPokemonRandomizer extends Randomizer {
                 newPokemon.setHeldItem(null);
                 newPokemon.setIsAddedTeamMember(true);
                 t.getPokemon().add(secondToLastIndex, newPokemon);
+                addedCount++;
             }
             // If the forced starter position was the last Pokemon, it's position has to be updated since additional Pokemon
-            // were inserted
+            // were inserted. Shifting by the number actually inserted keeps it on the last Pokemon, which
+            // the team-size cap can cut short of the requested amount.
             if (t.getForceStarterPosition() != -1 && t.getForceStarterPosition() == originalSize - 1) {
-                t.setForceStarterPosition(Math.min(t.getForceStarterPosition() + additional, maxPokemon - 1));
+                t.setForceStarterPosition(t.getForceStarterPosition() + addedCount);
             }
         }
         changesMade = true;
@@ -1072,9 +1092,11 @@ public class TrainerPokemonRandomizer extends Randomizer {
             if (t.shouldNotGetBuffs()) {
                 continue;
             }
-            if (!giveToRegularPokemon && (!t.isImportant() && !t.isBoss())) {
+            if (!giveToRegularPokemon && t.isRegular()) {
                 continue;
             }
+            // isBoss() and isImportant() are tag-derived and not structurally exclusive; if a tag ever
+            // satisfied both, this ordering means the Important setting wins.
             if (!giveToImportantPokemon && t.isImportant()) {
                 continue;
             }
@@ -1148,21 +1170,27 @@ public class TrainerPokemonRandomizer extends Randomizer {
      */
     public void randomUsableZCrystals() {
         List<Item> items = romHandler.getItems();
+        List<Move> moves = romHandler.getMoves();
+        // Reading these per Pokemon would re-parse the whole movesets archive on every iteration
+        Map<Integer, List<MoveLearnt>> movesets = romHandler.getMovesLearnt();
         List<Trainer> trainers = romHandler.getTrainers();
         for (Trainer tr : trainers) {
             for (TrainerPokemon tp : tr.getPokemon()) {
-                if (tp.getHeldItem() != null) {
-                    if (Gen7Constants.heldZCrystalsByType.containsValue(tp.getHeldItem().getId())) { // TODO: better check for z crystals
-                        int[] pokeMoves = tp.isResetMoves() ?
-                                romHandler.getMovesAtLevel(
-                                        tp.getSpecies(), romHandler.getMovesLearnt(), tp.getLevel()) :
-                                tp.getMoves();
-                        pokeMoves = Arrays.stream(pokeMoves).filter(mv -> mv != 0).toArray();
-                        int chosenMove = pokeMoves[random.nextInt(pokeMoves.length)];
-                        Type chosenMoveType = romHandler.getMoves().get(chosenMove).type;
-                        tp.setHeldItem(items.get(Gen7Constants.heldZCrystalsByType.get(chosenMoveType)));
-                    }
+                // TODO: better check for z crystals
+                if (tp.getHeldItem() == null
+                        || !Gen7Constants.heldZCrystalsByType.containsValue(tp.getHeldItem().getId())) {
+                    continue;
                 }
+                int[] pokeMoves = tp.isResetMoves() ?
+                        romHandler.getMovesAtLevel(tp.getSpecies(), movesets, tp.getLevel()) :
+                        tp.getMoves();
+                pokeMoves = Arrays.stream(pokeMoves).filter(mv -> mv != 0).toArray();
+                if (pokeMoves.length == 0) {
+                    continue;
+                }
+                int chosenMove = pokeMoves[random.nextInt(pokeMoves.length)];
+                Type chosenMoveType = moves.get(chosenMove).type;
+                tp.setHeldItem(items.get(Gen7Constants.heldZCrystalsByType.get(chosenMoveType)));
             }
         }
         // TODO: should this could as "changes made"?
