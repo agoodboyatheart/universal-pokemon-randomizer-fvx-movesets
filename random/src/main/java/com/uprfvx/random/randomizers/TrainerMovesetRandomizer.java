@@ -759,12 +759,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
         // applyBossDamagingPowerFloor's rescue can hand a dual-type mon one weak-but-real move on type A while
         // type B's only candidates - e.g. AncientPower/Rock Tomb - are goodWeakMoves-only; a whole-list
         // non-empty check would silently lock B's better, established fallback out in favour of A's worse pick).
-        Set<Type> typesWithRealAlternative = Arrays.stream(new Type[]{t1, t2})
-                .filter(Objects::nonNull)
-                .filter(t -> typeMatched.stream().anyMatch(mv -> mv.type == t && !GlobalConstants.goodWeakMoves.contains(mv.number)))
-                .collect(Collectors.toSet());
+        //
+        // The alternative must also be at least as STRONG, not merely "real". The rule assumes a goodWeakMoves
+        // entry is a chip move a proper attack should outrank (Aqua Jet 40 yielding to Surf 90), which inverts
+        // when the alternative is the weaker move: a Lv12 Rock mon holding AncientPower 60 - in band, and the
+        // best STAB it has - lost the slot outright to Rock Throw 50 purely because Rock Throw is absent from
+        // the list. Comparing power makes the demotion mean "something better exists", not "something else does".
         List<Move> candidates = typeMatched.stream()
-                .filter(mv -> !GlobalConstants.goodWeakMoves.contains(mv.number) || !typesWithRealAlternative.contains(mv.type))
+                .filter(mv -> !GlobalConstants.goodWeakMoves.contains(mv.number)
+                        || !hasStrongerRealAlternative(typeMatched, mv, level))
                 .collect(Collectors.toList());
         // Soft ability anti-synergy applies here too, not just wildcards: a weather/aura mon shouldn't be steered
         // into a STAB its ability undercuts (Drizzle -> Fire, Drought -> Water).
@@ -795,6 +798,16 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     * levelAppropriatenessWeight(mv, level, false)
                     * (bossTier ? accuracyWeight(mv) : 1.0);
         });
+    }
+
+    // True when this type has a non-goodWeakMoves candidate at least as strong as the given goodWeakMoves one, i.e.
+    // a genuinely better main-STAB option. Scoped to the candidate's OWN type - a stronger move on the mon's other
+    // type says nothing about whether this type's fallback should be demoted. See pickStabMove's filter.
+    private static boolean hasStrongerRealAlternative(List<Move> typeMatched, Move goodWeakCandidate, int level) {
+        double candidatePower = effectivePower(goodWeakCandidate, level);
+        return typeMatched.stream().anyMatch(mv -> mv.type == goodWeakCandidate.type
+                && !GlobalConstants.goodWeakMoves.contains(mv.number)
+                && effectivePower(mv, level) >= candidatePower);
     }
 
     // Slot 2: a coverage move hitting a type that resists the STAB move; SE-gated, blind-spot-weighted, and
