@@ -65,16 +65,22 @@ public class BetterMovesetsRandomizerTest {
     private static final double UBIQUITOUS_RATE_GEN1 = 0.28;
     private static final int SAMPLE_MOVESETS_PER_ROM = 6;
 
+    // Each set mirrors the matching TrainerMovesetRandomizer BENEFIT set unioned with its SETTER set - the test
+    // only asks whether a weather move is justified at all, so it does not care which of the two roles justifies
+    // it. Forecast belongs to the rain, sun AND hail benefit sets: it re-forms Castform to match whatever weather
+    // is up, so any of the three is a real payoff for it. Keep these in step with the production sets - a mirror
+    // that drifts only fails once the RNG happens to place the move, so it can sit wrong for a long time.
     private static final Set<Integer> RAIN_ABILITIES = Set.of(
             AbilityIDs.swiftSwim, AbilityIDs.rainDish, AbilityIDs.drySkin, AbilityIDs.hydration,
-            AbilityIDs.drizzle, AbilityIDs.primordialSea);
+            AbilityIDs.forecast, AbilityIDs.drizzle, AbilityIDs.primordialSea);
     private static final Set<Integer> SUN_ABILITIES = Set.of(
             AbilityIDs.chlorophyll, AbilityIDs.solarPower, AbilityIDs.leafGuard, AbilityIDs.flowerGift,
-            AbilityIDs.harvest, AbilityIDs.drought, AbilityIDs.desolateLand);
+            AbilityIDs.harvest, AbilityIDs.forecast, AbilityIDs.drought, AbilityIDs.desolateLand);
     private static final Set<Integer> SAND_ABILITIES = Set.of(
             AbilityIDs.sandVeil, AbilityIDs.sandRush, AbilityIDs.sandForce, AbilityIDs.sandStream);
     private static final Set<Integer> HAIL_ABILITIES = Set.of(
-            AbilityIDs.snowCloak, AbilityIDs.iceBody, AbilityIDs.slushRush, AbilityIDs.snowWarning);
+            AbilityIDs.snowCloak, AbilityIDs.iceBody, AbilityIDs.slushRush, AbilityIDs.forecast,
+            AbilityIDs.snowWarning);
 
     // Fixed / proportional-damage moves the redesign now lets compete for the attacking slots (they store no
     // usable base power). Tallied per ROM as evidence they actually surface, not just as wildcard picks.
