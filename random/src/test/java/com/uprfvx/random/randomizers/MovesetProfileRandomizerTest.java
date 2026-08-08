@@ -182,6 +182,25 @@ public class MovesetProfileRandomizerTest {
                 combined -> combined.printRoleCoverage("  "));
     }
 
+    /**
+     * Calibrates the low-level relief on the boss damaging floor
+     * ({@link TrainerMovesetRandomizer#BOSS_FLOOR_CEILING_FRACTION}) - the floor is
+     * {@code min(60, powerCeiling(level) * fraction)}, so a higher value restores the flat 60 at a lower level
+     * (0.78 pins it from Lv19; 0.70 from Lv23) and a lower value relaxes it further up the curve. Only affects
+     * levels where the flat floor would otherwise cross the ceiling, so watch printWeakStab for the low bands -
+     * mid/late-game numbers should not move at all.
+     * <pre>{@code  ./gradlew.bat :random:testROMs --tests "*MovesetProfile*.sweepBossFloorFraction" -Dbm.bossfloorfrac=0.70,0.78,0.85 }</pre>
+     */
+    @Test
+    public void sweepBossFloorFraction() {
+        sweep("bm.bossfloorfrac",
+                "sweep skipped - pass -Dbm.bossfloorfrac=<comma-separated fractions of powerCeiling> to calibrate",
+                v -> TrainerMovesetRandomizer.BOSS_FLOOR_CEILING_FRACTION = v,
+                () -> TrainerMovesetRandomizer.BOSS_FLOOR_CEILING_FRACTION,
+                "BOSS_FLOOR_CEILING_FRACTION=%.2f",
+                combined -> combined.printWeakStab("  "));
+    }
+
     // Re-runs the whole profile once per comma-separated value in the -D<prop> spec, temporarily setting a tuning
     // knob to each so the labelled tables can be compared without a rebuild. The original knob value is restored.
     private void sweep(String prop, String skipHint, DoubleConsumer knobSetter, DoubleSupplier knobGetter,

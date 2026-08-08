@@ -265,6 +265,10 @@ tasks.register<Test>("testROMs") {
     System.getProperty("bm.prioritybonus")?.let { systemProperty("bm.prioritybonus", it) }
     // Forward -Dbm.rolecoverage so the harness's team-role-coverage-bonus sweep reaches the forked test JVM.
     System.getProperty("bm.rolecoverage")?.let { systemProperty("bm.rolecoverage", it) }
+    // Forward -Dbm.seeds so the STAB-band profile's seed count reaches the forked test JVM.
+    System.getProperty("bm.seeds")?.let { systemProperty("bm.seeds", it) }
+    // Forward -Dbm.bossfloorfrac so the harness's boss-floor low-level relief sweep reaches the forked test JVM.
+    System.getProperty("bm.bossfloorfrac")?.let { systemProperty("bm.bossfloorfrac", it) }
 
     shouldRunAfter("test")
 

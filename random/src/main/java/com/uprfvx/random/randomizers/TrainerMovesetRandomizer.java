@@ -173,6 +173,15 @@ public class TrainerMovesetRandomizer extends Randomizer {
                     // Slot 1: a STAB attacking move, base power scaled to the Pokemon's level.
                     Move stab = pickStabMove(pk, ability, slotPool, level, profile, picked, isBossTier);
                     if (stab == null) {
+                        // The boss floor can strip a mon's only same-type attack while leaving the pool healthy
+                        // overall, which used to drop the guaranteed-STAB slot straight through to the type-blind
+                        // pickBestDamaging below - so a weaker same-type move sitting unused in the unfloored pool
+                        // lost to a stronger off-type one. Retry there first: an under-powered STAB still serves
+                        // this slot better than no STAB. distinctPool is already past the ceiling, so this can only
+                        // readmit sub-floor same-type moves, never over-level ones.
+                        stab = pickStabMove(pk, ability, distinctPool, level, profile, picked, isBossTier);
+                    }
+                    if (stab == null) {
                         stab = pickBestDamaging(distinctPool, picked, level, ability, isBossTier);
                     }
                     if (stab != null) {
@@ -384,13 +393,24 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // even runs - the type-match tier is supposed to be the one truly hard tier (see the STAB-slot comment
     // block), but this pool-stage filter ran ahead of it with no type awareness. Fix: a type-scoped keep-best
     // guard (applyBossDamagingPowerFloor below got the same treatment for the same reason) - if the ceiling
-    // would strip a mon's OWN type down to zero damaging candidates, spare that type's over-ceiling moves so
-    // pickStabMove still has a real (if too-strong) STAB option instead of falling through to an off-type
-    // pickBestDamaging. Regular trainers keep the plain ceiling - see applyPowerBandFilter's caller.
+    // would strip a mon's OWN type down to zero damaging candidates, spare that type so pickStabMove still has a
+    // real (if too-strong) STAB option instead of falling through to an off-type pickBestDamaging. Regular
+    // trainers keep the plain ceiling - see applyPowerBandFilter's caller.
+    //
+    // The rescue spares only that type's CHEAPEST over-ceiling move(s), not its whole over-ceiling range. Sparing
+    // the range let the pick weights - which scale with power - hand a starved low-level mon the strongest move
+    // its type has rather than the least inappropriate one (a Lv12 Rock mon drawing Stone Edge 100 over Power Gem
+    // 80; a Lv19 Grass mon drawing Frenzy Plant 150 over Energy Ball 90). Measured over 7 ROMs x 16 seeds, 64% of
+    // rescued mons have more than one over-ceiling option, and among those the strongest is a median 1.5x the
+    // cheapest - so this is the difference between "over-level" and "wildly over-level". The remaining 36% have a
+    // single option and are unaffected, which is why this needs no tuning constant and cannot starve a type: the
+    // cheapest candidate is always kept.
     private void applyPowerBandFilter(List<Move> pool, int level, Set<Integer> ownLevelUpMoveNumbers,
                                        boolean bossTier, Species pk) {
         double ceiling = powerCeiling(level);
-        Set<Type> stabTypesToRescue = EnumSet.noneOf(Type.class);
+        // Per rescued type, the effective power of its cheapest over-ceiling candidate; only moves AT that power
+        // are spared (ties kept, so equal-power alternatives still vary).
+        Map<Type, Double> stabTypeRescuePower = new EnumMap<>(Type.class);
         if (bossTier) {
             for (Type stabType : new Type[]{pk.getPrimaryType(false), pk.getSecondaryType(false)}) {
                 if (stabType == null) {
@@ -399,17 +419,23 @@ public class TrainerMovesetRandomizer extends Randomizer {
                 boolean anySurvives = pool.stream().anyMatch(mv -> mv.type == stabType
                         && effectivePower(mv, level) > 0
                         && (effectivePower(mv, level) <= ceiling || ownLevelUpMoveNumbers.contains(mv.number)));
-                if (!anySurvives) {
-                    stabTypesToRescue.add(stabType);
+                if (anySurvives) {
+                    continue;
                 }
+                pool.stream()
+                        .filter(mv -> mv.type == stabType && effectivePower(mv, level) > 0)
+                        .mapToDouble(mv -> effectivePower(mv, level))
+                        .min()
+                        .ifPresent(cheapest -> stabTypeRescuePower.put(stabType, cheapest));
             }
         }
         pool.removeIf(mv -> {
             double ep = effectivePower(mv, level);
-            if (ep <= 0 || ownLevelUpMoveNumbers.contains(mv.number) || stabTypesToRescue.contains(mv.type)) {
+            if (ep <= 0 || ownLevelUpMoveNumbers.contains(mv.number) || ep <= ceiling) {
                 return false;
             }
-            return ep > ceiling;
+            Double rescuedAt = mv.type == null ? null : stabTypeRescuePower.get(mv.type);
+            return rescuedAt == null || ep > rescuedAt;
         });
     }
 
@@ -426,16 +452,37 @@ public class TrainerMovesetRandomizer extends Randomizer {
     // move, TM Rock Throw at 50 BP, culled here while Covet/Psybeam at 60+ kept the pool "fine"). Same
     // type-scoped keep-best guard as the ceiling: if a mon's own type would be zeroed out, spare that type's
     // sub-floor moves too.
-    private static final double BOSS_MIN_DAMAGING_POWER = 60.0;
+    // Package-private rather than private so the band-profile harness can measure against the real floor.
+    static final double BOSS_MIN_DAMAGING_POWER = 60.0;
+
+    // The flat floor above never relaxed with level, but powerCeiling DOES scale with it, so the two cross at the
+    // bottom of the curve: the acceptable window is 0 BP wide below Lv10 and 3.5 BP at Lv12, against ~95 BP at
+    // Lv50. Every early boss mon was therefore forced down the type-rescue path regardless of its pool. Capping
+    // the floor at a fraction of the mon's own ceiling keeps a real window open early while leaving the flat 60
+    // untouched from Lv19 up (ceiling(19) x 0.78 = 60.0), so the "no sub-60 moves on bosses" intent still holds
+    // everywhere it was aimed - measurement showed 26% of Lv1-15 boss mons had every same-type move below the
+    // flat floor, against 0.6% at Lv46+. Non-final so the profile harness can sweep it (-Dbm.bossfloorfrac).
+    static double BOSS_FLOOR_CEILING_FRACTION = 0.78;
+
+    static double bossMinDamagingPower(int level) {
+        return Math.min(BOSS_MIN_DAMAGING_POWER, powerCeiling(level) * BOSS_FLOOR_CEILING_FRACTION);
+    }
 
     private List<Move> applyBossDamagingPowerFloor(List<Move> pool, int level, Species pk) {
+        double floor = bossMinDamagingPower(level);
         Set<Type> stabTypesToRescue = EnumSet.noneOf(Type.class);
         for (Type stabType : new Type[]{pk.getPrimaryType(false), pk.getSecondaryType(false)}) {
             if (stabType == null) {
                 continue;
             }
+            // effectivePower > 0 is required: this guard asks "does this type still have a DAMAGING move the floor
+            // will keep?", and pickStabMove can only use damaging moves. Counting status moves as survivors (the
+            // ep<=0 clause below, which exists so the floor never deletes them) let a single same-type status move
+            // - Sandstorm on a Rock mon, Will-O-Wisp on a Ghost - satisfy the guard and suppress the rescue, so
+            // the type's only real attack was stripped and the mon got no STAB at all.
             boolean anySurvives = pool.stream().anyMatch(mv -> mv.type == stabType
-                    && (effectivePower(mv, level) <= 0 || effectivePower(mv, level) >= BOSS_MIN_DAMAGING_POWER
+                    && effectivePower(mv, level) > 0
+                    && (effectivePower(mv, level) >= floor
                             || GlobalConstants.goodWeakMoves.contains(mv.number)));
             if (!anySurvives) {
                 stabTypesToRescue.add(stabType);
@@ -444,7 +491,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
         List<Move> filtered = pool.stream()
                 .filter(mv -> {
                     double ep = effectivePower(mv, level);
-                    return ep <= 0 || ep >= BOSS_MIN_DAMAGING_POWER || GlobalConstants.goodWeakMoves.contains(mv.number)
+                    return ep <= 0 || ep >= floor || GlobalConstants.goodWeakMoves.contains(mv.number)
                             || stabTypesToRescue.contains(mv.type);
                 })
                 .collect(Collectors.toList());
@@ -653,7 +700,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // The damage a move actually deals, on the same scale as power*hitCount so it can be ranked. Returns 0 for
     // status moves and other power<=1 moves deliberately left wildcard-only (OHKO gimmicks, counter/mirror-coat).
-    private static double effectivePower(Move mv, int level) {
+    static double effectivePower(Move mv, int level) {
         if (mv == null) {
             return 0;
         }
@@ -672,7 +719,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
 
     // A move that must never fill the type-locked STAB slot: its damage ignores type or is delayed and typeless,
     // so it earns neither STAB nor super-effectiveness there. Allowed in other slots.
-    private static boolean isStabSlotIneligible(Move mv) {
+    static boolean isStabSlotIneligible(Move mv) {
         return isSyntheticDamageMove(mv) || DELAYED_TYPELESS_STAB_MOVES.contains(mv.number);
     }
 
@@ -1620,19 +1667,44 @@ public class TrainerMovesetRandomizer extends Randomizer {
             return buildSmeargleSketchPool(tp, isBossTier);
         }
 
+        List<Move> moveSelectionPoolAtLevel = collectUnbandedMoveSelectionPool(tp, cyclicEvolutions);
+
+        // Hard sliding ceiling: removes over-level attacking moves (status/gimmick and own level-up moves exempt).
+        applyPowerBandFilter(moveSelectionPoolAtLevel, tp.getLevel(), ownLevelUpMoveNumbers(tp), isBossTier,
+                tp.getSpecies());
+
+        // Mutable: the caller's up-front removeIf strips narrow this pool in place.
+        return moveSelectionPoolAtLevel.stream().distinct().collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    // The mon's own level-up moves at or below its level, as move numbers: the set the power-band ceiling exempts,
+    // since a level-up move is level-appropriate by definition at any base power. Package-private so the band
+    // profile harness can classify where a candidate came from without restating the rule.
+    Set<Integer> ownLevelUpMoveNumbers(TrainerPokemon tp) {
+        ensureMoveSourceCaches();
+        return allLevelUpMoves.getOrDefault(tp.getSpecies().getNumber(), List.of())
+                .stream()
+                .filter(ml -> (ml.level <= tp.getLevel() && ml.level != 0) || (ml.level == 0 && tp.getLevel() >= 30))
+                .map(ml -> ml.move)
+                .collect(Collectors.toSet());
+    }
+
+    // Every move the mon can draw on at its level - own level-up, pre-evo level-up, TM/HM, tutor and egg - BEFORE
+    // any power banding. Split out of getMoveSelectionPoolAtLevel so a measurement run can see the raw candidate
+    // landscape the ceiling and floor actually operate on; production always applies the band immediately after.
+    List<Move> collectUnbandedMoveSelectionPool(TrainerPokemon tp, boolean cyclicEvolutions) {
+
+        ensureMoveSourceCaches();
+
         List<Move> moves = romHandler.getMoves();
 
-        // The mon's own learnset moves, collected so the hard power-band filter below can exempt them (level-up
-        // moves are level-appropriate by definition, at any base power).
-        List<Move> ownLevelUpMoves = allLevelUpMoves.getOrDefault(tp.getSpecies().getNumber(), List.of())
+        // The mon's own learnset moves.
+        List<Move> moveSelectionPoolAtLevel = allLevelUpMoves.getOrDefault(tp.getSpecies().getNumber(), List.of())
                 .stream()
                 .filter(ml -> (ml.level <= tp.getLevel() && ml.level != 0) || (ml.level == 0 && tp.getLevel() >= 30))
                 .map(ml -> moves.get(ml.move))
                 .distinct()
-                .collect(Collectors.toList());
-        Set<Integer> ownLevelUpMoveNumbers = ownLevelUpMoves.stream()
-                .map(mv -> mv.number).collect(Collectors.toSet());
-        List<Move> moveSelectionPoolAtLevel = new ArrayList<>(ownLevelUpMoves);
+                .collect(Collectors.toCollection(ArrayList::new));
 
         // Pre-evo moves (100% availability); unlike the mon's own level-up moves, NOT exempt from the power-band
         // filter below.
@@ -1707,11 +1779,7 @@ public class TrainerMovesetRandomizer extends Randomizer {
             }
         }
 
-        // Hard sliding ceiling: removes over-level attacking moves (status/gimmick and own level-up moves exempt).
-        applyPowerBandFilter(moveSelectionPoolAtLevel, tp.getLevel(), ownLevelUpMoveNumbers, isBossTier, tp.getSpecies());
-
-        // Mutable: the caller's up-front removeIf strips narrow this pool in place.
-        return moveSelectionPoolAtLevel.stream().distinct().collect(Collectors.toCollection(ArrayList::new));
+        return moveSelectionPoolAtLevel;
     }
 
     // The candidate pool for a trainer Smeargle: the full usable move universe (Sketch can copy anything), minus
