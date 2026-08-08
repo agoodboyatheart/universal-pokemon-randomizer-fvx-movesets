@@ -58,20 +58,33 @@ public class ItemRandomizer extends Randomizer {
         // TMs and non-TMs must end up at the same indices. Complicates the algorithm somewhat.
         List<Item> current = romHandler.getFieldItems();
 
+        boolean keepTMs = settings.isKeepFieldTMsUnchanged();
+
         Stack<Item> tms = new Stack<>();
         Stack<Item> nonTMs = new Stack<>();
         for (Item item : current) {
             (item.isTM() ? tms : nonTMs).push(item);
         }
 
+        if (keepTMs) {
+            // The stacks are filled in field order but drained in reverse when recombining below.
+            // That is invisible when the contents get replaced or shuffled, but vanilla TMs must come
+            // back out at the location they came from, so reverse them to cancel the pop order out.
+            Collections.reverse(tms);
+        }
+
         switch (settings.getFieldItemsMod()) {
             case SHUFFLE:
-                Collections.shuffle(tms, random);
+                if (!keepTMs) {
+                    Collections.shuffle(tms, random);
+                }
                 Collections.shuffle(nonTMs, random);
                 break;
             case RANDOM:
             case RANDOM_EVEN:
-                randomizeTMFieldItems(tms);
+                if (!keepTMs) {
+                    randomizeTMFieldItems(tms);
+                }
                 randomizeNonTMFieldItems(nonTMs);
                 break;
         }

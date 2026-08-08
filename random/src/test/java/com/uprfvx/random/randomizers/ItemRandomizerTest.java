@@ -130,6 +130,77 @@ public class ItemRandomizerTest extends RandomizerTest{
         assertTrue(max - min <= 1);
     }
 
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void keepFieldTMsUnchangedLeavesTMsAtTheirVanillaPositions(String romName) {
+        activateRomHandler(romName);
+
+        List<Item> before = new ArrayList<>(romHandler.getFieldItems());
+        assumeTrue(before.stream().anyMatch(Item::isTM));
+
+        Settings s = new Settings();
+        s.setFieldItemsMod(Settings.FieldItemsMod.RANDOM);
+        s.setKeepFieldTMsUnchanged(true);
+        new ItemRandomizer(romHandler, s, RND).randomizeFieldItems();
+
+        List<Item> after = romHandler.getFieldItems();
+        assertEquals(before.size(), after.size());
+        for (int i = 0; i < before.size(); i++) {
+            if (before.get(i).isTM()) {
+                assertEquals(before.get(i), after.get(i), "TM at field index " + i + " moved");
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void keepFieldTMsUnchangedLeavesTMsAtTheirVanillaPositionsWhenShuffling(String romName) {
+        activateRomHandler(romName);
+
+        List<Item> before = new ArrayList<>(romHandler.getFieldItems());
+        assumeTrue(before.stream().anyMatch(Item::isTM));
+
+        Settings s = new Settings();
+        s.setFieldItemsMod(Settings.FieldItemsMod.SHUFFLE);
+        s.setKeepFieldTMsUnchanged(true);
+        new ItemRandomizer(romHandler, s, RND).randomizeFieldItems();
+
+        List<Item> after = romHandler.getFieldItems();
+        assertEquals(before.size(), after.size());
+        for (int i = 0; i < before.size(); i++) {
+            if (before.get(i).isTM()) {
+                assertEquals(before.get(i), after.get(i), "TM at field index " + i + " moved");
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("getRomNames")
+    public void keepFieldTMsUnchangedStillRandomizesNonTMs(String romName) {
+        activateRomHandler(romName);
+
+        List<Item> before = new ArrayList<>(romHandler.getFieldItems());
+        // A handful of non-TM slots could all coincidentally roll their vanilla item; enough of them
+        // and that stops being a plausible outcome, so the assert below is only meaningful past a
+        // certain count.
+        assumeTrue(before.stream().filter(item -> !item.isTM()).count() > 10);
+
+        Settings s = new Settings();
+        s.setFieldItemsMod(Settings.FieldItemsMod.RANDOM);
+        s.setKeepFieldTMsUnchanged(true);
+        new ItemRandomizer(romHandler, s, RND).randomizeFieldItems();
+
+        List<Item> after = romHandler.getFieldItems();
+        boolean anyNonTMChanged = false;
+        for (int i = 0; i < before.size(); i++) {
+            if (!before.get(i).isTM() && !before.get(i).equals(after.get(i))) {
+                anyNonTMChanged = true;
+                break;
+            }
+        }
+        assertTrue(anyNonTMChanged, "no non-TM field item was randomized");
+    }
+
     // TODO: test uniqueNoSellItems (i.e. Mega Stones)
 
     @ParameterizedTest

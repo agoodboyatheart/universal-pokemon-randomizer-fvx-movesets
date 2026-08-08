@@ -204,6 +204,7 @@ public class RandomizerGUI {
     private JRadioButton fiRandomRadioButton;
     private JRadioButton fiRandomEvenDistributionRadioButton;
     private JCheckBox fiBanBadItemsCheckBox;
+    private JCheckBox fiKeepTMsCheckBox;
     private JRadioButton shUnchangedRadioButton;
     private JRadioButton shShuffleRadioButton;
     private JRadioButton shRandomRadioButton;
@@ -1982,6 +1983,7 @@ public class RandomizerGUI {
         fiShuffleRadioButton.setSelected(settings.getFieldItemsMod() == Settings.FieldItemsMod.SHUFFLE);
         fiUnchangedRadioButton.setSelected(settings.getFieldItemsMod() == Settings.FieldItemsMod.UNCHANGED);
         fiBanBadItemsCheckBox.setSelected(settings.isBanBadRandomFieldItems());
+        fiKeepTMsCheckBox.setSelected(settings.isKeepFieldTMsUnchanged());
 
         shRandomRadioButton.setSelected(settings.getShopItemsMod() == Settings.ShopItemsMod.RANDOM);
         shShuffleRadioButton.setSelected(settings.getShopItemsMod() == Settings.ShopItemsMod.SHUFFLE);
@@ -2240,6 +2242,7 @@ public class RandomizerGUI {
 
         settings.setFieldItemsMod(fiUnchangedRadioButton.isSelected(), fiShuffleRadioButton.isSelected(), fiRandomRadioButton.isSelected(), fiRandomEvenDistributionRadioButton.isSelected());
         settings.setBanBadRandomFieldItems(fiBanBadItemsCheckBox.isSelected());
+        settings.setKeepFieldTMsUnchanged(fiKeepTMsCheckBox.isSelected());
 
         settings.setShopItemsMod(shUnchangedRadioButton.isSelected(), shShuffleRadioButton.isSelected(), shRandomRadioButton.isSelected());
         settings.setBanBadRandomShopItems(shBanBadItemsCheckBox.isSelected());
@@ -2553,7 +2556,7 @@ public class RandomizerGUI {
 		mtForceGoodDamagingSpinSlider.setValue(mtForceGoodDamagingSpinSlider.getMinimum());
 
         setInitialButtonState(fiUnchangedRadioButton, fiShuffleRadioButton, fiRandomRadioButton,
-				fiRandomEvenDistributionRadioButton, fiBanBadItemsCheckBox, shUnchangedRadioButton,
+				fiRandomEvenDistributionRadioButton, fiBanBadItemsCheckBox, fiKeepTMsCheckBox, shUnchangedRadioButton,
 				shShuffleRadioButton, shRandomRadioButton, shBanOverpoweredShopItemsCheckBox, shBanBadItemsCheckBox,
 				shBanRegularShopItemsCheckBox, shBalanceShopItemPricesCheckBox, shGuaranteeEvolutionItemsCheckBox,
 				shGuaranteeXItemsCheckBox, shAddRareCandyCheckBox, puUnchangedRadioButton, puRandomRadioButton,
@@ -3808,6 +3811,20 @@ public class RandomizerGUI {
             enableButtons(fiBanBadItemsCheckBox);
         } else {
             disableAndDeselectButtons(fiBanBadItemsCheckBox);
+        }
+
+        // Unlike Ban Bad Items, this one also applies to Shuffle - that mode reorders the TM
+        // numbers among the field TM slots, so there is something to opt out of there too.
+        if ((fiShuffleRadioButton.isSelected() && fiShuffleRadioButton.isVisible()
+                && fiShuffleRadioButton.isEnabled())
+                || (fiRandomRadioButton.isSelected() && fiRandomRadioButton.isVisible()
+                && fiRandomRadioButton.isEnabled())
+                || (fiRandomEvenDistributionRadioButton.isSelected()
+                && fiRandomEvenDistributionRadioButton.isVisible()
+                && fiRandomEvenDistributionRadioButton.isEnabled())) {
+            enableButtons(fiKeepTMsCheckBox);
+        } else {
+            disableAndDeselectButtons(fiKeepTMsCheckBox);
         }
 
         if (shRandomRadioButton.isSelected() && shRandomRadioButton.isVisible() && shRandomRadioButton.isEnabled()) {

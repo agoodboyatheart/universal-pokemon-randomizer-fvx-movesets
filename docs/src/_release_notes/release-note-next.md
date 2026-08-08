@@ -63,6 +63,13 @@ Download the Randomizer below by clicking on `UPR_FVX-[VERSION]-[OS].zip`. If yo
   never one of the rare ones. With "Follow Evolutions" ticked, an evolution keeps everything its
   pre-evolution could learn and tops up to its own total. HM compatibility is unchanged.
 
+### Field Items
+- Added a "Keep Field TMs Unchanged" option, available with Shuffle, Random, and Random (even
+  distribution). Field TMs stay at the exact spots they occupy in the unmodified game — a TM found
+  in Mt. Moon is still that same TM number — while every non-TM field item is shuffled or
+  randomized as usual. The number of field TMs is the same either way. Note that the move a TM
+  teaches can still change, if TM moves are being randomized.
+
 ### Static Pokemon
 - (Gen 3) [The description of a changed feature here.]
 

@@ -351,6 +351,7 @@ public class Settings {
 
     private FieldItemsMod fieldItemsMod = FieldItemsMod.UNCHANGED;
     private boolean banBadRandomFieldItems;
+    private boolean keepFieldTMsUnchanged;
 
     public enum ShopItemsMod {
         UNCHANGED, SHUFFLE, RANDOM
@@ -577,7 +578,8 @@ public class Settings {
 
         // 26 field items
         out.write(makeByteSelected(fieldItemsMod == FieldItemsMod.RANDOM, fieldItemsMod == FieldItemsMod.SHUFFLE,
-                fieldItemsMod == FieldItemsMod.UNCHANGED, banBadRandomFieldItems, fieldItemsMod == FieldItemsMod.RANDOM_EVEN));
+                fieldItemsMod == FieldItemsMod.UNCHANGED, banBadRandomFieldItems, fieldItemsMod == FieldItemsMod.RANDOM_EVEN,
+                keepFieldTMsUnchanged));
 
         // 27 move randomizers
         // + static music
@@ -955,6 +957,7 @@ public class Settings {
                 4   // RANDOM_EVEN
         ));
         settings.setBanBadRandomFieldItems(restoreState(data[26], 3));
+        settings.setKeepFieldTMsUnchanged(restoreState(data[26], 5));
 
         // new 170
         settings.setRandomizeMovePowers(restoreState(data[27], 0));
@@ -2803,6 +2806,14 @@ public class Settings {
         return banBadRandomFieldItems;
     }
 
+
+    public boolean isKeepFieldTMsUnchanged() {
+        return keepFieldTMsUnchanged;
+    }
+
+    public void setKeepFieldTMsUnchanged(boolean keepFieldTMsUnchanged) {
+        this.keepFieldTMsUnchanged = keepFieldTMsUnchanged;
+    }
 
     public void setBanBadRandomFieldItems(boolean banBadRandomFieldItems) {
         this.banBadRandomFieldItems = banBadRandomFieldItems;
