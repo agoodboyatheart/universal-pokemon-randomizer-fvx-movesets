@@ -1158,8 +1158,15 @@ public class SpeciesMovesetRandomizer extends Randomizer {
         List<Move> validMoves = new ArrayList<>();
         List<Move> validDamagingMoves = new ArrayList<>();
         List<Move> validStatusMoves = new ArrayList<>();
-        Map<Type, List<Move>> validTypeMoves = new HashMap<>();
-        Map<Type, List<Move>> validTypeDamagingMoves = new HashMap<>();
+        // EnumMap, not HashMap: these maps are ITERATED, not just looked up, and both iterations feed the
+        // output. A HashMap keyed by an enum iterates in identity-hash order, which is assigned afresh every
+        // time the JVM starts - so the same seed produced different learnsets on different launches. The two
+        // paths that leaked it: the totalAvgPower sum below (float addition is not associative, so a
+        // reordered sum shifts minAvg/maxAvg and can change how many RNG draws the balancing loops take),
+        // and allTypes in randomizeMovesLearnt, which becomes the shuffle input for a species' coverage
+        // palette. EnumMap fixes both at the source by iterating in declaration order.
+        Map<Type, List<Move>> validTypeMoves = new EnumMap<>(Type.class);
+        Map<Type, List<Move>> validTypeDamagingMoves = new EnumMap<>(Type.class);
         List<Move> allMoves = romHandler.getMoves();
         List<Integer> hms = romHandler.getHMMoves();
         Set<Integer> allBanned = new HashSet<>(noBroken ? romHandler.getGameBreakingMoves() : Collections.emptySet());
