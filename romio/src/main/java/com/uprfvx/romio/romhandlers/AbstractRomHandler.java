@@ -518,13 +518,30 @@ public abstract class AbstractRomHandler implements RomHandler {
             return AbilityIDs.undefined;
         }
 
-        Species pk = !tp.getSpecies().isBaseForme() && isTrainerPokemonUseBaseFormeAbilities() ?
-                tp.getSpecies().getBaseForme() : tp.getSpecies();
-        int[] abilities = new int[] {pk.getAbility1(), pk.getAbility2(), pk.getAbility3()};
-
         int slot = isTrainerPokemonAlwaysUseAbility1() ? 1 : tp.getAbilitySlot();
 
-        return abilities[slot - 1];
+        return getTrainerPokemonAbilities(tp)[slot - 1];
+    }
+
+    @Override
+    public List<Integer> getPossibleAbilitiesForTrainerPokemon(TrainerPokemon tp) {
+        int ability = getAbilityForTrainerPokemon(tp);
+        if (ability != AbilityIDs.undefined) {
+            return List.of(ability);
+        }
+
+        // abilitySlot 0 means "Either Ability 1 or 2", which the game only resolves on load.
+        int[] abilities = getTrainerPokemonAbilities(tp);
+        if (abilitiesPerSpecies() < 2 || abilities[0] == abilities[1]) {
+            return List.of(abilities[0]);
+        }
+        return List.of(abilities[0], abilities[1]);
+    }
+
+    private int[] getTrainerPokemonAbilities(TrainerPokemon tp) {
+        Species pk = !tp.getSpecies().isBaseForme() && isTrainerPokemonUseBaseFormeAbilities() ?
+                tp.getSpecies().getBaseForme() : tp.getSpecies();
+        return new int[] {pk.getAbility1(), pk.getAbility2(), pk.getAbility3()};
     }
 
     protected void checkFieldItemsTMsReplaceTMs(List<Item> replacement) {

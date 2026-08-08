@@ -27,6 +27,8 @@ import com.uprfvx.random.random.RandomSource;
 import com.uprfvx.romio.gamedata.ExpCurve;
 import com.uprfvx.romio.gamedata.InGameTrade;
 import com.uprfvx.romio.gamedata.StaticEncounter;
+import com.uprfvx.romio.gamedata.Trainer;
+import com.uprfvx.romio.gamedata.TrainerPokemon;
 import com.uprfvx.romio.romhandlers.Generation;
 import com.uprfvx.romio.romhandlers.RomHandler;
 import org.junit.jupiter.api.Test;
@@ -196,6 +198,49 @@ public class GameDocumentationRandomizerTest {
         assertFalse(json.contains("true,true,true"), "compatibility must be sparse, not dense");
     }
 
+    private void setEveryTrainerPokemonToAbilitySlot2(RomHandler rh) {
+        for (Trainer t : rh.getTrainers()) {
+            for (TrainerPokemon tp : t.getPokemon()) {
+                tp.setAbilitySlot(2);
+            }
+        }
+    }
+
+    @Test
+    public void abilitySlotIsIgnoredWhereTheGameIgnoresIt() {
+        // DPPt store an ability slot per trainer Pokemon but always use Ability 1 in battle, so
+        // documenting the slot's ability instead would misreport half of every trainer's team.
+        RomHandler rh = load("Platinum");
+        String beforeSlotChange = writeDocumentation(rh, newSettings(rh), 12345L);
+
+        setEveryTrainerPokemonToAbilitySlot2(rh);
+
+        assertEquals(beforeSlotChange, writeDocumentation(rh, newSettings(rh), 12345L),
+                "Platinum ignores the stored ability slot, so it must not change the documentation");
+    }
+
+    @Test
+    public void abilitySlotIsHonouredWhereTheGameHonoursIt() {
+        // The converse of the DPPt case: HGSS is the one Gen 4 family that does read the slot.
+        RomHandler rh = load("HeartGold");
+        String beforeSlotChange = writeDocumentation(rh, newSettings(rh), 12345L);
+
+        setEveryTrainerPokemonToAbilitySlot2(rh);
+
+        assertNotEquals(beforeSlotChange, writeDocumentation(rh, newSettings(rh), 12345L),
+                "HGSS reads the stored ability slot, so it must reach the documentation");
+    }
+
+    @Test
+    public void documentsResolvedAbilityRatherThanRawSlot() {
+        RomHandler rh = load("Platinum");
+        String json = writeDocumentation(rh, newSettings(rh), 12345L);
+
+        assertTrue(json.contains("\"ability\":\""), "trainer Pokemon ability missing");
+        assertFalse(json.contains("\"abilitySlot\""),
+                "raw ability slot is meaningless to readers and must not be documented");
+    }
+
     @Test
     public void writesValidLookingJsonAcrossGenerations() {
         // Cross-generation smoke test: proves the capability guards (abilitiesPerSpecies,
@@ -206,7 +251,7 @@ public class GameDocumentationRandomizerTest {
             String json = writeDocumentation(rh, newSettings(rh), 12345L);
 
             assertTrue(json.length() > 1000, game + ": documentation JSON suspiciously short");
-            assertTrue(json.startsWith("{\"schemaVersion\":1"), game + ": missing schema header");
+            assertTrue(json.startsWith("{\"schemaVersion\":2"), game + ": missing schema header");
             assertTrue(json.endsWith("}"), game + ": JSON does not close cleanly");
             assertTrue(json.contains("\"species\""), game + ": species missing");
             assertTrue(json.contains("\"starters\""), game + ": starters missing");

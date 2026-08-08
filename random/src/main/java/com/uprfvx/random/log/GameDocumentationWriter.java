@@ -86,7 +86,7 @@ public class GameDocumentationWriter {
 
     public String write() {
         w.beginObject();
-        w.name("schemaVersion").value(1);
+        w.name("schemaVersion").value(2);
         writeGame();
         writeCapabilities();
         writeSpecies();
@@ -330,7 +330,7 @@ public class GameDocumentationWriter {
 
         Item heldItem = tp.getHeldItem();
         w.name("heldItem").value(heldItem == null ? null : heldItem.getName());
-        w.name("abilitySlot").value(tp.getAbilitySlot());
+        writeTrainerPokemonAbility(tp);
         w.name("ivs").value(tp.getIVs());
 
         // Nature/EVs are only ever written by Gen7RomHandler (USUM); every other generation leaves
@@ -348,6 +348,23 @@ public class GameDocumentationWriter {
         }
 
         w.endObject();
+    }
+
+    // Gen 3 and Gen 4 outside HGSS ignore the stored ability slot and always use Ability 1, so the
+    // slot on its own cannot be indexed against the species' ability list by readers of this file.
+    private void writeTrainerPokemonAbility(TrainerPokemon tp) {
+        if (romHandler.abilitiesPerSpecies() == 0) {
+            return;
+        }
+        List<Integer> possible = romHandler.getPossibleAbilitiesForTrainerPokemon(tp);
+        w.name("ability").value(possible.size() == 1 ? romHandler.abilityName(possible.getFirst()) : null);
+        if (possible.size() > 1) {
+            w.name("abilityCandidates").beginArray();
+            for (int ability : possible) {
+                w.value(romHandler.abilityName(ability));
+            }
+            w.endArray();
+        }
     }
 
     private void writeEncounters() {

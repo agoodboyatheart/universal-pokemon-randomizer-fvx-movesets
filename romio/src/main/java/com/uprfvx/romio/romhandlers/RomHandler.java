@@ -250,6 +250,12 @@ public interface RomHandler {
     int getAbilityForTrainerPokemon(TrainerPokemon tp);
 
     /**
+     * Returns every ability the given Trainer Pokemon could have in-game. Normally a single ability,
+     * but two when its abilitySlot is 0 ("Either Ability 1 or 2"), which the game resolves on load.
+     */
+    List<Integer> getPossibleAbilitiesForTrainerPokemon(TrainerPokemon tp);
+
+    /**
      * Returns true if {@link TrainerPokemon} in this game always use ability 1.
      */
     boolean isTrainerPokemonAlwaysUseAbility1();
