@@ -140,6 +140,13 @@ public class TestRomHandler extends AbstractRomHandler {
     private final List<Shop> originalShops;
     private List<Shop> testShops;
 
+    //In-game trades
+    private final List<InGameTrade> originalInGameTrades;
+    private List<InGameTrade> testInGameTrades = null;
+    private final boolean hasDVs;
+    private final int maxTradeNicknameLength;
+    private final int maxTradeOTNameLength;
+
     //Trainers
     private final SpeciesSet originalBannedForTrainers;
     private SpeciesSet testBannedForTrainers = null;
@@ -242,6 +249,11 @@ public class TestRomHandler extends AbstractRomHandler {
 
         originalShops = Collections.unmodifiableList(mockupOf.getShops());
 
+        originalInGameTrades = Collections.unmodifiableList(mockupOf.getInGameTrades());
+        hasDVs = mockupOf.hasDVs();
+        maxTradeNicknameLength = mockupOf.maxTradeNicknameLength();
+        maxTradeOTNameLength = mockupOf.maxTradeOTNameLength();
+
         originalBannedForTrainers = SpeciesSet.unmodifiable(mockupOf.getBannedFormesForTrainerPokemon());
         originalTrainers = Collections.unmodifiableList(mockupOf.getTrainers());
         mainPlaythroughTrainers = Collections.unmodifiableList(mockupOf.getMainPlaythroughTrainers());
@@ -333,6 +345,8 @@ public class TestRomHandler extends AbstractRomHandler {
 
         testBannedForTrainers = null;
         testTrainers = null;
+
+        testInGameTrades = null;
     }
 
     /**
@@ -431,6 +445,36 @@ public class TestRomHandler extends AbstractRomHandler {
             copiedStatics.add(copy);
         }
         return copiedStatics;
+    }
+
+    /**
+     * Given a List of {@link InGameTrade}s, copies them such that each Species in the original
+     * is replaced by its copied test version.
+     * @param originalTrades The List of InGameTrades to copy.
+     * @return A new List of new InGameTrades which are copies of the given ones.
+     */
+    private List<InGameTrade> deepCopyInGameTrades(List<InGameTrade> originalTrades) {
+        List<InGameTrade> copiedTrades = new ArrayList<>();
+        for (InGameTrade orig : originalTrades) {
+            Species requested = orig.getRequestedSpecies() == null ?
+                    null : originalToTest.get(orig.getRequestedSpecies());
+            InGameTrade copy = new InGameTrade(requested, originalToTest.get(orig.getGivenSpecies().getBaseForme()));
+            if (orig.getGivenSpeciesHolder().isAltFormeAllowed()) {
+                copy.getGivenSpeciesHolder().setAltFormeAllowed();
+                copy.getGivenSpeciesHolder().setFormeNumber(orig.getGivenSpeciesHolder().getFormeNumber());
+            }
+            if (orig.getNickname() != null) {
+                copy.setNickname(orig.getNickname());
+            }
+            if (orig.getOtName() != null) {
+                copy.setOtName(orig.getOtName());
+            }
+            copy.setOtId(orig.getOtId());
+            copy.setIVs(orig.getIVs().clone());
+            copy.setHeldItem(orig.getHeldItem());
+            copiedTrades.add(copy);
+        }
+        return copiedTrades;
     }
 
     /**
@@ -1304,27 +1348,30 @@ public class TestRomHandler extends AbstractRomHandler {
 
     @Override
     public List<InGameTrade> getInGameTrades() {
-        throw new NotImplementedException();
+        if (testInGameTrades == null) {
+            testInGameTrades = deepCopyInGameTrades(originalInGameTrades);
+        }
+        return testInGameTrades;
     }
 
     @Override
     public void setInGameTrades(List<InGameTrade> trades) {
-        throw new NotImplementedException();
+        testInGameTrades = trades;
     }
 
     @Override
     public boolean hasDVs() {
-        throw new NotImplementedException();
+        return hasDVs;
     }
 
     @Override
     public int maxTradeNicknameLength() {
-        throw new NotImplementedException();
+        return maxTradeNicknameLength;
     }
 
     @Override
     public int maxTradeOTNameLength() {
-        throw new NotImplementedException();
+        return maxTradeOTNameLength;
     }
 
     @Override
@@ -1420,7 +1467,11 @@ public class TestRomHandler extends AbstractRomHandler {
 
     @Override
     public int internalStringLength(String string) {
-        throw new NotImplementedException();
+        // Approximation: the real length depends on each generation's ROM character encoding, which
+        // needs ROM resources this mockup no longer holds. Only used to filter candidate trainer/
+        // nickname strings by length, and nothing here is ever written to a real ROM, so plain
+        // character count is close enough.
+        return string.length();
     }
 
     @Override
