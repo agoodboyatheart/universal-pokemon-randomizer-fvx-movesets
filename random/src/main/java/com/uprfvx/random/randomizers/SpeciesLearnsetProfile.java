@@ -79,13 +79,24 @@ public record SpeciesLearnsetProfile(
         return of(pkmn, allTypes, generation, random, Randomizer.SPECIES_STATUS_SHARE_MEAN);
     }
 
-    // vanillaStatusRatio centers the sample on this species' OWN vanilla status fraction instead of a
-    // fixed global mean - Cresselia's real vanilla learnset is ~50% status, so its sample should center
-    // there, not on the dex-wide 37.5% (species-movesets-shape-and-stab-guarantee-design.md Fix A).
-    static SpeciesLearnsetProfile of(Species pkmn, List<Type> allTypes, int generation, Random random,
-                                     double vanillaStatusRatio) {
-        double statusShare = sampleStatusShare(vanillaStatusRatio, random);
+    /**
+     * The species-derived half of a profile, with no sampling and no RNG consumed.
+     * <p>
+     * For callers that only need what is computed from the species itself - its STAB types, power scale,
+     * category lean, ability affinity and priority bonus - and never read {@link #statusShare()} or
+     * {@link #coverageTypes()}. Sampling those anyway drew a Gaussian and ran a shuffle whose results were
+     * discarded, which is wasted work and, worse, silently moved every later draw in the run.
+     */
+    static SpeciesLearnsetProfile derivedOnly(Species pkmn, int generation) {
+        List<Type> stabTypes = stabTypesOf(pkmn);
+        return new SpeciesLearnsetProfile(Randomizer.SPECIES_STATUS_SHARE_MEAN, stabTypes, Set.of(),
+                SpeciesMovesetRandomizer.speciesPowerScale(pkmn),
+                SpeciesMovesetRandomizer.speciesCategoryLean(pkmn.getBaseStats().getAttackSpecialAttackRatio()),
+                abilityAffinityFor(pkmn, generation),
+                priorityBonusFor(pkmn));
+    }
 
+    private static List<Type> stabTypesOf(Species pkmn) {
         List<Type> stabTypes = new ArrayList<>();
         Type primary = pkmn.getPrimaryType(false);
         Type secondary = pkmn.getSecondaryType(false);
@@ -95,6 +106,16 @@ public record SpeciesLearnsetProfile(
         if (secondary != null && secondary != primary) {
             stabTypes.add(secondary);
         }
+        return stabTypes;
+    }
+
+    // vanillaStatusRatio centers the sample on this species' OWN vanilla status fraction instead of a
+    // fixed global mean - Cresselia's real vanilla learnset is ~50% status, so its sample should center
+    // there, not on the dex-wide 37.5% (species-movesets-shape-and-stab-guarantee-design.md Fix A).
+    static SpeciesLearnsetProfile of(Species pkmn, List<Type> allTypes, int generation, Random random,
+                                     double vanillaStatusRatio) {
+        double statusShare = sampleStatusShare(vanillaStatusRatio, random);
+        List<Type> stabTypes = stabTypesOf(pkmn);
 
         return new SpeciesLearnsetProfile(statusShare, stabTypes,
                 sampleCoverageTypes(stabTypes, allTypes, random),

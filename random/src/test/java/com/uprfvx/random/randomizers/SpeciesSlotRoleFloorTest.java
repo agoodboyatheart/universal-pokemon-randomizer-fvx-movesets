@@ -13,6 +13,8 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -140,6 +142,59 @@ public class SpeciesSlotRoleFloorTest {
                 assertTrue(attackingPerThird[t] > 0, "seed " + seed + " third " + t
                         + " lost every attacking-eligible slot despite vanilla having attacking moves there");
             }
+        }
+    }
+
+    // --- Evolution-move (level 0) slots ---
+
+    @Test
+    public void unfillableEvolutionSlotNeverReceivesARole() {
+        // A species with no pre-evolution can never be evolved into, so the level-0 slot that
+        // evolution-moves-for-all prepends is unreachable in game. Giving it a role would spend status or
+        // STAB budget on content the player never sees.
+        int[] levels = {0, 1, 1, 8, 16, 24, 32, 40};
+        for (long seed = 0; seed < SEED_COUNT; seed++) {
+            List<MoveLearnt> moves = new ArrayList<>();
+            for (int level : levels) {
+                moves.add(new MoveLearnt(0, level));
+            }
+            SpeciesLearnsetProfile profile = profileWithStatusShare(Randomizer.SPECIES_STATUS_SHARE_MAX);
+            SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
+                    moves, 0, profile, Set.of(), true, new Random(seed), new int[]{0, 0, 0}, Set.of(0));
+
+            assertNull(roles[0], "seed " + seed + " gave a role to an unfillable evolution-move slot");
+            for (int i = 1; i < roles.length; i++) {
+                assertNotNull(roles[i], "seed " + seed + " left fillable slot " + i + " unassigned");
+            }
+        }
+    }
+
+    @Test
+    public void earlyStabGuaranteeIsNeverDischargedByAnEvolutionMoveSlot() {
+        // The whole point of the floor is that the species has an on-type move BEFORE it evolves. A level-0
+        // slot satisfying it on paper would leave exactly the wait the floor exists to prevent - so a STAB
+        // role must also land on a slot the species reaches by levelling.
+        int[] levels = {0, 1, 6, 12, 18, 25, 30, 41, 52};
+        for (long seed = 0; seed < SEED_COUNT; seed++) {
+            List<MoveLearnt> moves = new ArrayList<>();
+            for (int level : levels) {
+                moves.add(new MoveLearnt(0, level));
+            }
+            SpeciesLearnsetProfile profile = profileWithStatusShare(Randomizer.SPECIES_STATUS_SHARE_MIN);
+            SpeciesMovesetRandomizer.SlotRole[] roles = SpeciesMovesetRandomizer.assignSlotRoles(
+                    moves, 0, profile, Set.of(), true, new Random(seed), new int[]{0, 0, 0});
+
+            boolean stabByLevelUp = false;
+            for (int i = 0; i < roles.length; i++) {
+                if (roles[i] == SpeciesMovesetRandomizer.SlotRole.STAB
+                        && moves.get(i).level > 0
+                        && moves.get(i).level <= Randomizer.SPECIES_STAB_FLOOR_LEVEL) {
+                    stabByLevelUp = true;
+                    break;
+                }
+            }
+            assertTrue(stabByLevelUp, "seed " + seed + " has no level-up STAB by level "
+                    + Randomizer.SPECIES_STAB_FLOOR_LEVEL + " - the evolution slot cannot discharge it");
         }
     }
 
