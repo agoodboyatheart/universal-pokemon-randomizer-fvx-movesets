@@ -1,0 +1,133 @@
+{
+  "_comment": [
+    "Configuration for tools/branch_tripwire.py -- the local-combined-build interaction tripwire.",
+    "",
+    "'testSet' is the fixed set of ROM test classes run on EVERY branch and on the combined build.",
+    "It must be the same set everywhere, otherwise 'failure absent from the baseline' is ambiguous",
+    "between 'this branch is clean' and 'this branch never ran that test'. The script automatically",
+    "skips a class on branches where the file does not exist (branch-specific tests such as the golden",
+    "masters), which is the one legitimate exception: only a branch that HAS the test can baseline it.",
+    "",
+    "'suspects' maps a test class to the branches whose main-source diff vs master touches the code that",
+    "test covers. It is the attribution lookup: when a failure appears only on local-combined-build,",
+    "these are the branches to look at. Regenerate the underlying data with:",
+    "  git diff --name-only master...<branch> -- '*/main/*'",
+    "",
+    "'reportOnly' classes are excluded from the test set by default -- profile/extraction harnesses that",
+    "print statistics rather than assert, so they cannot fail informatively and only cost runtime.",
+    "Pass --include-report-only to run them anyway."
+  ],
+
+  "branches": [
+    "master",
+    "shared-moveset-logic",
+    "better-movesets",
+    "species-power-curve",
+    "better-held-items",
+    "better-field-items",
+    "gym-leader-tm-type-lock",
+    "encounter-anti-duplication",
+    "static-trade-pokemon-filters",
+    "sensible-abilities",
+    "fix-oras-encounter-reuse",
+    "game-documentation"
+  ],
+
+  "combinedBranch": "local-combined-build",
+
+  "testSet": [
+    "BetterMovesetsGoldenMasterRandomizerTest",
+    "BetterMovesetsRandomizerTest",
+    "Gen2CustomMovesetsRoundTripRandomizerTest",
+    "SpeciesMovesetsGoldenMasterRandomizerTest",
+    "SensibleMovesetsRandomizerTest",
+    "FollowEvolutionsMovesetRandomizerTest",
+    "SensibleHeldItemsGoldenMasterRandomizerTest",
+    "SensibleHeldItemsInvariantsRandomizerTest",
+    "EncounterAntiDuplicationRandomizerTest",
+    "GameDocumentationRandomizerTest",
+    "TrainerRandomizersTest",
+    "WildEncounterRandomizerTest",
+    "TradeRandomizerTest",
+    "StaticPokemonRandomizerTest",
+    "TMTutorMoveRandomizerTest",
+    "ItemRandomizerTest",
+    "EvolutionRandomizerTest",
+    "SpeciesTraitRandomizersTest",
+    "StarterRandomizerTest"
+  ],
+
+  "reportOnly": [
+    "MovesetProfileRandomizerTest",
+    "StabBandProfileRandomizerTest",
+    "SpeciesLearnsetProfileRandomizerTest",
+    "TMTutorPoolProfileRandomizerTest",
+    "MoveMetadataExtractionRandomizerTest",
+    "SpeciesMetadataExtractionRandomizerTest",
+    "GameLocationMetadataExtractionRandomizerTest"
+  ],
+
+  "suspects": {
+    "BetterMovesetsGoldenMasterRandomizerTest": ["better-movesets"],
+    "BetterMovesetsRandomizerTest": ["better-movesets"],
+    "Gen2CustomMovesetsRoundTripRandomizerTest": ["better-movesets"],
+    "SpeciesMovesetsGoldenMasterRandomizerTest": ["species-power-curve", "better-movesets"],
+    "SensibleMovesetsRandomizerTest": ["species-power-curve", "better-movesets"],
+    "FollowEvolutionsMovesetRandomizerTest": ["species-power-curve", "better-movesets"],
+    "SensibleHeldItemsGoldenMasterRandomizerTest": ["better-held-items"],
+    "SensibleHeldItemsInvariantsRandomizerTest": ["better-held-items"],
+    "EncounterAntiDuplicationRandomizerTest": ["encounter-anti-duplication"],
+    "GameDocumentationRandomizerTest": ["game-documentation"],
+
+    "TrainerRandomizersTest": [
+      "better-movesets",
+      "better-held-items",
+      "better-field-items",
+      "gym-leader-tm-type-lock",
+      "encounter-anti-duplication"
+    ],
+    "WildEncounterRandomizerTest": ["encounter-anti-duplication", "fix-oras-encounter-reuse"],
+    "TradeRandomizerTest": ["encounter-anti-duplication", "static-trade-pokemon-filters"],
+    "StaticPokemonRandomizerTest": ["encounter-anti-duplication", "static-trade-pokemon-filters"],
+    "TMTutorMoveRandomizerTest": ["better-field-items", "gym-leader-tm-type-lock"],
+    "ItemRandomizerTest": ["better-field-items", "gym-leader-tm-type-lock"],
+    "SpeciesTraitRandomizersTest": ["sensible-abilities"],
+    "StarterRandomizerTest": ["encounter-anti-duplication"],
+    "EvolutionRandomizerTest": []
+  },
+
+  "sharedSourceHotspots": {
+    "_comment": "Files edited by more than one branch -- where interaction bugs concentrate. Review the merged state of these after every local-combined-build rebuild.",
+    "random/src/main/java/com/uprfvx/random/randomizers/TrainerPokemonRandomizer.java": [
+      "better-field-items", "better-held-items", "better-movesets",
+      "encounter-anti-duplication", "gym-leader-tm-type-lock"
+    ],
+    "random/src/main/java/com/uprfvx/random/randomizers/Randomizer.java": [
+      "better-movesets", "encounter-anti-duplication", "shared-moveset-logic", "species-power-curve"
+    ],
+    "romio/src/main/java/com/uprfvx/romio/constants/GlobalConstants.java": [
+      "better-movesets", "sensible-abilities", "shared-moveset-logic", "species-power-curve"
+    ],
+    "random/src/main/java/com/uprfvx/random/randomizers/SpeciesMovesetRandomizer.java": [
+      "better-movesets", "species-power-curve"
+    ],
+    "random/src/main/java/com/uprfvx/random/randomizers/WildEncounterRandomizer.java": [
+      "encounter-anti-duplication", "fix-oras-encounter-reuse"
+    ],
+    "random/src/main/java/com/uprfvx/random/randomizers/TradeRandomizer.java": [
+      "encounter-anti-duplication", "static-trade-pokemon-filters"
+    ],
+    "random/src/main/java/com/uprfvx/random/randomizers/StaticPokemonRandomizer.java": [
+      "encounter-anti-duplication", "static-trade-pokemon-filters"
+    ],
+    "random/src/main/java/com/uprfvx/random/log/RandomizationLogger.java": [
+      "better-movesets", "game-documentation"
+    ],
+    "random/src/main/java/com/uprfvx/random/randomizers/TMTutorMoveRandomizer.java": [
+      "better-field-items", "gym-leader-tm-type-lock"
+    ],
+    "random/src/main/java/com/uprfvx/random/randomizers/ItemRandomizer.java": [
+      "better-field-items", "gym-leader-tm-type-lock"
+    ]
+  }
+}
