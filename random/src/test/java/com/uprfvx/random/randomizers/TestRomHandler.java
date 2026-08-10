@@ -47,6 +47,10 @@ public class TestRomHandler extends AbstractRomHandler {
 
     //Abilities
     private final int abilitiesPerSpecies;
+    private final int highestAbilityIndex;
+    private final List<String> abilityNames;
+    private final Map<Integer, List<Integer>> abilityVariations;
+    private final List<Integer> uselessAbilities;
 
     //Moves
     private final List<Move> originalMoves;
@@ -140,6 +144,13 @@ public class TestRomHandler extends AbstractRomHandler {
     private final List<Shop> originalShops;
     private List<Shop> testShops;
 
+    //In-game trades
+    private final List<InGameTrade> originalInGameTrades;
+    private List<InGameTrade> testInGameTrades = null;
+    private final boolean hasDVs;
+    private final int maxTradeNicknameLength;
+    private final int maxTradeOTNameLength;
+
     //Trainers
     private final SpeciesSet originalBannedForTrainers;
     private SpeciesSet testBannedForTrainers = null;
@@ -174,6 +185,14 @@ public class TestRomHandler extends AbstractRomHandler {
         originalIrregularFormes = SpeciesSet.unmodifiable(mockupOf.getIrregularFormes());
 
         abilitiesPerSpecies = mockupOf.abilitiesPerSpecies();
+        highestAbilityIndex = mockupOf.highestAbilityIndex();
+        List<String> names = new ArrayList<>(highestAbilityIndex + 1);
+        for (int i = 0; i <= highestAbilityIndex; i++) {
+            names.add(mockupOf.abilityName(i));
+        }
+        abilityNames = Collections.unmodifiableList(names);
+        abilityVariations = Collections.unmodifiableMap(mockupOf.getAbilityVariations());
+        uselessAbilities = Collections.unmodifiableList(mockupOf.getUselessAbilities());
 
         originalMoves = Collections.unmodifiableList(mockupOf.getMoves());
         originalMovesLearnt = Collections.unmodifiableMap(mockupOf.getMovesLearnt());
@@ -241,6 +260,11 @@ public class TestRomHandler extends AbstractRomHandler {
         originalPickupItems = Collections.unmodifiableList(mockupOf.getPickupItems());
 
         originalShops = Collections.unmodifiableList(mockupOf.getShops());
+
+        originalInGameTrades = Collections.unmodifiableList(mockupOf.getInGameTrades());
+        hasDVs = mockupOf.hasDVs();
+        maxTradeNicknameLength = mockupOf.maxTradeNicknameLength();
+        maxTradeOTNameLength = mockupOf.maxTradeOTNameLength();
 
         originalBannedForTrainers = SpeciesSet.unmodifiable(mockupOf.getBannedFormesForTrainerPokemon());
         originalTrainers = Collections.unmodifiableList(mockupOf.getTrainers());
@@ -333,6 +357,8 @@ public class TestRomHandler extends AbstractRomHandler {
 
         testBannedForTrainers = null;
         testTrainers = null;
+
+        testInGameTrades = null;
     }
 
     /**
@@ -431,6 +457,36 @@ public class TestRomHandler extends AbstractRomHandler {
             copiedStatics.add(copy);
         }
         return copiedStatics;
+    }
+
+    /**
+     * Given a List of {@link InGameTrade}s, copies them such that each Species in the original
+     * is replaced by its copied test version.
+     * @param originalTrades The List of InGameTrades to copy.
+     * @return A new List of new InGameTrades which are copies of the given ones.
+     */
+    private List<InGameTrade> deepCopyInGameTrades(List<InGameTrade> originalTrades) {
+        List<InGameTrade> copiedTrades = new ArrayList<>();
+        for (InGameTrade orig : originalTrades) {
+            Species requested = orig.getRequestedSpecies() == null ?
+                    null : originalToTest.get(orig.getRequestedSpecies());
+            InGameTrade copy = new InGameTrade(requested, originalToTest.get(orig.getGivenSpecies().getBaseForme()));
+            if (orig.getGivenSpeciesHolder().isAltFormeAllowed()) {
+                copy.getGivenSpeciesHolder().setAltFormeAllowed();
+                copy.getGivenSpeciesHolder().setFormeNumber(orig.getGivenSpeciesHolder().getFormeNumber());
+            }
+            if (orig.getNickname() != null) {
+                copy.setNickname(orig.getNickname());
+            }
+            if (orig.getOtName() != null) {
+                copy.setOtName(orig.getOtName());
+            }
+            copy.setOtId(orig.getOtId());
+            copy.setIVs(orig.getIVs().clone());
+            copy.setHeldItem(orig.getHeldItem());
+            copiedTrades.add(copy);
+        }
+        return copiedTrades;
     }
 
     /**
@@ -705,22 +761,34 @@ public class TestRomHandler extends AbstractRomHandler {
 
     @Override
     public int highestAbilityIndex() {
-        throw new NotImplementedException();
+        return highestAbilityIndex;
     }
 
+    /**
+     * Out-of-range indices give "" rather than throwing, matching {@link AbstractRomHandler}. Callers
+     * naming an ability that does not exist in this generation - a constant from a later gen used in an
+     * assertion message, say - should not blow up before the assertion itself can report.
+     */
     @Override
     public String abilityName(int number) {
-        throw new NotImplementedException();
+        if (number < 0 || number >= abilityNames.size()) {
+            return "";
+        }
+        return abilityNames.get(number);
     }
 
     @Override
     public Map<Integer, List<Integer>> getAbilityVariations() {
-        throw new NotImplementedException();
+        return abilityVariations;
     }
 
+    /**
+     * A fresh mutable copy each call. SpeciesAbilityRandomizer adds its own bans to the returned list,
+     * so handing out the cached one would let each run's bans leak into the next.
+     */
     @Override
     public List<Integer> getUselessAbilities() {
-        throw new NotImplementedException();
+        return new ArrayList<>(uselessAbilities);
     }
 
     @Override
@@ -1304,27 +1372,30 @@ public class TestRomHandler extends AbstractRomHandler {
 
     @Override
     public List<InGameTrade> getInGameTrades() {
-        throw new NotImplementedException();
+        if (testInGameTrades == null) {
+            testInGameTrades = deepCopyInGameTrades(originalInGameTrades);
+        }
+        return testInGameTrades;
     }
 
     @Override
     public void setInGameTrades(List<InGameTrade> trades) {
-        throw new NotImplementedException();
+        testInGameTrades = trades;
     }
 
     @Override
     public boolean hasDVs() {
-        throw new NotImplementedException();
+        return hasDVs;
     }
 
     @Override
     public int maxTradeNicknameLength() {
-        throw new NotImplementedException();
+        return maxTradeNicknameLength;
     }
 
     @Override
     public int maxTradeOTNameLength() {
-        throw new NotImplementedException();
+        return maxTradeOTNameLength;
     }
 
     @Override
@@ -1420,7 +1491,11 @@ public class TestRomHandler extends AbstractRomHandler {
 
     @Override
     public int internalStringLength(String string) {
-        throw new NotImplementedException();
+        // Approximation: the real length depends on each generation's ROM character encoding, which
+        // needs ROM resources this mockup no longer holds. Only used to filter candidate trainer/
+        // nickname strings by length, and nothing here is ever written to a real ROM, so plain
+        // character count is close enough.
+        return string.length();
     }
 
     @Override
