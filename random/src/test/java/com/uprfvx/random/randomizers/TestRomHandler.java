@@ -47,6 +47,10 @@ public class TestRomHandler extends AbstractRomHandler {
 
     //Abilities
     private final int abilitiesPerSpecies;
+    private final int highestAbilityIndex;
+    private final List<String> abilityNames;
+    private final Map<Integer, List<Integer>> abilityVariations;
+    private final List<Integer> uselessAbilities;
 
     //Moves
     private final List<Move> originalMoves;
@@ -181,6 +185,14 @@ public class TestRomHandler extends AbstractRomHandler {
         originalIrregularFormes = SpeciesSet.unmodifiable(mockupOf.getIrregularFormes());
 
         abilitiesPerSpecies = mockupOf.abilitiesPerSpecies();
+        highestAbilityIndex = mockupOf.highestAbilityIndex();
+        List<String> names = new ArrayList<>(highestAbilityIndex + 1);
+        for (int i = 0; i <= highestAbilityIndex; i++) {
+            names.add(mockupOf.abilityName(i));
+        }
+        abilityNames = Collections.unmodifiableList(names);
+        abilityVariations = Collections.unmodifiableMap(mockupOf.getAbilityVariations());
+        uselessAbilities = Collections.unmodifiableList(mockupOf.getUselessAbilities());
 
         originalMoves = Collections.unmodifiableList(mockupOf.getMoves());
         originalMovesLearnt = Collections.unmodifiableMap(mockupOf.getMovesLearnt());
@@ -749,22 +761,34 @@ public class TestRomHandler extends AbstractRomHandler {
 
     @Override
     public int highestAbilityIndex() {
-        throw new NotImplementedException();
+        return highestAbilityIndex;
     }
 
+    /**
+     * Out-of-range indices give "" rather than throwing, matching {@link AbstractRomHandler}. Callers
+     * naming an ability that does not exist in this generation - a constant from a later gen used in an
+     * assertion message, say - should not blow up before the assertion itself can report.
+     */
     @Override
     public String abilityName(int number) {
-        throw new NotImplementedException();
+        if (number < 0 || number >= abilityNames.size()) {
+            return "";
+        }
+        return abilityNames.get(number);
     }
 
     @Override
     public Map<Integer, List<Integer>> getAbilityVariations() {
-        throw new NotImplementedException();
+        return abilityVariations;
     }
 
+    /**
+     * A fresh mutable copy each call. SpeciesAbilityRandomizer adds its own bans to the returned list,
+     * so handing out the cached one would let each run's bans leak into the next.
+     */
     @Override
     public List<Integer> getUselessAbilities() {
-        throw new NotImplementedException();
+        return new ArrayList<>(uselessAbilities);
     }
 
     @Override
