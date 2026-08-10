@@ -46,6 +46,8 @@
     "SensibleHeldItemsInvariantsRandomizerTest",
     "EncounterAntiDuplicationRandomizerTest",
     "GameDocumentationRandomizerTest",
+    "SensibleAbilitiesRandomizerTest",
+    "OrasEncounterReuseRandomizerTest",
     "TrainerRandomizersTest",
     "WildEncounterRandomizerTest",
     "TradeRandomizerTest",
@@ -68,16 +70,18 @@
   ],
 
   "suspects": {
-    "BetterMovesetsGoldenMasterRandomizerTest": ["better-movesets"],
-    "BetterMovesetsRandomizerTest": ["better-movesets"],
+    "BetterMovesetsGoldenMasterRandomizerTest": ["better-movesets", "shared-moveset-logic"],
+    "BetterMovesetsRandomizerTest": ["better-movesets", "shared-moveset-logic"],
     "Gen2CustomMovesetsRoundTripRandomizerTest": ["better-movesets"],
-    "SpeciesMovesetsGoldenMasterRandomizerTest": ["species-power-curve", "better-movesets"],
-    "SensibleMovesetsRandomizerTest": ["species-power-curve", "better-movesets"],
+    "SpeciesMovesetsGoldenMasterRandomizerTest": ["species-power-curve", "better-movesets", "shared-moveset-logic"],
+    "SensibleMovesetsRandomizerTest": ["species-power-curve", "better-movesets", "shared-moveset-logic"],
     "FollowEvolutionsMovesetRandomizerTest": ["species-power-curve", "better-movesets"],
     "SensibleHeldItemsGoldenMasterRandomizerTest": ["better-held-items"],
     "SensibleHeldItemsInvariantsRandomizerTest": ["better-held-items"],
     "EncounterAntiDuplicationRandomizerTest": ["encounter-anti-duplication"],
     "GameDocumentationRandomizerTest": ["game-documentation"],
+    "SensibleAbilitiesRandomizerTest": ["sensible-abilities"],
+    "OrasEncounterReuseRandomizerTest": ["fix-oras-encounter-reuse"],
 
     "TrainerRandomizersTest": [
       "better-movesets",

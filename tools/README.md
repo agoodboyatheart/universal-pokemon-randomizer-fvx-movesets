@@ -74,9 +74,25 @@ branch to `branches`, its dedicated test classes to `testSet`, and its ownership
   many draws it makes shifts every category downstream). For full-run bugs, isolate by toggling the
   feature's `Settings` flag across several seeds — do **not** try to replay a seed on a single branch,
   because the stream will not line up.
-- **Four branches have no dedicated test class** and so cannot be attributed directly:
-  `sensible-abilities`, `fix-oras-encounter-reuse`, `shared-moveset-logic`, and
-  `static-trade-pokemon-filters` (which shares `TradeRandomizerTest` with `encounter-anti-duplication`,
-  making a failure there ambiguous between the two).
+- **`shared-moveset-logic` has no dedicated test class, by design.** Every symbol it adds
+  (`weightedPick` and the `TIER_*` constants in `Randomizer.java`; `goodStatusMoves`, `goodWeakMoves`,
+  `badStrongMoves` and the fixed-constant-damage gate in `GlobalConstants.java`) is declaration-only on
+  that branch — its consumers live on `better-movesets` and `species-power-curve`. There is nothing to
+  exercise, and a unit test of those static helpers needs no ROM, so `testROMs` could not consume it
+  anyway. Its real failure mode is a *symbol* lost in a merge, which breaks compilation rather than
+  producing an attributable test case. It is instead listed under `suspects` for the moveset classes
+  whose golden masters would move if its helpers changed.
+- **`static-trade-pokemon-filters` shares `TradeRandomizerTest`** with `encounter-anti-duplication`,
+  so a failure in that class is ambiguous between the two — but it owns four dedicated *methods*
+  inside it (`basicOnlyOnlyPicksBasicPokemon`, `noLegendariesExcludesLegendaries`,
+  `similarStrengthDoesNotThrow`, `combinedFiltersDoNotHangOrThrow`), so attribution by method name
+  works today.
+- **A branch whose fix makes a *master* test pass cannot be regression-checked by `check` alone.**
+  `check` subtracts the union of every branch's `knownFailures`, master's included, so if a merge lost
+  such a fix the restored failure is absorbed as already-known instead of reported. This is why
+  `fix-oras-encounter-reuse` has `OrasEncounterReuseRandomizerTest` rather than relying on
+  `WildEncounterRandomizerTest.doNotUsePrematureEvosWorks`, which fails on both ORAS ROMs on master
+  and is in master's baseline. A class that exists only on the owning branch cannot be absorbed that
+  way. Prefer a branch-only class whenever a branch *fixes* an existing failure.
 - **Do not run while another Gradle build is in flight** — the run compiles what is on disk when it
   starts, and `baseline` switches branches underneath it.
