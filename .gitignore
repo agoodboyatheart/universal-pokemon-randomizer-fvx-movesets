@@ -50,3 +50,4 @@ manifest.mf
 build_eclipse.xml
 .classpath
 .settings/org.eclipse.jdt.core.prefs
+__pycache__
