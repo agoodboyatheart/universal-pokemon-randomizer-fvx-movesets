@@ -50,60 +50,47 @@ public abstract class Randomizer {
 
     /**
      * Picks one move from {@code candidates} at random, with each move's probability proportional
-     * to {@code weightFn}. Negative weights are clamped to 0; if every weight is 0 (or the list is
-     * a single element) it falls back to a uniform pick. Returns null for a null/empty list.
+     * to {@code weightFn}. Negative weights are clamped to 0; if every weight is 0 it falls back to
+     * a uniform pick. Returns null for a null/empty list.
+     * <p>
+     * A single-element list is not special-cased: it still takes the weighted path and draws a
+     * {@code nextDouble()}. Short-circuiting it would skip that draw and desynchronise every
+     * subsequent value in a seeded run.
+     * <p>
+     * {@code weightFn} must be pure and must never draw from {@code random} - each weight is
+     * computed once here and reused for the selection pass.
      */
     protected Move weightedPick(List<Move> candidates, ToDoubleFunction<Move> weightFn) {
         if (candidates == null || candidates.isEmpty()) {
             return null;
         }
+        // Evaluate each weight ONCE into a scratch array (weightFn is a pure scoring function - it never touches
+        // random - so a single pass gives bit-identical results to recomputing it in the selection loop, but at
+        // half the calls; this runs per candidate per slot per mon, so the saving is real in the hot path).
+        int n = candidates.size();
+        double[] weights = new double[n];
         double total = 0;
-        for (Move mv : candidates) {
-            total += Math.max(0.0, weightFn.applyAsDouble(mv));
+        for (int i = 0; i < n; i++) {
+            double w = Math.max(0.0, weightFn.applyAsDouble(candidates.get(i)));
+            weights[i] = w;
+            total += w;
         }
         if (total <= 0) {
-            return candidates.get(random.nextInt(candidates.size()));
+            return candidates.get(random.nextInt(n));
         }
         double r = random.nextDouble() * total;
-        for (Move mv : candidates) {
-            r -= Math.max(0.0, weightFn.applyAsDouble(mv));
+        for (int i = 0; i < n; i++) {
+            r -= weights[i];
             if (r <= 0) {
-                return mv;
+                return candidates.get(i);
             }
         }
-        return candidates.get(candidates.size() - 1);
+        return candidates.get(n - 1);
     }
 
-    // Level->power-tier soft bias, shared by the trainer (Better Movesets) and species (power-curve)
-    // moveset randomizers. Moves fall into fixed BP tiers that "unlock" with level; below a tier's
-    // unlock level its moves get a soft, shrinking weight so a low-level mon still occasionally rolls
-    // one, rather than the old flat level*3 cutoff. Effective power is power * hitCount (0 for status).
-    protected static final double TIER_LOW_MAX_BP  = 60.0;  // <=60  = low  tier (always available)
-    protected static final double TIER_MID_MAX_BP  = 80.0;  // 61-80 = mid  tier
-    protected static final int    TIER_MID_UNLOCK  = 20;    // mid power starts appearing here
-    protected static final int    TIER_HIGH_UNLOCK = 35;    // high power (81+) starts appearing here
-    protected static final double TIER_SOFTNESS    = 0.8;   // per-level falloff below unlock (0.8^10 ~= 0.11)
-
-    /**
-     * Soft level-gate weight in (0,1] for a move of the given effective power on a mon of the given
-     * level: 1.0 once the mon's level reaches the move's tier unlock level, and a soft, shrinking
-     * fraction below it (so an under-level mon can still occasionally roll up a tier). Multiply an
-     * existing power-based selection weight by this to bias picks toward level-appropriate power.
-     */
-    protected static double levelTierWeight(int level, double effectivePower) {
-        int unlock;
-        if (effectivePower <= TIER_LOW_MAX_BP) {
-            unlock = 0;                 // low tier: always available
-        } else if (effectivePower <= TIER_MID_MAX_BP) {
-            unlock = TIER_MID_UNLOCK;   // mid tier
-        } else {
-            unlock = TIER_HIGH_UNLOCK;  // high tier
-        }
-        if (level >= unlock) {
-            return 1.0;
-        }
-        return Math.pow(TIER_SOFTNESS, unlock - level);
-    }
+    // Shared BP tier edges: moves fall into fixed effective-power (power * hitCount, 0 for status) bands.
+    protected static final double TIER_LOW_MAX_BP  = 60.0;
+    protected static final double TIER_MID_MAX_BP  = 80.0;
 
     protected CustomNamesSet getCustomNames() {
         // This is not in line with how most /data resources are loaded for randomization.
