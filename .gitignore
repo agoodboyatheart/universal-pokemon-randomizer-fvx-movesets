@@ -24,6 +24,11 @@
 # Gradle build output directory
 build
 
+# Runtime working copy of the custom player graphics, created next to the module when the
+# randomizer is launched with random/ as its working directory (SysConstants.cpgDirectory).
+# The real assets are tracked under random/src/main/resources/data/.
+/random/data/
+
 # Kotlin plugin data
 .kotlin
 
