@@ -50,28 +50,42 @@ public abstract class Randomizer {
 
     /**
      * Picks one move from {@code candidates} at random, with each move's probability proportional
-     * to {@code weightFn}. Negative weights are clamped to 0; if every weight is 0 (or the list is
-     * a single element) it falls back to a uniform pick. Returns null for a null/empty list.
+     * to {@code weightFn}. Negative weights are clamped to 0; if every weight is 0 it falls back to
+     * a uniform pick. Returns null for a null/empty list.
+     * <p>
+     * A single-element list is not special-cased: it still takes the weighted path and draws a
+     * {@code nextDouble()}. Short-circuiting it would skip that draw and desynchronise every
+     * subsequent value in a seeded run.
+     * <p>
+     * {@code weightFn} must be pure and must never draw from {@code random} - each weight is
+     * computed once here and reused for the selection pass.
      */
     protected Move weightedPick(List<Move> candidates, ToDoubleFunction<Move> weightFn) {
         if (candidates == null || candidates.isEmpty()) {
             return null;
         }
+        // Evaluate each weight ONCE into a scratch array (weightFn is a pure scoring function - it never touches
+        // random - so a single pass gives bit-identical results to recomputing it in the selection loop, but at
+        // half the calls; this runs per candidate per slot per mon, so the saving is real in the hot path).
+        int n = candidates.size();
+        double[] weights = new double[n];
         double total = 0;
-        for (Move mv : candidates) {
-            total += Math.max(0.0, weightFn.applyAsDouble(mv));
+        for (int i = 0; i < n; i++) {
+            double w = Math.max(0.0, weightFn.applyAsDouble(candidates.get(i)));
+            weights[i] = w;
+            total += w;
         }
         if (total <= 0) {
-            return candidates.get(random.nextInt(candidates.size()));
+            return candidates.get(random.nextInt(n));
         }
         double r = random.nextDouble() * total;
-        for (Move mv : candidates) {
-            r -= Math.max(0.0, weightFn.applyAsDouble(mv));
+        for (int i = 0; i < n; i++) {
+            r -= weights[i];
             if (r <= 0) {
-                return mv;
+                return candidates.get(i);
             }
         }
-        return candidates.get(candidates.size() - 1);
+        return candidates.get(n - 1);
     }
 
     // Shared BP tier edges: moves fall into fixed effective-power (power * hitCount, 0 for status) bands.
