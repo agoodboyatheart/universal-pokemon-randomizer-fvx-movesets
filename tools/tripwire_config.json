@@ -95,7 +95,7 @@
     "StaticPokemonRandomizerTest": ["encounter-anti-duplication", "static-trade-pokemon-filters"],
     "TMTutorMoveRandomizerTest": ["better-field-items", "gym-leader-tm-type-lock"],
     "ItemRandomizerTest": ["better-field-items", "gym-leader-tm-type-lock"],
-    "SpeciesTraitRandomizersTest": ["sensible-abilities"],
+    "SpeciesTraitRandomizersTest": [],
     "StarterRandomizerTest": ["encounter-anti-duplication"],
     "EvolutionRandomizerTest": []
   },
