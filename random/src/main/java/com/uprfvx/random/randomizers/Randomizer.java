@@ -70,10 +70,14 @@ public abstract class Randomizer {
         int n = candidates.size();
         double[] weights = new double[n];
         double total = 0;
+        int lastPositive = -1;
         for (int i = 0; i < n; i++) {
             double w = Math.max(0.0, weightFn.applyAsDouble(candidates.get(i)));
             weights[i] = w;
             total += w;
+            if (w > 0) {
+                lastPositive = i;
+            }
         }
         if (total <= 0) {
             return candidates.get(random.nextInt(n));
@@ -81,11 +85,15 @@ public abstract class Randomizer {
         double r = random.nextDouble() * total;
         for (int i = 0; i < n; i++) {
             r -= weights[i];
-            if (r <= 0) {
+            // Skipping zero-weight candidates matters at the edges: nextDouble() can return exactly 0.0, which
+            // would otherwise hand back the first candidate whatever its weight - e.g. a status move sitting in
+            // a boss STAB pool at weight 0, in an attacking slot.
+            if (weights[i] > 0 && r <= 0) {
                 return candidates.get(i);
             }
         }
-        return candidates.get(n - 1);
+        // Reached only if rounding leaves r above 0 after the whole list; total > 0 guarantees a positive weight.
+        return candidates.get(lastPositive);
     }
 
     // Shared BP tier edges: moves fall into fixed effective-power (power * hitCount, 0 for status) bands.
