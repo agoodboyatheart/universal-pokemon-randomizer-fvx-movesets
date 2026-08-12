@@ -28,6 +28,7 @@ package com.uprfvx.romio.constants;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -184,9 +185,11 @@ public class GlobalConstants {
     // These mirror how Showdown splits a Pokemon's movepool into "Moves" vs "Usually useless moves".
     // Gen 8/9 (and Legends/Let's-Go-only) moves from the originals are omitted, as this randomizer's ROM
     // handlers only reach Gen 7, so those move IDs can never appear in a supported ROM.
+    // Sets, not lists: every use is a membership test, and they are probed once per candidate move per slot
+    // per Pokemon. Built with Set.copyOf rather than Set.of, which throws if two MoveIDs ever share a value.
 
     // Status moves considered worth running (everything else in the Status category is "usually useless").
-    public static final List<Integer> goodStatusMoves = Arrays.asList(
+    public static final Set<Integer> goodStatusMoves = Set.copyOf(Arrays.asList(
             MoveIDs.acidArmor, MoveIDs.agility, MoveIDs.aromatherapy, MoveIDs.auroraVeil, MoveIDs.autotomize,
             MoveIDs.banefulBunker, MoveIDs.batonPass, MoveIDs.bellyDrum, MoveIDs.bulkUp, MoveIDs.calmMind,
             MoveIDs.clangorousSoul, MoveIDs.coil, MoveIDs.cottonGuard, MoveIDs.courtChange, MoveIDs.curse,
@@ -204,10 +207,10 @@ public class GlobalConstants {
             MoveIDs.substitute, MoveIDs.switcheroo, MoveIDs.swordsDance, MoveIDs.synthesis, MoveIDs.tailGlow,
             MoveIDs.tailwind, MoveIDs.taunt, MoveIDs.thunderWave, MoveIDs.toxic, MoveIDs.transform,
             MoveIDs.trick, MoveIDs.whirlwind, MoveIDs.willOWisp, MoveIDs.wish, MoveIDs.yawn
-    );
+    ));
 
     // Sub-75 base power attacks that are still worth running (utility/priority/pivot/etc.).
-    public static final List<Integer> goodWeakMoves = Arrays.asList(
+    public static final Set<Integer> goodWeakMoves = Set.copyOf(Arrays.asList(
             MoveIDs.accelerock, MoveIDs.acrobatics, MoveIDs.avalanche, MoveIDs.bonemerang, MoveIDs.bouncyBubble,
             MoveIDs.bulletPunch, MoveIDs.buzzyBuzz, MoveIDs.circleThrow, MoveIDs.clearSmog, MoveIDs.doubleIronBash,
             MoveIDs.dragonDarts, MoveIDs.dragonTail, MoveIDs.drainingKiss, MoveIDs.endeavor, MoveIDs.facade,
@@ -220,10 +223,10 @@ public class GlobalConstants {
             MoveIDs.suckerPunch, MoveIDs.superFang, MoveIDs.surgingStrikes, MoveIDs.tailSlap, MoveIDs.tripleAxel,
             MoveIDs.uTurn, MoveIDs.vacuumWave, MoveIDs.veeveeVolley, MoveIDs.voltSwitch, MoveIDs.waterShuriken,
             MoveIDs.weatherBall, MoveIDs.returnTheMoveNotTheKeyword
-    );
+    ));
 
     // 75+ base power attacks that are nonetheless "usually useless" (recharge, bad accuracy/recoil, gimmicks).
-    public static final List<Integer> badStrongMoves = Arrays.asList(
+    public static final Set<Integer> badStrongMoves = Set.copyOf(Arrays.asList(
             MoveIDs.belch, MoveIDs.burnUp, MoveIDs.crushClaw, MoveIDs.dragonRush, MoveIDs.dreamEater,
             MoveIDs.eggBomb, MoveIDs.firePledge, MoveIDs.flyingPress, MoveIDs.futureSight, MoveIDs.grassPledge,
             MoveIDs.hyperBeam, MoveIDs.hyperFang, MoveIDs.hyperspaceHole, MoveIDs.jawLock, MoveIDs.landsWrath,
@@ -231,7 +234,7 @@ public class GlobalConstants {
             MoveIDs.pollenPuff, MoveIDs.rockClimb, MoveIDs.selfDestruct, MoveIDs.shellTrap, MoveIDs.skyUppercut,
             MoveIDs.slam, MoveIDs.strength, MoveIDs.submission, MoveIDs.synchronoise, MoveIDs.takeDown,
             MoveIDs.thrash, MoveIDs.uproar, MoveIDs.waterPledge
-    );
+    ));
 
     // Fixed-CONSTANT damage moves deal the same flat amount at every level (Dragon Rage always 40, SonicBoom
     // always 20). Their stored base power is 1, so any power-based ranking mistakes them for trivially weak
